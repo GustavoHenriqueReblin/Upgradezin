@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { CATEGORY_DEFS, ENABLED_CATEGORIES, type AdminStoreConfig, type AdminTerm, type CoverageRow, type StoreAttempt, type TimelineBucket } from '@upgradezin/shared';
+import { CATEGORY_DEFS, ENABLED_CATEGORIES, type AdminStoreConfig, type AdminTerm, type CoverageRow, type PerfGap, type StoreAttempt, type TimelineBucket } from '@upgradezin/shared';
 import { ArrowUp, Trash2 } from 'lucide-react';
 import { AdminError, adminApi } from './api.ts';
 import { attemptResult, attemptWhat, formatDuration, formatWhen, matchesNever, originText, statusText, type NeverFilter } from './format.ts';
@@ -193,6 +193,43 @@ export function CoveragePanel({ onUnauthorized }: Props) {
         ))}
       </Table>
       <p className="mt-2 text-xs text-zinc-500">Termos coletados em amarelo: a loja ainda não teve coleta boa de todos os termos da categoria (comum enquanto a rotina ainda não deu a volta nos termos).</p>
+    </Box>
+  );
+}
+
+/**
+ * Processadores e placas de vídeo à venda que a tabela de desempenho (packages/shared/src/perf.ts) não
+ * conhece: ficam fora do "Identificar Gargalo" e do ranking de upgrade até alguém acrescentar.
+ */
+export function PerfGapsPanel({ onUnauthorized }: Props) {
+  const names = useStoreNames(onUnauthorized);
+  const { data, error } = useAdmin<PerfGap[]>('/perf-gaps', onUnauthorized);
+  return (
+    <Box title="Modelos sem índice de desempenho">
+      {!data ? (
+        <p className="text-sm text-zinc-500">{error ? 'Não foi possível ler.' : 'Carregando…'}</p>
+      ) : !data.length ? (
+        <p className="text-sm text-zinc-500">Todo processador e placa de vídeo visto nas lojas nos últimos 14 dias tem índice.</p>
+      ) : (
+        <>
+          <Table head={['Categoria', 'Modelo', 'Anúncios', 'Exemplo']}>
+            {data.map((g) => (
+              <tr key={`${g.category}|${g.model}`} className="border-t border-zinc-100 dark:border-zinc-800">
+                <Td>{CATEGORY_DEFS[g.category].name}</Td>
+                <Td className="font-medium">{g.model || <span className="text-zinc-500">não lido do título</span>}</Td>
+                <Td className="tabular-nums">{g.listings}</Td>
+                <Td className="text-zinc-500">
+                  {names.get(g.store) ?? g.store} · {g.example}
+                </Td>
+              </tr>
+            ))}
+          </Table>
+          <p className="mt-2 text-xs text-zinc-500">
+            Vistos nas lojas nos últimos 14 dias. Para entrarem no gargalo e no ranking de upgrade, acrescente o modelo na tabela de desempenho (packages/shared/src/perf.ts). Modelo "não lido do título": o
+            leitor de specs não reconheceu o anúncio.
+          </p>
+        </>
+      )}
     </Box>
   );
 }

@@ -1,4 +1,4 @@
-import { CATEGORIES, STORES, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type AdminTerm, type CategoryId, type CoverageRow, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, ROUTINE_MODES, MODE_SECONDS_MIN, MODE_SECONDS_MAX } from '@upgradezin/shared';
+import { CATEGORIES, STORES, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type AdminTerm, type CategoryId, type CoverageRow, type PerfGap, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, ROUTINE_MODES, MODE_SECONDS_MIN, MODE_SECONDS_MAX } from '@upgradezin/shared';
 import { createReadStream } from 'node:fs';
 import type { ActivityInfo } from '@upgradezin/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -28,6 +28,7 @@ export interface AdminDeps {
   };
   data: {
     coverage: () => CoverageRow[];
+    perfGaps: () => PerfGap[];
     terms: (f: { category?: CategoryId; origin?: AdminTerm['origin']; q?: string }) => AdminTerm[];
     deleteTerm: (id: number) => 'deleted' | 'not-found' | 'seed';
     prioritizeTerm: (id: number) => boolean;
@@ -166,6 +167,7 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
 
       // Dados: cobertura, termos, consultas (registro e linha do tempo).
       admin.get('/coverage', async () => deps.data.coverage());
+      admin.get('/perf-gaps', async () => deps.data.perfGaps());
       admin.get('/terms', async (req, reply) => {
         const q = TermsQuery.safeParse(req.query);
         return q.success ? deps.data.terms(q.data) : reply.code(400).send({ error: 'invalid' });

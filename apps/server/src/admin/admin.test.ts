@@ -9,7 +9,7 @@ import { adminStores, saveStoreConfig, useStoreStorage } from '../stores.ts';
 import { AdminAuth, readCookie, sessionCookie } from './auth.ts';
 import { Backups, MergeUploads } from './backup.ts';
 import { listAttempts, onAttempt } from '../prices/attempts.ts';
-import { attemptTimeline, coverage, deleteTerm, listTerms, prioritizeTerm } from './data.ts';
+import { attemptTimeline, coverage, perfGaps, deleteTerm, listTerms, prioritizeTerm } from './data.ts';
 import { registerAdmin } from './routes.ts';
 import { baseName, serverStatus } from './status.ts';
 
@@ -98,6 +98,7 @@ function makeApp() {
     },
     data: {
       coverage: () => coverage(db),
+      perfGaps: () => perfGaps(db),
       terms: (f) => listTerms(db, f),
       deleteTerm: (id) => deleteTerm(db, id),
       prioritizeTerm: (id) => prioritizeTerm(db, id),

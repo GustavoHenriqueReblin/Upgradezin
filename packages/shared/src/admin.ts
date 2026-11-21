@@ -165,6 +165,20 @@ export interface CoverageRow {
   lastOkAt: string | null;
 }
 
+/**
+ * Modelo de processador ou placa de vídeo à venda (visto nas lojas nos últimos dias) que a tabela de
+ * desempenho (perf.ts) não conhece: fica fora do "Identificar Gargalo" e do ranking de upgrade.
+ */
+export interface PerfGap {
+  category: 'cpu' | 'gpu';
+  /** Como o app leu o modelo do título ("RX 9050", "Ryzen 5 8400F"); vazio quando não leu nenhum. */
+  model: string;
+  listings: number;
+  /** Um título de exemplo e a loja. */
+  example: string;
+  store: StoreId;
+}
+
 /** Um termo da rotina, com a última coleta em cada loja. */
 export interface AdminTerm {
   id: number;

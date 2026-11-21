@@ -4,6 +4,7 @@ import { BASE_SYSTEM_POWER, chipsetSupport, cpuPower, cpuTdp, GPU_POWER, PSU_HEA
 import { chipsetPcie, cpuLinesAbove, cpuNeeded, cpuPerf, ENTRY_CHIPSETS, GPU_PCIE_X8, GPU_PERF, gpuMatching, gpuPerf, IGPU_PERF, resolutionOf, SOCKET_TOP, type Resolution } from './perf.ts';
 import { GPU_MAKERS, type GpuMaker, type MemoryType, type Socket, type Specs } from './types.ts';
 import { gpuSeriesOf } from './gpu.ts';
+import type { PickContext } from './picks.ts';
 
 /**
  * Gargalo e sugestões de upgrade a partir do PC importado (docs/ARCHITECTURE.md §17.3).
@@ -29,6 +30,8 @@ export interface UpgradeAction {
   slot: BuildSlot;
   label: string;
   filters: UpgradeFilters;
+  /** O que o ranking das melhores ofertas precisa saber do PC (picks.ts). */
+  context?: PickContext;
 }
 
 /** free: ajuste sem gastar; upgrade: peça nova que vale a pena; attention: algo a conferir; info: limite a conhecer. */
@@ -157,7 +160,15 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs } = {}): PcAnalysis
         vramNote +
         (leftOut ? ` A ${boardName} é PCIe 3.0, então ficaram de fora as placas que usam só 8 linhas (como a ${leftOut}), que perdem desempenho nela.` : '') +
         psuText,
-      ...(models.length && { action: { slot: 'gpu', label: 'Ver Placas de Vídeo', filters: { gpuMakers: makers, gpuModels: models } } }),
+      ...(models.length && {
+        action: {
+          slot: 'gpu',
+          label: 'Ver Placas de Vídeo',
+          filters: { gpuMakers: makers, gpuModels: models },
+          // Com a fonte atual servindo (e não sendo simples), só as placas que cabem nela.
+          context: { current: gpuP, ...(ok.length && !basicPsu && psuWatts && cpuW && { maxGpuPower: psuWatts - cpuW - BASE_SYSTEM_POWER }) },
+        },
+      }),
     });
   }
 
@@ -170,7 +181,12 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs } = {}): PcAnalysis
         kind: 'upgrade',
         title: 'Trocar o Processador',
         text: `A ${gpuName} fica esperando o ${cpuName} em ${screen}. Dá para subir sem trocar a placa-mãe: o melhor para jogos nesse encaixe é o ${top.name}.`,
-        action: { slot: 'cpu', label: 'Ver Processadores', filters: { sockets: [cpu.socket], cpuLines: [...new Set(lines.map((l) => l.line))] } },
+        action: {
+          slot: 'cpu',
+          label: 'Ver Processadores',
+          filters: { sockets: [cpu.socket], cpuLines: [...new Set(lines.map((l) => l.line))] },
+          context: { current: cpuP, ...(mb?.chipset && { chipset: mb.chipset }) },
+        },
       });
     } else {
       const next: Socket[] = cpu.cpuBrand === 'amd' ? ['AM5'] : ['LGA1851', 'LGA1700'];
@@ -183,6 +199,7 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs } = {}): PcAnalysis
           slot: 'cpu',
           label: 'Ver Processadores Novos',
           filters: { sockets: next, ...(cpu.cpuBrand !== 'amd' && { cpuLines: ['Core i5', 'Core i7', 'Core Ultra 5', 'Core Ultra 7'] }) },
+          context: { current: cpuP },
         },
       });
     }
@@ -310,7 +327,7 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs } = {}): PcAnalysis
       kind: 'attention',
       title: 'Fonte Simples',
       text: `Fonte sem PFC ativo e sem certificação 80 Plus de bronze para cima costuma entregar menos do que a potência do rótulo e protege pouco as peças. Antes de uma placa de vídeo mais forte, troque a fonte.`,
-      action: { slot: 'psu', label: 'Ver Fontes', filters: {} },
+      action: { slot: 'psu', label: 'Ver Fontes', filters: {}, context: { certified: true, ...(psuWatts && { minWatts: psuWatts }) } },
     });
   }
   if (psuWatts && cpuW) {
@@ -321,7 +338,7 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs } = {}): PcAnalysis
         kind: 'attention',
         title: 'Fonte Abaixo do Consumo',
         text: `Sua fonte de ${psuWatts} W fica abaixo do consumo máximo estimado do PC (${estimate} W). Pode desligar em jogos pesados: o recomendado é ${roundUp50(estimate * PSU_HEADROOM)} W.`,
-        action: { slot: 'psu', label: 'Ver Fontes', filters: {} },
+        action: { slot: 'psu', label: 'Ver Fontes', filters: {}, context: { certified: true, minWatts: roundUp50(estimate * PSU_HEADROOM) } },
       });
     }
   }

@@ -4,6 +4,7 @@ import { analyzePc, CATEGORY_DEFS, CPU_BOUND, GPU_BOUND, type PcProfile, type Sp
 import { PC_SLOTS } from '../pc.ts';
 import { CATEGORY_ICONS } from './CategoryPicker.tsx';
 import { ImportPc } from './ImportPc.tsx';
+import { UpgradePicks } from './UpgradePicks.tsx';
 
 interface Props {
   pc: PcProfile | null;
@@ -161,6 +162,7 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onUpgra
                 <h4 className="font-medium">{t.title}</h4>
               </div>
               <p className="mt-1.5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">{t.text}</p>
+              {t.action && <UpgradePicks action={t.action} />}
               {t.action && (
                 <button
                   onClick={() => onUpgrade(t.action!)}

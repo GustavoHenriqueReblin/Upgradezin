@@ -814,11 +814,17 @@ Com o PC importado (17.2), o app diz o que segura o desempenho e o que vale faze
 
 Ordem: upgrades, ajustes grátis, atenção, observações. A tabela de desempenho é a parte que pede manutenção: incluir cada geração nova de placa de vídeo e processador (o teste confere que toda placa com consumo conhecido tem desempenho).
 
+**Melhores ofertas de agora** (`picks.ts`, `POST /api/upgrade/picks`, `UpgradePicks.tsx`): cada dica com ação leva, além do filtro da busca, o contexto do PC (`PickContext`: desempenho atual da peça, chipset, consumo de placa de vídeo que a fonte aguenta, potência mínima de fonte). O servidor lê do banco as ofertas da categoria vistas nas últimas `SEARCH_DB_MAX_AGE_H` horas (sem consultar loja; cache de 1 min) e devolve até 5, só compráveis (em estoque, sem marketplace nem open box):
+- **Processador e placa de vídeo:** uma oferta por modelo (a mais barata entre lojas e marcas), só as que sobem pelo menos 15% e cabem no PC (placa dentro da fonte atual; processador aceito pelo chipset, com o aviso "atualize a BIOS" quando o chipset só aceita depois de atualizar), ordenadas por pontos de desempenho ganhos por real.
+- **Memória, fonte e SSD:** as mais baratas que batem com o filtro, uma por produto; fonte com a potência mínima e certificada (bronze ou melhor). Sem comparar desempenho, que a tabela não tem. A fonte mais barata certificada nem sempre é boa (qualidade varia muito por modelo); falta uma lista de qualidade.
+
+**Modelos sem índice** (admin, aba Cobertura; `perfGaps` em `admin/data.ts`): processadores e placas de vídeo vistos nas lojas nos últimos 14 dias que a tabela não conhece, do mais anunciado ao menos, com um título de exemplo. Conta na hora, do banco: modelo novo aparece assim que a rotina ou a varredura o grava. Em nov/2026: RX 9050 e RX 7650 GRE (sem dado confiável ainda) e anúncios cujo modelo o leitor não reconheceu.
+
 ### 17.4 Outras ideias
 
 | Ideia | Comentário |
 |---|---|
-| **Upgrade por orçamento** | "Tenho R$ 1.500: qual troca rende mais?" Combina 17.3 com os preços do banco e ordena as sugestões por ganho/preço. |
+| **Upgrade por orçamento** | "Tenho R$ 1.500: qual troca rende mais?" As melhores ofertas por ganho/preço de cada dica já existem (17.3); falta o teto de orçamento e comparar entre dicas. |
 | **Upgrade × PC novo** | Compara o custo de trocar as peças sugeridas com o de uma montagem nova equivalente. |
 | **Montagens prontas por faixa** | Pontos de partida ("entrada", "intermediário", "topo") que abrem na montagem para ajustar. Mantidas no repositório, revisadas quando sai geração nova. |
 | **Checagem física** | Feito (nov/2026): placa de vídeo × gabinete, cooler × gabinete, radiador aceito e conector 12V-2x6 pela ficha técnica; BIOS que precisa de atualização já existia. Falta a ficha de S2 e S3. |

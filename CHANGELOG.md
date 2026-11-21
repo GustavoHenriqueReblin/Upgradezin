@@ -4,13 +4,16 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+### Adicionado
+- Identificar Gargalo: cada dica de upgrade mostra as 5 melhores ofertas de agora. Processador e placa de vídeo ordenados por desempenho ganho por real (só os compatíveis: placa que cabe na fonte, processador aceito pela placa-mãe, com aviso quando pede BIOS nova), com o ganho estimado; memória, fonte e SSD, as mais baratas que servem. Tudo do banco, sem consultar loja.
+- Admin, cobertura: modelos de processador e placa de vídeo à venda que a tabela de desempenho não conhece.
+- Tabela de desempenho: placas antigas ainda à venda (GT 210 a GTX 750) e RX 5600.
+- Admin, coleta: "Busca ao vivo" por loja. Marcada, a loja é consultada na hora quando alguém pesquisa no site (na frente da rotina); desmarcada, a busca mostra só o que o banco tem dela.
+- Admin, coleta: segundos de cada modo da rotina (normal, reduzido, lento) editáveis no admin, valendo na hora, sem reiniciar. O `.env` (`ROUTINE_*_GAP_S`) fica só como padrão.
+
 ### Corrigido
 - KaBuM (s1) muito lenta: cada página esperava os 45 s do limite, porque a página da loja nunca termina de carregar para o Chrome (anúncios e rastreadores). A extensão agora lê assim que o HTML está pronto: busca de 46 s para ~2 s, e de ~90 s para ~6 s quando abre a página de um cupom. Vale para as três lojas.
 - Admin, consultas: a lista e a linha do tempo atualizam sozinhas a cada consulta nova (canal ao vivo), sem precisar trocar de aba.
-
-### Adicionado
-- Admin, coleta: "Busca ao vivo" por loja. Marcada, a loja é consultada na hora quando alguém pesquisa no site (na frente da rotina); desmarcada, a busca mostra só o que o banco tem dela.
-- Admin, coleta: segundos de cada modo da rotina (normal, reduzido, lento) editáveis no admin, valendo na hora, sem reiniciar. O `.env` (`ROUTINE_*_GAP_S`) fica só como padrão.
 
 ### Alterado
 - Varredura de categoria também na s2 (a página da categoria inteira, 36 itens por página): todo produto à venda nela passa a ter histórico, não só os que aparecem nos termos. Caminhos no admin (aba Lojas).

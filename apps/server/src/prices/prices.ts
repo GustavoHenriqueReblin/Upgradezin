@@ -180,6 +180,12 @@ export function matchingListings(db: Db, store: StoreId, category: CategoryId, t
   return out;
 }
 
+/** Ofertas da categoria em todas as lojas, vistas desde `seenSince` (a última oferta de cada anúncio). */
+export function recentOffers(db: Db, category: CategoryId, seenSince: string): Offer[] {
+  const rows = db.prepare('SELECT offer FROM listings WHERE category = ? AND last_seen_at >= ?').all(category, seenSince) as { offer: string }[];
+  return rows.map((r) => JSON.parse(r.offer) as Offer);
+}
+
 /** Marcas (já normalizadas na coleta) dos anúncios da categoria vistos desde `seenSince`, sem "Outros"/"Genérica". */
 export function listingBrands(db: Db, category: CategoryId, seenSince: string): string[] {
   const rows = db
