@@ -26,24 +26,23 @@ async function info(tabId) {
   return { url: t.url ?? t.pendingUrl ?? '', title: t.title ?? '' };
 }
 
-/** Espera a aba terminar de carregar (status "complete") ou o tempo acabar. */
-function waitComplete(tabId, timeout) {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (ok) => {
-      if (done) return;
-      done = true;
-      chrome.tabs.onUpdated.removeListener(onUpd);
-      clearTimeout(timer);
-      resolve(ok);
-    };
-    const onUpd = (id, change) => {
-      if (id === tabId && change.status === 'complete') finish(true);
-    };
-    const timer = setTimeout(() => finish(false), timeout);
-    chrome.tabs.onUpdated.addListener(onUpd);
-    chrome.tabs.get(tabId).then((t) => t.status === 'complete' && t.url && t.url !== 'about:blank' && finish(true)).catch(() => finish(false));
-  });
+/**
+ * Espera o documento novo da aba ficar pronto (HTML lido: readyState "interactive" ou "complete")
+ * ou o tempo acabar. Não espera o "complete" da aba: há loja (KaBuM) cuja página nunca termina de
+ * carregar para o Chrome (anúncios e rastreadores puxando sem parar), e os dados já estão no HTML.
+ * Quem precisa de algo que o script da página monta depois espera com waitFor.
+ */
+async function waitReady(tabId, timeout) {
+  const until = Date.now() + timeout;
+  while (Date.now() < until) {
+    const t = await chrome.tabs.get(tabId).catch(() => null);
+    if (!t) return false;
+    if (t.status === 'complete' && t.url && t.url !== 'about:blank') return true;
+    const ready = await inPage(tabId, () => location.href !== 'about:blank' && document.readyState !== 'loading').catch(() => false);
+    if (ready) return true;
+    await sleep(200);
+  }
+  return false;
 }
 
 async function inPage(tabId, func, args = []) {
@@ -61,13 +60,13 @@ const ops = {
   },
   async goto({ tabId, url, timeout }) {
     await chrome.tabs.update(tabId, { url });
-    // Espera o carregamento começar antes de esperar o "complete" (senão pega o da aba anterior).
+    // Espera o carregamento começar antes de esperar o documento novo (senão pega o da aba anterior).
     for (let i = 0; i < 20; i++) {
       const t = await chrome.tabs.get(tabId);
       if (t.status === 'loading' || (t.url && t.url !== 'about:blank')) break;
       await sleep(100);
     }
-    const loaded = await waitComplete(tabId, timeout);
+    const loaded = await waitReady(tabId, timeout);
     return { loaded, ...(await info(tabId)) };
   },
   async info({ tabId }) {

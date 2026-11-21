@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CATEGORY_DEFS, ENABLED_CATEGORIES, type AdminStoreConfig, type AdminTerm, type CoverageRow, type StoreAttempt, type TimelineBucket } from '@upgradezin/shared';
 import { ArrowUp, Trash2 } from 'lucide-react';
 import { AdminError, adminApi } from './api.ts';
@@ -25,6 +25,29 @@ function useAdmin<T>(path: string | null, onUnauthorized: () => void, refreshMs 
   return { data, error, reload: load };
 }
 
+/**
+ * Chama `fn` quando uma consulta nova termina (canal ao vivo do admin, /live), com uma folga curta
+ * para juntar as que chegam juntas (ao conectar, o canal manda as últimas de uma vez).
+ */
+function useOnNewAttempt(fn: () => void) {
+  const ref = useRef(fn);
+  useEffect(() => {
+    ref.current = fn;
+  });
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const es = new EventSource('/api/admin/live');
+    es.addEventListener('attempt', () => {
+      clearTimeout(t);
+      t = setTimeout(() => ref.current(), 500);
+    });
+    return () => {
+      clearTimeout(t);
+      es.close();
+    };
+  }, []);
+}
+
 /** Nomes das lojas (para as tabelas). */
 function useStoreNames(onUnauthorized: () => void) {
   const { data } = useAdmin<AdminStoreConfig[]>('/stores', onUnauthorized);
@@ -40,7 +63,7 @@ const STATUS_TONE: Record<StoreAttempt['status'], string> = {
   error: 'text-red-600 dark:text-red-400',
 };
 
-/** Consultas: linha do tempo por hora (ok × bloqueio) e o registro de cada consulta, com filtros. */
+/** Consultas: linha do tempo por hora (ok × bloqueio) e o registro de cada consulta, com filtros. Atualiza a cada consulta nova (canal ao vivo) e, por garantia, a cada 15 s. */
 export function AttemptsPanel({ onUnauthorized }: Props) {
   const names = useStoreNames(onUnauthorized);
   const [store, setStore] = useState('');
@@ -49,6 +72,10 @@ export function AttemptsPanel({ onUnauthorized }: Props) {
   const query = new URLSearchParams({ limit: '200', ...(store ? { store } : {}), ...(status ? { status } : {}), ...(origin ? { origin } : {}) });
   const list = useAdmin<StoreAttempt[]>(`/attempts?${query}`, onUnauthorized, 15_000);
   const timeline = useAdmin<TimelineBucket[]>('/attempts/timeline?hours=48', onUnauthorized, 60_000);
+  useOnNewAttempt(() => {
+    list.reload();
+    timeline.reload();
+  });
 
   return (
     <div className="space-y-4">

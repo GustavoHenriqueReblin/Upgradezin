@@ -4,6 +4,10 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+### Corrigido
+- KaBuM (s1) muito lenta: cada página esperava os 45 s do limite, porque a página da loja nunca termina de carregar para o Chrome (anúncios e rastreadores). A extensão agora lê assim que o HTML está pronto: busca de 46 s para ~2 s, e de ~90 s para ~6 s quando abre a página de um cupom. Vale para as três lojas.
+- Admin, consultas: a lista e a linha do tempo atualizam sozinhas a cada consulta nova (canal ao vivo), sem precisar trocar de aba.
+
 ### Adicionado
 - Admin, coleta: "Busca ao vivo" por loja. Marcada, a loja é consultada na hora quando alguém pesquisa no site (na frente da rotina); desmarcada, a busca mostra só o que o banco tem dela.
 - Admin, coleta: segundos de cada modo da rotina (normal, reduzido, lento) editáveis no admin, valendo na hora, sem reiniciar. O `.env` (`ROUTINE_*_GAP_S`) fica só como padrão.
