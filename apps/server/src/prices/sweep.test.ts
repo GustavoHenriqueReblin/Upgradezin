@@ -4,7 +4,10 @@ import { s1 } from '../adapters/s1.ts';
 import { fixture } from '../adapters/fixtures.ts';
 import { usePageLoader } from '../browser.ts';
 import { openDb } from '../db/db.ts';
-import { storeConfig } from '../stores.ts';
+import { getDb } from '../db/instance.ts';
+import { useBackoffStorage } from '../pace.ts';
+import { routineNextAt, setRoutineSettings, stopRoutine, tick, useRoutineStorage } from './routine.ts';
+import { storeConfig, useStoreStorage } from '../stores.ts';
 import { dueTerms, ensureTerms, priceHistory } from './prices.ts';
 import { nextSweep, recordSweepFailure, recordSweepPage, sweepState } from './sweep.ts';
 
@@ -114,5 +117,32 @@ describe('ficha técnica guardada', () => {
     expect(s1SheetFromHtml(page({ technicalInformation: { text: '<p>Dimensões: 269 x 131 x 40 mm</p>' } }))).toBe('<p>Dimensões: 269 x 131 x 40 mm</p>');
     expect(s1SheetFromHtml(page({}))).toBeNull();
     expect(s1SheetFromHtml('<html></html>')).toBeNull();
+  });
+});
+
+describe('varredura na rotina', () => {
+  afterEach(() => {
+    usePageLoader(null);
+    stopRoutine();
+  });
+
+  it('alterna com os termos: varredura, termo, varredura, termo', async () => {
+    useStoreStorage(getDb());
+    useBackoffStorage([], () => {});
+    useRoutineStorage(null, () => {});
+    const urls: string[] = [];
+    usePageLoader(async (_store, url) => {
+      urls.push(url);
+      return { html: fixture('s1-cpu.html'), url, title: '' };
+    });
+    setRoutineSettings({ enabled: true, stores: ['s1'], modes: { s1: 'normal' } });
+    const kinds: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      const before = urls.length;
+      await tick(routineNextAt('s1')!);
+      const url = urls[before]!; // primeira página aberta nesta vez (a busca da S1 pode abrir um produto depois)
+      kinds.push(url.includes('/busca/') ? 'termo' : url.includes('/hardware/') ? 'varredura' : url);
+    }
+    expect(kinds).toEqual(['varredura', 'termo', 'varredura', 'termo']);
   });
 });
