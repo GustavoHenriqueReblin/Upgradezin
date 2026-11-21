@@ -192,25 +192,30 @@ export function ensureExtBrowser(store: StoreId, windowArgs: string[]): Promise<
   if (p) return p;
   const notConnected = () =>
     new ExtSetupError(
-      `A extensão não conectou no Chrome da ${store}: não está instalada nesse perfil. Instale uma vez com ` +
-        `"pnpm chrome-setup" (Carregar sem compactação: ${EXTENSION_DIR}).`,
+      `A extensão não conectou no Chrome da ${store} em 20 s. Com o Chrome comum, ela precisa ser instalada uma vez ` +
+        `("pnpm chrome-setup", Carregar sem compactação: ${EXTENSION_DIR}); com o Chrome for Testing ou o Chromium, carrega sozinha.`,
     );
   if (Date.now() - (failedAt.get(store) ?? 0) < 60_000) return Promise.reject(notConnected());
   p = (async () => {
     await startBridge();
-    // Chrome desta loja aberto por esta execução e ainda vivo: não abre outro, só espera a extensão.
-    const alive = procs.get(store);
-    if (!alive || alive.exitCode !== null) {
+    const main = procs.get(store);
+    const running = !!main && main.exitCode === null;
+    // Abre a aba de início: Chrome da loja fechado, ou aberto mas a extensão não conectou na
+    // tentativa anterior (ex. a aba de início carregou antes de a extensão ficar pronta e parou lá).
+    if (!running || failedAt.has(store)) {
       const dir = profileDir(store);
       mkdirSync(dir, { recursive: true });
-      // Com o Chrome da loja já aberto, isto só abre a aba de início nele (mesmo perfil).
       // --load-extension: o Chromium e o Chrome for Testing carregam a extensão sozinhos; o Chrome
       // comum ignora (nele, instalar uma vez com pnpm chrome-setup).
       const proc = spawn(config.CHROME_PATH, [`--user-data-dir=${dir}`, `--load-extension=${EXTENSION_DIR}`, '--no-first-run', '--no-default-browser-check', '--lang=pt-BR', ...windowArgs, startUrl(store)], {
         stdio: 'ignore',
       });
-      procs.set(store, proc);
-      proc.once('exit', () => procs.get(store) === proc && procs.delete(store));
+      // Com o Chrome da loja já aberto, este processo só entrega a aba de início a ele e sai: o
+      // Chrome principal continua sendo o guardado (para fechar no fim).
+      if (!running) {
+        procs.set(store, proc);
+        proc.once('exit', () => procs.get(store) === proc && procs.delete(store));
+      }
     }
     for (const until = Date.now() + 20_000; Date.now() < until; ) {
       if (connected(store)) {
