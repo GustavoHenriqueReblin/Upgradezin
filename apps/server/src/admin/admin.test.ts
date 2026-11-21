@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { RoutineInfo } from '@upgradezin/shared';
+import type { RoutineInfo, SheetRoutineSettings } from '@upgradezin/shared';
 import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
 import { openDb } from '../db/db.ts';
@@ -12,6 +12,7 @@ import { listAttempts, onAttempt } from '../prices/attempts.ts';
 import { attemptTimeline, coverage, perfGaps, deleteTerm, listTerms, prioritizeTerm } from './data.ts';
 import { listProducts, sheetStoreStatus } from './products.ts';
 import { registerAdmin } from './routes.ts';
+import { emitChange, onChange } from '../changes.ts';
 import { baseName, serverStatus } from './status.ts';
 
 describe('status', () => {
@@ -84,7 +85,8 @@ function makeApp() {
   const db = openDb(':memory:');
   const dir = mkdtempSync(join(tmpdir(), 'uz-routes-'));
   calls.length = 0;
-  const routine: RoutineInfo = { enabled: false, stores: [], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, busy: false, lastTickAt: null, nextTickAt: null, seconds: { normal: 15, reduced: 20, slow: 60 }, sheets: { enabled: true, perHour: 20 } };
+  const routine: RoutineInfo = { enabled: false, stores: [], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, busy: false, lastTickAt: null, nextTickAt: null, seconds: { normal: 15, reduced: 20, slow: 60 } };
+  let sheetRoutine: SheetRoutineSettings = { enabled: false, stores: ['s1', 's2', 's3'], seconds: 180 };
   registerAdmin(app, {
     auth: new AdminAuth(OPTS),
     status: () => serverStatus(db, { version: '9.9.9', browserOpen: false, activeSessions: 0 }),
@@ -95,11 +97,16 @@ function makeApp() {
       pause: (id, minutes) => void calls.push(['pause', id, minutes]),
       collect: (id, category, term) => (calls.push(['collect', id, category, term]), term === 'pausada' ? { ok: false, error: 'Loja em pausa.' } : { ok: true, startsAt: '2026-11-20T21:00:00.000Z' }),
       routine: () => routine,
-      setRoutine: (s) => (calls.push(['routine', s]), { ...routine, ...s, modes: { ...routine.modes, ...s.modes }, live: { ...routine.live, ...s.live }, seconds: { ...routine.seconds, ...s.seconds }, sheets: { ...routine.sheets, ...s.sheets } }),
+      setRoutine: (s) => (calls.push(['routine', s]), { ...routine, ...s, modes: { ...routine.modes, ...s.modes }, live: { ...routine.live, ...s.live }, seconds: { ...routine.seconds, ...s.seconds } }),
     },
     products: {
       list: (f) => listProducts(db, f),
-      sheets: () => ({ enabled: true, perHour: 20, stores: sheetStoreStatus(db, [{ id: 's1', name: 'Loja S1', canRead: true }]) }),
+      sheets: () => ({ ...sheetRoutine, busy: false, progress: sheetStoreStatus(db, [{ id: 's1', name: 'Loja S1', canRead: true }]).map((p) => ({ ...p, nextAt: null })) }),
+      setSheets: (s) => {
+        calls.push(['sheets', s]);
+        sheetRoutine = { ...sheetRoutine, ...s };
+        return { ...sheetRoutine, busy: false, progress: [] };
+      },
       readSheet: (id, sku) => (calls.push(['sheet', id, sku]), sku === 'pausada' ? { ok: false, error: 'Loja em pausa.' } : { ok: true, startsAt: '2026-11-20T21:00:00.000Z' }),
     },
     data: {
@@ -249,7 +256,15 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     for (const q of ['sheet=talvez', 'store=s9', 'page=0', 'pageSize=500', 'inStock=sim']) {
       expect((await app.inject({ url: `/api/admin/products?${q}`, headers: { cookie } })).statusCode).toBe(400);
     }
-    expect((await app.inject({ url: '/api/admin/sheets', headers: { cookie } })).json()).toMatchObject({ enabled: true, perHour: 20, stores: [{ store: 's1', total: 0 }] });
+    expect((await app.inject({ url: '/api/admin/sheets', headers: { cookie } })).json()).toMatchObject({ enabled: false, seconds: 180, stores: ['s1', 's2', 's3'], progress: [{ store: 's1', total: 0, nextAt: null }] });
+
+    // Rotina de fichas (separada da coleta): ligar, lojas e intervalo; inválido é recusado.
+    const put = (payload: unknown, headers: Record<string, string> = { cookie, 'x-admin': '1' }) => app.inject({ method: 'PUT', url: '/api/admin/sheets', headers, payload: payload as object });
+    const on = await put({ enabled: true, stores: ['s2'], seconds: 3600 });
+    expect(on.json()).toMatchObject({ enabled: true, stores: ['s2'], seconds: 3600 });
+    expect(calls.at(-1)).toEqual(['sheets', { enabled: true, stores: ['s2'], seconds: 3600 }]);
+    for (const bad of [{ seconds: 9 }, { seconds: 86_401 }, { seconds: 60.5 }, { stores: ['s9'] }, { enabled: 'sim' }]) expect((await put(bad)).statusCode).toBe(400);
+    expect((await put({ enabled: false }, { cookie })).statusCode).toBe(403);
 
     const post = (path: string) => app.inject({ method: 'POST', url: path, headers: { cookie, 'x-admin': '1' } });
     const ok = await post('/api/admin/products/s1/123/sheet');
@@ -279,9 +294,7 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     expect(badMode.statusCode).toBe(400);
     const live = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s2'], live: { s3: false }, seconds: { normal: 300 } } });
     expect(live.json()).toMatchObject({ live: { s1: true, s3: false }, seconds: { normal: 300, reduced: 20 } });
-    const sheets = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s2'], sheets: { enabled: false, perHour: 30 } } });
-    expect(sheets.json()).toMatchObject({ sheets: { enabled: false, perHour: 30 } });
-    for (const payload of [{ seconds: { normal: 2 } }, { seconds: { normal: 1.5 } }, { live: { s3: 'sim' } }, { sheets: { perHour: 0 } }, { sheets: { perHour: 61 } }]) {
+    for (const payload of [{ seconds: { normal: 2 } }, { seconds: { normal: 1.5 } }, { live: { s3: 'sim' } }]) {
       const res = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s2'], ...payload } });
       expect(res.statusCode).toBe(400);
     }
@@ -356,5 +369,35 @@ describe('rotas de backup, merge e atividade', () => {
     const app = makeApp();
     const cookie = cookieOf(await login(app));
     expect((await app.inject({ url: '/api/admin/activity', headers: { cookie } })).json()).toMatchObject({ searchesOpen: 0, atLimit: { force: 0 } });
+  });
+
+  it('canal ao vivo: avisa as telas quando algo muda pelo admin (não em leitura, recusa ou login) e manda os avisos como `change`', async () => {
+    const app = makeApp();
+    const cookie = cookieOf(await login(app));
+    const seen: string[] = [];
+    const off = onChange((k) => seen.push(k));
+    const put = (payload: object, headers: Record<string, string> = { cookie, 'x-admin': '1' }) => app.inject({ method: 'PUT', url: '/api/admin/sheets', headers, payload });
+    expect((await put({ seconds: 600 })).statusCode).toBe(200);
+    expect(seen).toEqual(['admin']);
+    await app.inject({ url: '/api/admin/sheets', headers: { cookie } }); // leitura
+    await put({ seconds: 1 }); // recusada (400)
+    await put({ seconds: 600 }, { cookie }); // sem o cabeçalho (403)
+    await login(app, 'errada-errada-errada'); // login recusado
+    await login(app); // login
+    expect(seen).toEqual(['admin']);
+    off();
+
+    // O canal (SSE) manda cada aviso como evento `change`.
+    const url = await app.listen({ port: 0, host: '127.0.0.1' });
+    const ac = new AbortController();
+    const res = await fetch(`${url}/api/admin/live`, { headers: { cookie }, signal: ac.signal });
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    const reader = res.body!.getReader();
+    emitChange('store');
+    let text = '';
+    while (!text.includes('event: change')) text += new TextDecoder().decode((await reader.read()).value);
+    expect(text).toContain(`event: change${'\n'}data: {"kind":"store"}${'\n\n'}`);
+    ac.abort();
+    await app.close();
   });
 });

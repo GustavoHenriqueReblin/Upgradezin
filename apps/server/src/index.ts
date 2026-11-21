@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { z } from 'zod';
-import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, pickUpgrades, STORES, type CategoryId, type Offer, type SpecSheet, type StoreId } from '@upgradezin/shared';
+import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, pickUpgrades, STORES, type CategoryId, type Offer, type SheetRoutineStatus, type SpecSheet, type StoreId } from '@upgradezin/shared';
 import { collectNow, readSheetNow, stopAdminJobs, storesState } from './admin/actions.ts';
 import { listProducts, sheetStoreStatus } from './admin/products.ts';
 import { AdminAuth, MIN_PASSWORD } from './admin/auth.ts';
@@ -16,12 +16,14 @@ import { serverStatus } from './admin/status.ts';
 import { browserOpen, closeBrowser } from './browser.ts';
 import { BUILD_ID, findSharedBuild, getSharedBuild, saveSharedBuild, SharedBuildSchema } from './builds/builds.ts';
 import { config } from './config.ts';
+import { emitChange } from './changes.ts';
 import { deleteMeta, getMeta, metaByPrefix, setMeta } from './db/db.ts';
 import { clearBackoff, pauseStore, useBackoffStorage, type Backoff } from './pace.ts';
 import { closeDb, getDb } from './db/instance.ts';
 import { activeSessions, canReadSheet, sheetOf } from './prices/collect.ts';
 import { listingBrands, listingsHistory, recentOffers } from './prices/prices.ts';
 import { getSheet } from './prices/sheets.ts';
+import { setSheetRoutine, sheetNextAt, sheetRoutineBusy, sheetRoutineSettings, startSheetRoutine, stopSheetRoutine, useSheetRoutineStorage } from './prices/sheet-routine.ts';
 import { routineInfo, routineSettings, setRoutineSettings, startRoutine, stopRoutine, useRoutineStorage } from './prices/routine.ts';
 import { runSearch, stopBackgroundSearches, storedList } from './search.ts';
 import { onCollected } from './prices/events.ts';
@@ -72,15 +74,32 @@ const SearchQuery = z.object({
 {
   const db = getDb();
   const saved = metaByPrefix(db, 'backoff:').map(([k, v]) => [k.slice('backoff:'.length), JSON.parse(v)] as [(typeof STORES)[number], Backoff]);
-  useBackoffStorage(saved, (store, b) => (b ? setMeta(db, `backoff:${store}`, JSON.stringify(b)) : deleteMeta(db, `backoff:${store}`)));
+  useBackoffStorage(saved, (store, b) => {
+    if (b) setMeta(db, `backoff:${store}`, JSON.stringify(b));
+    else deleteMeta(db, `backoff:${store}`);
+    emitChange('store'); // entrou ou saiu de pausa
+  });
   // Chave antiga (intervalo do modo valia para a busca do site): não é mais usada.
   for (const [k] of metaByPrefix(db, 'slowlast:')) deleteMeta(db, k);
   // Rotina: ligada, lojas, modos, busca ao vivo e segundos, do admin (meta "routine"); sem nada guardado, vale o .env.
   const routine = getMeta(db, 'routine');
   useRoutineStorage(routine ? JSON.parse(routine) : null, (s) => setMeta(db, 'routine', JSON.stringify(s)));
+  // Rotina de fichas (separada da coleta): do admin (meta "sheet-routine"); sem nada guardado, vale o .env.
+  const sheetRoutine = getMeta(db, 'sheet-routine');
+  useSheetRoutineStorage(sheetRoutine ? JSON.parse(sheetRoutine) : null, (s) => setMeta(db, 'sheet-routine', JSON.stringify(s)));
   // Lojas: do banco (admin); na primeira vez, copiadas do .env.
   const seeded = useStoreStorage(db);
   if (seeded) app.log.info(`Lojas: ${seeded} copiada(s) do .env para o banco; daqui em diante, edite no admin (/admin).`);
+}
+
+/** Rotina de fichas para o admin: configuração, andamento e próxima ficha de cada loja. */
+function sheetStatus(): SheetRoutineStatus {
+  const iso = (ms: number | null) => (ms ? new Date(ms).toISOString() : null);
+  const progress = sheetStoreStatus(
+    getDb(),
+    ACTIVE_STORES.map((id) => ({ id, name: storeConfig(id).name, canRead: canReadSheet(id) })),
+  ).map((p) => ({ ...p, nextAt: iso(sheetNextAt(p.store)) }));
+  return { ...sheetRoutineSettings(), busy: sheetRoutineBusy(), progress };
 }
 
 app.get('/api/version', async () => ({ version: VERSION }));
@@ -104,13 +123,8 @@ if (AdminAuth.isConfigured(config.ADMIN_USER, config.ADMIN_PASSWORD)) {
     },
     products: {
       list: (f) => listProducts(getDb(), f),
-      sheets: () => ({
-        ...routineSettings().sheets,
-        stores: sheetStoreStatus(
-          getDb(),
-          ACTIVE_STORES.map((id) => ({ id, name: storeConfig(id).name, canRead: canReadSheet(id) })),
-        ),
-      }),
+      sheets: sheetStatus,
+      setSheets: (s) => (setSheetRoutine(s), sheetStatus()),
       readSheet: (store, sku) => readSheetNow(getDb(), store, sku),
     },
     data: {
@@ -355,6 +369,7 @@ app.get('/api/search/stream', async (req, reply) => {
   // Passou do limite de "Atualizar": a busca responde com o que está no banco.
   const force = wantsForce && forceLimiter.take(ip);
   activity.record({ at: new Date().toISOString(), ip, category: params.category, terms: params.terms, stores: params.stores, text: !!params.text, force });
+  emitChange('activity');
 
   reply.hijack();
   const res = reply.raw;
@@ -395,6 +410,7 @@ if (existsSync(webDist)) {
 
 const shutdown = async () => {
   stopRoutine();
+  stopSheetRoutine();
   stopAdminJobs();
   stopBackgroundSearches();
   await closeBrowser();
@@ -408,3 +424,4 @@ process.on('SIGTERM', shutdown);
 await app.listen({ port: config.PORT, host: config.HOST });
 app.log.info(`Upgradezin v${VERSION}`);
 startRoutine();
+startSheetRoutine();

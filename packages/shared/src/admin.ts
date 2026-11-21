@@ -97,12 +97,24 @@ export interface RoutineSettings {
   live: Record<StoreId, boolean>;
   /** Segundos entre uma coleta da rotina e a próxima, em cada modo. */
   seconds: Record<RoutineMode, number>;
-  /** Fichas técnicas do catálogo: ligada e quantas por loja por hora (dentro das vezes da rotina). */
-  sheets: { enabled: boolean; perHour: number };
 }
 
-/** Limites das fichas por hora no admin. */
-export const SHEETS_PER_HOUR_MAX = 60;
+/**
+ * Rotina de fichas técnicas: separada da coleta (chave, lojas e intervalo próprios). Lê, em cada
+ * loja, uma ficha do catálogo a cada `seconds` segundos (+ até 20% aleatório).
+ */
+export interface SheetRoutineSettings {
+  enabled: boolean;
+  stores: StoreId[];
+  seconds: number;
+}
+
+/** O que o admin manda para mudar a rotina de fichas (o que falta fica como está). */
+export type SheetRoutineInput = Partial<SheetRoutineSettings>;
+
+/** Intervalo entre fichas no admin: de 10 segundos a 1 dia. */
+export const SHEET_SECONDS_MIN = 10;
+export const SHEET_SECONDS_MAX = 86_400;
 
 /** O que o admin manda para mudar a rotina (o que falta fica como está). */
 export interface RoutineInput {
@@ -111,8 +123,13 @@ export interface RoutineInput {
   modes?: Partial<Record<StoreId, RoutineMode>>;
   live?: Partial<Record<StoreId, boolean>>;
   seconds?: Partial<Record<RoutineMode, number>>;
-  sheets?: Partial<{ enabled: boolean; perHour: number }>;
 }
+
+/**
+ * Aviso de mudança no canal ao vivo do admin (evento `change`): `store` (loja começou ou terminou
+ * uma página, entrou ou saiu de pausa), `admin` (algo mudou pelo admin), `activity` (busca no site).
+ */
+export type AdminChange = 'store' | 'admin' | 'activity';
 
 /** Estado da rotina no admin. */
 export interface RoutineInfo extends RoutineSettings {
@@ -246,13 +263,15 @@ export interface SheetStoreStatus {
   /** Fichas lidas na última hora (rotina, montagem e admin) e a última. */
   lastHour: number;
   lastAt: string | null;
+  /** Próxima ficha da rotina nesta loja (null: a rotina não está rodando nela). */
+  nextAt: string | null;
 }
 
 /** Rotina de fichas: configuração e andamento por loja. */
-export interface SheetRoutineStatus {
-  enabled: boolean;
-  perHour: number;
-  stores: SheetStoreStatus[];
+export interface SheetRoutineStatus extends SheetRoutineSettings {
+  /** Alguma loja lendo ficha agora. */
+  busy: boolean;
+  progress: SheetStoreStatus[];
 }
 
 /** Um termo da rotina, com a última coleta em cada loja. */

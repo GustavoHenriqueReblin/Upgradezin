@@ -102,9 +102,14 @@ export function countdown(target: string | number, now = Date.now()): string {
 
 export const MODE_LABEL: Record<RoutineMode, string> = { normal: 'Normal', reduced: 'Reduzido', slow: 'Lento' };
 
-/** Segundos em texto curto: "15 s", "1 min", "1 min 30 s". */
+/** Segundos em texto curto: "15 s", "1 min", "1 min 30 s", "2 h", "1 h 30 min". */
 export function shortDuration(s: number): string {
   if (s < 60) return `${s} s`;
+  if (s >= 3600) {
+    const h = Math.floor(s / 3600);
+    const m = Math.round((s % 3600) / 60);
+    return m ? `${h} h ${m} min` : `${h} h`;
+  }
   const m = Math.floor(s / 60);
   const r = Math.round(s % 60);
   return r ? `${m} min ${r} s` : `${m} min`;
@@ -122,6 +127,26 @@ export function queueLabel(q: { priority: number; routine: number }): string {
 /** O que o modo faz, com os segundos que o servidor usa. */
 export function modeHint(mode: RoutineMode, seconds: Record<RoutineMode, number>): string {
   return `rotina: 1 termo a cada ${shortDuration(seconds[mode])}`;
+}
+
+/** Unidades do intervalo da rotina de fichas no admin. */
+export const SHEET_UNITS = [
+  { label: 'segundos', s: 1 },
+  { label: 'minutos', s: 60 },
+  { label: 'horas', s: 3600 },
+] as const;
+
+/** Segundos na maior unidade exata: 180 → 3 minutos; 90 → 90 segundos. */
+export function splitSeconds(s: number): { value: number; unit: number } {
+  const u = [...SHEET_UNITS].reverse().find((x) => s % x.s === 0)!;
+  return { value: s / u.s, unit: u.s };
+}
+
+/** Quanto falta para ler `missing` fichas, uma a cada `seconds` (+ 10% em média): "cerca de 5 h", "cerca de 3 dias". */
+export function sheetEta(missing: number, seconds: number): string {
+  const h = (missing * seconds * 1.1) / 3600;
+  if (h < 1) return 'menos de 1 h';
+  return h < 48 ? `cerca de ${Math.ceil(h)} h` : `cerca de ${Math.round(h / 24)} dias`;
 }
 
 export const SHEET_STATUS_LABEL: Record<SheetStatus, string> = { ok: 'lida', empty: 'página sem ficha', missing: 'não lida', na: 'sem ficha física' };

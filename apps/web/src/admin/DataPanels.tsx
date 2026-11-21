@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { CATEGORY_DEFS, ENABLED_CATEGORIES, type AdminStoreConfig, type AdminTerm, type CoverageRow, type PerfGap, type StoreAttempt, type TimelineBucket } from '@upgradezin/shared';
 import { ArrowUp, Trash2 } from 'lucide-react';
 import { AdminError, adminApi } from './api.ts';
+import { useLiveReload, type LiveKind } from './live.ts';
 import { attemptResult, attemptWhat, formatDuration, formatWhen, matchesNever, originText, statusText, type NeverFilter } from './format.ts';
 
 type Props = { onUnauthorized: () => void };
 
-/** Carrega uma rota do admin; 401 volta ao login. */
-function useAdmin<T>(path: string | null, onUnauthorized: () => void, refreshMs = 0) {
+/**
+ * Carrega uma rota do admin; 401 volta ao login. Com `live`, recarrega sozinha quando chega um desses
+ * avisos no canal ao vivo (`delayMs` junta avisos seguidos).
+ */
+function useAdmin<T>(path: string | null, onUnauthorized: () => void, live: LiveKind[] = [], delayMs = 500) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState(false);
   const load = useCallback(() => {
@@ -16,41 +20,14 @@ function useAdmin<T>(path: string | null, onUnauthorized: () => void, refreshMs 
       .then((d) => (setData(d), setError(false)))
       .catch((err) => (err instanceof AdminError && err.status === 401 ? onUnauthorized() : setError(true)));
   }, [path, onUnauthorized]);
-  useEffect(() => {
-    load();
-    if (!refreshMs) return;
-    const t = setInterval(load, refreshMs);
-    return () => clearInterval(t);
-  }, [load, refreshMs]);
+  useEffect(load, [load]);
+  useLiveReload(live, load, { delayMs, fallbackMs: live.length ? 60_000 : 0 });
   return { data, error, reload: load };
-}
-
-/**
- * Chama `fn` quando uma consulta nova termina (canal ao vivo do admin, /live), com uma folga curta
- * para juntar as que chegam juntas (ao conectar, o canal manda as últimas de uma vez).
- */
-function useOnNewAttempt(fn: () => void) {
-  const ref = useRef(fn);
-  useEffect(() => {
-    ref.current = fn;
-  });
-  useEffect(() => {
-    let t: ReturnType<typeof setTimeout> | undefined;
-    const es = new EventSource('/api/admin/live');
-    es.addEventListener('attempt', () => {
-      clearTimeout(t);
-      t = setTimeout(() => ref.current(), 500);
-    });
-    return () => {
-      clearTimeout(t);
-      es.close();
-    };
-  }, []);
 }
 
 /** Nomes das lojas (para as tabelas). */
 function useStoreNames(onUnauthorized: () => void) {
-  const { data } = useAdmin<AdminStoreConfig[]>('/stores', onUnauthorized);
+  const { data } = useAdmin<AdminStoreConfig[]>('/stores', onUnauthorized, ['admin']);
   return useMemo(() => new Map((data ?? []).map((s) => [s.id, s.name || s.id])), [data]);
 }
 
@@ -63,19 +40,15 @@ const STATUS_TONE: Record<StoreAttempt['status'], string> = {
   error: 'text-red-600 dark:text-red-400',
 };
 
-/** Consultas: linha do tempo por hora (ok × bloqueio) e o registro de cada consulta, com filtros. Atualiza a cada consulta nova (canal ao vivo) e, por garantia, a cada 15 s. */
+/** Consultas: linha do tempo por hora (ok × bloqueio) e o registro de cada consulta, com filtros. Atualiza a cada consulta nova (canal ao vivo). */
 export function AttemptsPanel({ onUnauthorized }: Props) {
   const names = useStoreNames(onUnauthorized);
   const [store, setStore] = useState('');
   const [status, setStatus] = useState('');
   const [origin, setOrigin] = useState('');
   const query = new URLSearchParams({ limit: '200', ...(store ? { store } : {}), ...(status ? { status } : {}), ...(origin ? { origin } : {}) });
-  const list = useAdmin<StoreAttempt[]>(`/attempts?${query}`, onUnauthorized, 15_000);
-  const timeline = useAdmin<TimelineBucket[]>('/attempts/timeline?hours=48', onUnauthorized, 60_000);
-  useOnNewAttempt(() => {
-    list.reload();
-    timeline.reload();
-  });
+  const list = useAdmin<StoreAttempt[]>(`/attempts?${query}`, onUnauthorized, ['attempt']);
+  const timeline = useAdmin<TimelineBucket[]>('/attempts/timeline?hours=48', onUnauthorized, ['attempt'], 2_000);
 
   return (
     <div className="space-y-4">
@@ -168,7 +141,7 @@ function Timeline({ buckets, names }: { buckets: TimelineBucket[]; names: Map<st
 /** Cobertura por loja e categoria: anúncios, frescor, termos coletados. */
 export function CoveragePanel({ onUnauthorized }: Props) {
   const names = useStoreNames(onUnauthorized);
-  const { data, error } = useAdmin<CoverageRow[]>('/coverage', onUnauthorized);
+  const { data, error } = useAdmin<CoverageRow[]>('/coverage', onUnauthorized, ['attempt', 'admin'], 3_000);
   if (!data) return <p className="text-zinc-500">{error ? 'Não foi possível ler.' : 'Carregando…'}</p>;
   const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
   return (
@@ -215,7 +188,7 @@ export function CoveragePanel({ onUnauthorized }: Props) {
  */
 export function PerfGapsPanel({ onUnauthorized }: Props) {
   const names = useStoreNames(onUnauthorized);
-  const { data, error } = useAdmin<PerfGap[]>('/perf-gaps', onUnauthorized);
+  const { data, error } = useAdmin<PerfGap[]>('/perf-gaps', onUnauthorized, ['attempt'], 5_000);
   return (
     <Box title="Modelos sem índice de desempenho">
       {!data ? (
@@ -257,7 +230,7 @@ export function TermsPanel({ onUnauthorized }: Props) {
   const [never, setNever] = useState<NeverFilter>('');
   const [message, setMessage] = useState<string | null>(null);
   const query = new URLSearchParams({ ...(category ? { category } : {}), ...(origin ? { origin } : {}), ...(q.trim() ? { q: q.trim() } : {}) });
-  const { data, reload } = useAdmin<AdminTerm[]>(`/terms?${query}`, onUnauthorized);
+  const { data, reload } = useAdmin<AdminTerm[]>(`/terms?${query}`, onUnauthorized, ['attempt', 'admin'], 2_000);
   const stores = [...names.keys()];
   const shown = data?.filter((t) => matchesNever(t, stores, never));
 

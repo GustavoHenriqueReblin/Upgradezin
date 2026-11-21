@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sheetSummary, specPairs, countdown, modeHint, queueLabel, matchesNever, neverCollectedIn, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground } from './format.ts';
+import { sheetEta, shortDuration, splitSeconds, sheetSummary, specPairs, countdown, modeHint, queueLabel, matchesNever, neverCollectedIn, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground } from './format.ts';
 
 describe('formatação do admin', () => {
   it('duração', () => {
@@ -115,5 +115,19 @@ describe('ficha técnica e specs na aba Produtos', () => {
       ['igpu', 'sim'],
       ['coolerSockets', 'AM4, AM5'],
     ]);
+  });
+
+  it('intervalo da rotina de fichas: texto curto com horas, unidade exata e quanto falta', () => {
+    expect(shortDuration(45)).toBe('45 s');
+    expect(shortDuration(180)).toBe('3 min');
+    expect(shortDuration(3600)).toBe('1 h');
+    expect(shortDuration(5400)).toBe('1 h 30 min');
+    expect(shortDuration(86_400)).toBe('24 h');
+    expect(splitSeconds(90)).toEqual({ value: 90, unit: 1 });
+    expect(splitSeconds(180)).toEqual({ value: 3, unit: 60 });
+    expect(splitSeconds(7200)).toEqual({ value: 2, unit: 3600 });
+    expect(sheetEta(10, 60)).toBe('menos de 1 h');
+    expect(sheetEta(100, 180)).toBe('cerca de 6 h'); // 100 × 3 min × 1,1 = 5,5 h
+    expect(sheetEta(2460, 180)).toBe('cerca de 6 dias');
   });
 });

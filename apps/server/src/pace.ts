@@ -1,4 +1,5 @@
 import type { BlockReason, StoreId } from '@upgradezin/shared';
+import { emitChange } from './changes.ts';
 import { config } from './config.ts';
 
 export const sleep = (ms: number, signal?: AbortSignal) =>
@@ -216,10 +217,12 @@ export async function withStore<T>(store: StoreId, signal: AbortSignal, fn: () =
     const wait = (lastDone.get(store) ?? 0) + jitter() - Date.now();
     if (wait > 0) await sleep(wait, signal);
     paused();
+    emitChange('store'); // a loja começou a ler (o admin mostra "lendo agora")
     try {
       return await fn();
     } finally {
       lastDone.set(store, Date.now());
+      emitChange('store');
     }
   } finally {
     release(store);

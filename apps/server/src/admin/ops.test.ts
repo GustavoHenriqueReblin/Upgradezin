@@ -84,12 +84,12 @@ describe('rotina pelo admin', () => {
   it('o guardado vale no lugar do .env; mudar guarda, limpa lojas inválidas e reinicia', () => {
     const saved: unknown[] = [];
     useRoutineStorage({ enabled: false, stores: ['s2'] }, (s) => saved.push(s));
-    expect(routineSettings()).toEqual({ enabled: false, stores: ['s2'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 }, sheets: { enabled: true, perHour: 20 } }); // sem modos guardados: o padrão (ROUTINE_SLOW_STORES do .env começa no lento)
+    expect(routineSettings()).toEqual({ enabled: false, stores: ['s2'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 } }); // sem modos guardados: o padrão (ROUTINE_SLOW_STORES do .env começa no lento)
     expect(routineInfo()).toMatchObject({ enabled: false, nextTickAt: null, busy: false });
 
     setRoutineSettings({ enabled: true, stores: ['s3', 's1', 'x9' as 's1'] });
-    expect(routineSettings()).toEqual({ enabled: true, stores: ['s1', 's3'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 }, sheets: { enabled: true, perHour: 20 } }); // ordem das lojas, sem a inválida
-    expect(saved.at(-1)).toEqual({ enabled: true, stores: ['s1', 's3'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 }, sheets: { enabled: true, perHour: 20 } });
+    expect(routineSettings()).toEqual({ enabled: true, stores: ['s1', 's3'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 } }); // ordem das lojas, sem a inválida
+    expect(saved.at(-1)).toEqual({ enabled: true, stores: ['s1', 's3'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 } });
     expect(routineInfo().nextTickAt).not.toBeNull(); // ligada: próxima rodada marcada
 
     setRoutineSettings({ enabled: false, stores: ['s1'] });
@@ -122,21 +122,6 @@ describe('rotina pelo admin', () => {
     setRoutineSettings({ enabled: false, stores: [] });
     expect(routineSettings().live.s3).toBe(true); // não enviado: fica como estava
     expect(saved.at(-1)?.seconds.reduced).toBe(45);
-    stopRoutine();
-  });
-
-  it('rotina de fichas: ligar, parar e fichas por hora, guardados; inválido fica como estava', () => {
-    const saved: RoutineSettings[] = [];
-    useRoutineStorage({ enabled: false, stores: [] }, (s) => saved.push(s));
-    expect(routineSettings().sheets).toEqual({ enabled: true, perHour: 20 }); // padrão: ligada, ROUTINE_SHEETS_PER_HOUR
-    setRoutineSettings({ enabled: false, stores: [], sheets: { enabled: false } });
-    expect(routineSettings().sheets).toEqual({ enabled: false, perHour: 20 });
-    setRoutineSettings({ enabled: false, stores: [], sheets: { perHour: 45 } });
-    expect(routineSettings().sheets).toEqual({ enabled: false, perHour: 45 }); // ligar/parar não mexe no ritmo e vice-versa
-    setRoutineSettings({ enabled: false, stores: [], sheets: { perHour: 0 } });
-    setRoutineSettings({ enabled: false, stores: [], sheets: { perHour: 500 } });
-    expect(routineSettings().sheets.perHour).toBe(45);
-    expect(saved.at(-1)?.sheets).toEqual({ enabled: false, perHour: 45 });
     stopRoutine();
   });
 

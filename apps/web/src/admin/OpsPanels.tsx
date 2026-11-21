@@ -3,6 +3,7 @@ import { CATEGORY_DEFS, type ActivityInfo, type AdminStoreConfig, type BackupFil
 import { Database, Download, Trash2, Upload } from 'lucide-react';
 import { AdminError, adminApi, adminUpload } from './api.ts';
 import { attemptResult, attemptWhat, formatDuration, formatWhen, mergeLines, originText } from './format.ts';
+import { useLiveReload } from './live.ts';
 
 type Props = { onUnauthorized: () => void };
 
@@ -25,12 +26,13 @@ const Stat = ({ label, value }: { label: string; value: ReactNode }) => (
 /** Atividade do site: buscas recentes (sem IP), conexões abertas e quem está no limite. */
 export function ActivityPanel({ onUnauthorized }: Props) {
   const [a, setA] = useState<ActivityInfo | null>(null);
-  useEffect(() => {
-    const load = () => adminApi<ActivityInfo>('/activity').then(setA).catch((err) => err instanceof AdminError && err.status === 401 && onUnauthorized());
-    void load();
-    const t = setInterval(load, 10_000);
-    return () => clearInterval(t);
-  }, [onUnauthorized]);
+  const load = useCallback(
+    () => void adminApi<ActivityInfo>('/activity').then(setA).catch((err) => err instanceof AdminError && err.status === 401 && onUnauthorized()),
+    [onUnauthorized],
+  );
+  useEffect(load, [load]);
+  // Cada busca no site na hora; telas abertas e limites (que não avisam) a cada 10 s.
+  useLiveReload(['activity'], load, { fallbackMs: 10_000 });
   if (!a) return <p className="text-zinc-500">Carregando…</p>;
   const limits = a.atLimit.force + a.atLimit.text + a.atLimit.sheets + a.atLimit.share;
   return (
@@ -141,6 +143,7 @@ export function BackupsPanel({ onUnauthorized }: Props) {
   );
   const load = useCallback(() => adminApi<BackupFile[]>('/backups').then(setList).catch(fail), [fail]);
   useEffect(() => void load(), [load]);
+  useLiveReload(['admin'], () => void load(), { fallbackMs: 60_000 }); // backup novo (manual, de outra aba ou antes de um merge)
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);

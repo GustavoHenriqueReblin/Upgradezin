@@ -78,7 +78,7 @@ export function listProducts(db: Db, f: AdminProductFilter = {}): AdminProductPa
  * vistos nos últimos SHEET_SCOPE_DAYS dias, quantos têm ficha, quantos a página não tinha e quantos
  * faltam; e as fichas lidas na última hora (rotina, montagem e admin), pelo registro de consultas.
  */
-export function sheetStoreStatus(db: Db, stores: { id: StoreId; name: string; canRead: boolean }[], now = Date.now()): SheetStoreStatus[] {
+export function sheetStoreStatus(db: Db, stores: { id: StoreId; name: string; canRead: boolean }[], now = Date.now()): Omit<SheetStoreStatus, 'nextAt'>[] {
   const since = new Date(now - SHEET_SCOPE_DAYS * 86_400_000).toISOString();
   const counts = db
     .prepare(

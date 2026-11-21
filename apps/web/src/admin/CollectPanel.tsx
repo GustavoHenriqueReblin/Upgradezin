@@ -3,6 +3,7 @@ import { CATEGORY_DEFS, ENABLED_CATEGORIES, MODE_SECONDS_MAX, MODE_SECONDS_MIN, 
 import { Pause, Play, Search } from 'lucide-react';
 import { AdminError, adminApi } from './api.ts';
 import { attemptLabel, countdown, formatWhen, MODE_LABEL, modeHint, pauseLabel, queueLabel, routineStores, shortDuration } from './format.ts';
+import { useLiveReload } from './live.ts';
 import { Switch } from './Switch.tsx';
 
 const PAUSES = [
@@ -32,12 +33,10 @@ export function CollectPanel({ onUnauthorized }: { onUnauthorized: () => void })
     adminApi<RoutineInfo>('/routine').then(setRoutine).catch(fail);
   }, [fail]);
 
-  useEffect(() => {
-    load();
-    // A cada 5 s: a fila e a contagem mudam a cada consulta.
-    const t = setInterval(load, 5_000);
-    return () => clearInterval(t);
-  }, [load]);
+  useEffect(load, [load]);
+  // Na hora: loja começou ou terminou uma página, consulta terminou, pausa, mudança pelo admin.
+  // A cada 10 s, por garantia (a fila de espera e o fim da pausa pelo tempo não avisam).
+  useLiveReload(['attempt', 'store', 'admin'], load, { delayMs: 300, fallbackMs: 10_000 });
 
   const act = async (fn: () => Promise<unknown>, ok: string) => {
     try {

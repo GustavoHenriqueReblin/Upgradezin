@@ -1,29 +1,24 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { ServerStatus } from '@upgradezin/shared';
 import { AdminError, adminApi } from './api.ts';
 import { formatDuration, formatWhen } from './format.ts';
+import { useLiveReload } from './live.ts';
 
 /** Status do servidor, atualizado a cada 10 s. */
 export function StatusPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [s, setS] = useState<ServerStatus | null>(null);
   const [error, setError] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      adminApi<ServerStatus>('/status')
-        .then((r) => alive && (setS(r), setError(false)))
-        .catch((err) => {
-          if (err instanceof AdminError && err.status === 401) onUnauthorized();
-          else if (alive) setError(true);
-        });
-    void load();
-    const t = setInterval(load, 10_000);
-    return () => {
-      alive = false;
-      clearInterval(t);
-    };
-  }, [onUnauthorized]);
+  const load = useCallback(
+    () =>
+      void adminApi<ServerStatus>('/status')
+        .then((r) => (setS(r), setError(false)))
+        .catch((err) => (err instanceof AdminError && err.status === 401 ? onUnauthorized() : setError(true))),
+    [onUnauthorized],
+  );
+  useEffect(load, [load]);
+  // Consultas, lojas lendo e mudanças do admin na hora; memória e tempo no ar a cada 10 s.
+  useLiveReload(['attempt', 'store', 'admin'], load, { fallbackMs: 10_000 });
 
   if (!s) return <p className="text-zinc-500">{error ? 'Não foi possível ler o status.' : 'Carregando…'}</p>;
   const memPct = Math.round((1 - s.memory.systemFreeMb / s.memory.systemTotalMb) * 100);

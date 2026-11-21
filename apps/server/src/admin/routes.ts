@@ -1,5 +1,6 @@
-import { CATEGORIES, STORES, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type AdminTerm, type CategoryId, type CoverageRow, type PerfGap, type AdminProductFilter, type AdminProductPage, type SheetRoutineStatus, SHEETS_PER_HOUR_MAX, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, ROUTINE_MODES, MODE_SECONDS_MIN, MODE_SECONDS_MAX } from '@upgradezin/shared';
+import { CATEGORIES, STORES, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type AdminTerm, type CategoryId, type CoverageRow, type PerfGap, type AdminProductFilter, type AdminProductPage, type SheetRoutineStatus, type SheetRoutineInput, SHEET_SECONDS_MIN, SHEET_SECONDS_MAX, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, ROUTINE_MODES, MODE_SECONDS_MIN, MODE_SECONDS_MAX } from '@upgradezin/shared';
 import { createReadStream } from 'node:fs';
+import { emitChange, onChange } from '../changes.ts';
 import type { ActivityInfo } from '@upgradezin/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -29,6 +30,7 @@ export interface AdminDeps {
   products: {
     list: (f: AdminProductFilter) => AdminProductPage;
     sheets: () => SheetRoutineStatus;
+    setSheets: (s: SheetRoutineInput) => SheetRoutineStatus;
     readSheet: (store: StoreId, sku: string) => CollectNowResult;
   };
   data: {
@@ -79,8 +81,13 @@ const Collect = z.object({ category: z.enum(CATEGORIES), term: z.string().max(10
 const Routine = z.object({ enabled: z.boolean(), stores: z.array(z.enum(STORES)).max(STORES.length),
   modes: z.partialRecord(z.enum(STORES), z.enum(ROUTINE_MODES)).optional(),
   live: z.partialRecord(z.enum(STORES), z.boolean()).optional(),
-  sheets: z.object({ enabled: z.boolean().optional(), perHour: z.number().int().min(1).max(SHEETS_PER_HOUR_MAX).optional() }).optional(),
   seconds: z.partialRecord(z.enum(ROUTINE_MODES), z.number().int().min(MODE_SECONDS_MIN).max(MODE_SECONDS_MAX)).optional(),
+});
+
+const SheetRoutine = z.object({
+  enabled: z.boolean().optional(),
+  stores: z.array(z.enum(STORES)).max(STORES.length).optional(),
+  seconds: z.number().int().min(SHEET_SECONDS_MIN).max(SHEET_SECONDS_MAX).optional(),
 });
 
 const storeParam = (id: string): StoreId | null => ((STORES as readonly string[]).includes(id) ? (id as StoreId) : null);
@@ -116,6 +123,11 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
         if (req.method !== 'GET' && req.method !== 'HEAD' && req.headers['x-admin'] !== '1') return reply.code(403).send({ error: 'forbidden' });
         const path = req.url.split('?')[0]!;
         if (!PUBLIC.has(path) && !deps.auth.check(tokenOf(req))) return reply.code(401).send({ error: 'unauthorized' });
+      });
+      // Mudou algo pelo admin (fora login/logout): avisa as telas abertas (canal ao vivo).
+      admin.addHook('onResponse', async (req, reply) => {
+        const path = req.url.split('?')[0]!;
+        if (req.method !== 'GET' && req.method !== 'HEAD' && reply.statusCode < 400 && !PUBLIC.has(path) && !path.endsWith('/logout')) emitChange('admin');
       });
 
       admin.post('/login', async (req, reply) => {
@@ -186,6 +198,12 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
         return q.success ? deps.products.list(q.data) : reply.code(400).send({ error: 'invalid' });
       });
       admin.get('/sheets', async () => deps.products.sheets());
+      admin.put('/sheets', async (req, reply) => {
+        const b = SheetRoutine.safeParse(req.body);
+        if (!b.success) return reply.code(400).send({ error: 'invalid' });
+        req.log.info(b.data, 'admin: rotina de fichas');
+        return deps.products.setSheets(b.data);
+      });
       admin.post<{ Params: { id: string; sku: string } }>('/products/:id/:sku/sheet', async (req, reply) => {
         const id = storeParam(req.params.id);
         if (!id || !/^[\w-]{1,64}$/.test(req.params.sku)) return reply.code(404).send({ error: 'not-found' });
@@ -233,12 +251,16 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
         reply.hijack();
         const res = reply.raw;
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
+        res.write(': conectado\n\n'); // manda os cabeçalhos já (sem consulta recente, nada sairia até o 1º aviso)
         const send = (a: StoreAttempt) => !res.writableEnded && res.write(`event: attempt\ndata: ${JSON.stringify(a)}\n\n`);
         for (const a of deps.live.recent().reverse()) send(a);
         const off = deps.live.subscribe(send);
+        // Avisos de mudança (loja lendo, pausa, admin, busca no site): as telas recarregam o que mostram.
+        const offChange = onChange((kind) => !res.writableEnded && res.write(`event: change\ndata: ${JSON.stringify({ kind })}\n\n`));
         const ping = setInterval(() => !res.writableEnded && res.write(': ping\n\n'), 25_000);
         res.on('close', () => {
           off();
+          offChange();
           clearInterval(ping);
         });
       });

@@ -3,17 +3,20 @@ import { ChevronDown, ChevronLeft, ChevronRight, ExternalLink, FileSearch, Searc
 import {
   CATEGORY_DEFS,
   ENABLED_CATEGORIES,
-  SHEETS_PER_HOUR_MAX,
+  SHEET_SECONDS_MAX,
+  SHEET_SECONDS_MIN,
   type AdminProduct,
   type AdminProductPage,
   type AdminStoreConfig,
-  type RoutineInfo,
+  type SheetRoutineInput,
   type SheetRoutineStatus,
   type SheetStatus,
+  type StoreId,
 } from '@upgradezin/shared';
 import { AdminError, adminApi } from './api.ts';
 import { Box, Table, Td } from './DataPanels.tsx';
-import { formatWhen, SHEET_STATUS_LABEL, sheetSummary, specPairs } from './format.ts';
+import { countdown, formatWhen, SHEET_STATUS_LABEL, SHEET_UNITS, sheetEta, sheetSummary, shortDuration, specPairs, splitSeconds } from './format.ts';
+import { useLiveReload } from './live.ts';
 import { Switch } from './Switch.tsx';
 
 type Props = { onUnauthorized: () => void };
@@ -39,7 +42,7 @@ const NO_FILTERS: Filters = { store: '', category: '', sheet: '', inStock: '', q
 
 /**
  * Produtos: o catálogo (cada anúncio guardado), paginado, com as specs do título, o índice de
- * desempenho e a ficha técnica; a rotina de fichas (ligar, ritmo, andamento por loja) e "Ler ficha".
+ * desempenho e a ficha técnica; a rotina de fichas (ligar, lojas, intervalo, andamento por loja) e "Ler ficha".
  */
 export function ProductsPanel({ onUnauthorized }: Props) {
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -62,38 +65,42 @@ export function ProductsPanel({ onUnauthorized }: Props) {
 
 type Shared = { fail: (err: unknown) => void; onMessage: (m: { ok: boolean; text: string }) => void };
 
-/** Rotina de fichas: ligada, fichas por hora e o andamento por loja. Atualiza a cada 15 s. */
+/** Rotina de fichas (separada da coleta): chave, lojas, intervalo e o andamento por loja. Atualiza ao vivo. */
 function SheetRoutine({ fail, onMessage }: Shared) {
   const [status, setStatus] = useState<SheetRoutineStatus | null>(null);
-  const [routine, setRoutine] = useState<RoutineInfo | null>(null);
-  const [perHour, setPerHour] = useState('');
+  const [value, setValue] = useState('');
+  const [unit, setUnit] = useState(60);
 
   const load = useCallback(() => {
     adminApi<SheetRoutineStatus>('/sheets').then(setStatus).catch(fail);
-    adminApi<RoutineInfo>('/routine').then(setRoutine).catch(fail);
   }, [fail]);
+  useEffect(load, [load]);
+  // Ficha lida (consulta), loja lendo ou em pausa, mudança pelo admin: na hora.
+  useLiveReload(['attempt', 'store', 'admin'], load, { fallbackMs: 15_000 });
+  const saved = status?.seconds;
   useEffect(() => {
-    load();
-    const t = setInterval(load, 15_000);
-    return () => clearInterval(t);
-  }, [load]);
-  useEffect(() => {
-    if (status) setPerHour((p) => p || String(status.perHour));
-  }, [status]);
+    if (saved === undefined) return;
+    const p = splitSeconds(saved);
+    setValue(String(p.value));
+    setUnit(p.unit);
+  }, [saved]);
 
-  if (!status || !routine) return <Box title="Rotina de fichas técnicas"><p className="text-sm text-zinc-500">Carregando…</p></Box>;
+  if (!status) return <Box title="Rotina de fichas técnicas"><p className="text-sm text-zinc-500">Carregando…</p></Box>;
 
-  const save = (sheets: { enabled?: boolean; perHour?: number }, ok: string) =>
-    adminApi<RoutineInfo>('/routine', { method: 'PUT', body: { enabled: routine.enabled, stores: routine.stores, sheets } })
+  const save = (input: SheetRoutineInput, ok: string) =>
+    adminApi<SheetRoutineStatus>('/sheets', { method: 'PUT', body: input })
       .then((r) => {
-        setRoutine(r);
+        setStatus(r);
         onMessage({ ok: true, text: ok });
-        load();
       })
       .catch(fail);
-  const n = Number(perHour);
-  const validRate = Number.isInteger(n) && n >= 1 && n <= SHEETS_PER_HOUR_MAX;
-  const running = routine.enabled && routine.stores.length > 0;
+  const seconds = Number(value) * unit;
+  const validGap = Number.isInteger(seconds) && seconds >= SHEET_SECONDS_MIN && seconds <= SHEET_SECONDS_MAX;
+  const toggleStore = (id: StoreId, on: boolean) => {
+    const stores = on ? [...status.stores, id] : status.stores.filter((s) => s !== id);
+    const name = status.progress.find((p) => p.store === id)?.name ?? id;
+    void save({ stores }, `${name}: ${on ? 'entrou na' : 'saiu da'} rotina de fichas.`);
+  };
 
   return (
     <Box
@@ -105,35 +112,48 @@ function SheetRoutine({ fail, onMessage }: Shared) {
       }
     >
       <p className="text-sm text-zinc-500">
-        Lê, aos poucos e uma vez por produto, as medidas físicas da página de cada placa de vídeo, gabinete e cooler (para a checagem da montagem). Roda dentro das vezes da rotina de coleta (aba Coleta), em
-        rodízio com a varredura e os termos: só nas lojas ligadas lá e no modo normal, sem passar do limite de páginas por hora da loja.
+        Lê, aos poucos e uma vez por produto, as medidas físicas da página de cada placa de vídeo, gabinete e cooler (para a checagem da montagem). Separada da rotina de coleta: chave, lojas e intervalo
+        próprios. Divide com a coleta só o que é da loja: a fila (a busca do site passa na frente), a pausa por bloqueio e o limite de páginas por hora.
       </p>
-      {!running && status.enabled && <p className="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">A rotina de coleta está desligada: as fichas só andam com ela ligada (aba Coleta).</p>}
+      {status.enabled && !status.stores.length && <p className="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">Nenhuma loja marcada: as fichas não andam.</p>}
 
       <form
         className="mt-3 flex flex-wrap items-end gap-2 text-sm"
         onSubmit={(e) => {
           e.preventDefault();
-          if (validRate && n !== status.perHour) void save({ perHour: n }, `Fichas: até ${n} por loja por hora.`);
+          if (validGap && seconds !== status.seconds) void save({ seconds }, `Fichas: 1 por loja a cada ${shortDuration(seconds)}.`);
         }}
       >
         <label className="flex flex-col gap-1 text-xs text-zinc-500">
-          Fichas por loja por hora (1 a {SHEETS_PER_HOUR_MAX})
-          <input type="number" min={1} max={SHEETS_PER_HOUR_MAX} value={perHour} onChange={(e) => setPerHour(e.target.value)} className={`${select} w-24`} />
+          Uma ficha por loja a cada
+          <span className="flex gap-1">
+            <input type="number" min={1} value={value} onChange={(e) => setValue(e.target.value)} className={`${select} w-24`} />
+            <select value={unit} onChange={(e) => setUnit(Number(e.target.value))} className={select} aria-label="Unidade do intervalo">
+              {SHEET_UNITS.map((u) => (
+                <option key={u.s} value={u.s}>
+                  {u.label}
+                </option>
+              ))}
+            </select>
+          </span>
         </label>
-        <button type="submit" disabled={!validRate || n === status.perHour} className="rounded-lg bg-accent-500 px-3 py-1.5 text-xs font-medium text-accent-950 disabled:opacity-40">
+        <button type="submit" disabled={!validGap || seconds === status.seconds} className="rounded-lg bg-accent-500 px-3 py-1.5 text-xs font-medium text-accent-950 disabled:opacity-40">
           Salvar
         </button>
+        <span className="pb-1.5 text-xs text-zinc-500">{validGap ? `+ até 20% aleatório (≈ ${Math.round((3600 / seconds / 1.1) * 10) / 10} por loja por hora)` : `De ${SHEET_SECONDS_MIN} s a 24 h.`}</span>
       </form>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        {status.stores.map((s) => {
+        {status.progress.map((s) => {
           const pct = (x: number) => (s.total ? (x / s.total) * 100 : 0);
-          const left = s.missing && status.enabled && s.canRead ? Math.ceil(s.missing / status.perHour) : 0;
+          const marked = status.stores.includes(s.store);
           return (
             <div key={s.store} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-              <p className="flex items-baseline justify-between text-sm font-medium">
-                {s.name}
+              <p className="flex items-center justify-between gap-2 text-sm font-medium">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={marked} disabled={!s.canRead} onChange={(e) => toggleStore(s.store, e.target.checked)} />
+                  {s.name}
+                </label>
                 <span className="text-xs font-normal tabular-nums text-zinc-500">{s.total ? `${Math.round(pct(s.ok + s.empty))}%` : '—'}</span>
               </p>
               <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800" aria-hidden>
@@ -150,7 +170,9 @@ function SheetRoutine({ fail, onMessage }: Shared) {
                   <div className="tabular-nums">
                     {s.lastHour} na última hora{s.lastAt ? ` · última ${formatWhen(s.lastAt)}` : ''}
                   </div>
-                  {left > 0 && <div>No ritmo atual, faltam cerca de {left < 48 ? `${left} h` : `${Math.round(left / 24)} dias`}.</div>}
+                  {s.nextAt && (s.missing > 0 ? <div className="tabular-nums">Próxima: {countdown(s.nextAt)}</div> : <div>Nada a ler agora (confere produtos novos a cada minuto).</div>)}
+                  {s.nextAt && s.missing > 0 && <div>No ritmo atual, faltam {sheetEta(s.missing, status.seconds)}.</div>}
+                  {status.enabled && !marked && <div>Fora da rotina de fichas.</div>}
                 </dl>
               )}
             </div>
@@ -182,6 +204,8 @@ function Catalog({ fail, onMessage }: Shared) {
     adminApi<AdminProductPage>(`/products?${q}`).then(setData).catch(fail);
   }, [filters, fail]);
   useEffect(load, [load]);
+  // Coletas e fichas mudam preço, estoque e ficha da página aberta: recarrega (juntando 2 s de avisos).
+  useLiveReload(['attempt', 'admin'], load, { delayMs: 2_000, fallbackMs: 60_000 });
 
   const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch, page: patch.page ?? 1 }));
   const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
@@ -189,8 +213,7 @@ function Catalog({ fail, onMessage }: Shared) {
   const readSheet = (p: AdminProduct) =>
     adminApi(`/products/${p.store}/${encodeURIComponent(p.sku)}/sheet`, { method: 'POST' })
       .then(() => {
-        onMessage({ ok: true, text: `Ficha de "${p.title.slice(0, 60)}" na fila da loja (na frente da rotina). A lista atualiza em alguns segundos.` });
-        setTimeout(load, 8_000);
+        onMessage({ ok: true, text: `Ficha de "${p.title.slice(0, 60)}" na fila da loja (na frente da rotina). A lista atualiza sozinha quando ela for lida.` });
       })
       .catch(fail);
 

@@ -140,11 +140,15 @@ const Env = z.object({
    */
   ROUTINE_SWEEP_PAGES_PER_HOUR: z.coerce.number().default(20),
   /**
-   * Fichas técnicas (páginas de produto) que a rotina lê por loja por hora, percorrendo o catálogo de
-   * placa de vídeo, gabinete e cooler (saem de ROUTINE_PAGES_PER_HOUR). Cada ficha é lida uma vez.
-   * Valor inicial: depois, vale o que o admin (aba Produtos) guardar.
+   * Rotina de fichas técnicas (separada da coleta): lê, em cada loja, uma página de produto do
+   * catálogo de placa de vídeo, gabinete e cooler a cada SHEET_ROUTINE_SECONDS segundos. Cada ficha
+   * é lida uma vez. Valores iniciais: depois, vale o que o admin (aba Produtos) guardar.
    */
-  ROUTINE_SHEETS_PER_HOUR: z.coerce.number().default(20),
+  SHEET_ROUTINE_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => v === '1' || v === 'true'),
+  SHEET_ROUTINE_SECONDS: z.coerce.number().int().default(180),
   /** Teto de páginas por categoria numa volta (120 itens por página na S1, 36 na S2). */
   ROUTINE_SWEEP_MAX_PAGES: z.coerce.number().default(40),
   /** Intervalo aleatório entre páginas da MESMA loja. */

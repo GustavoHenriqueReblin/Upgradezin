@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { emitChange, onChange } from './changes.ts';
 import { BlockedError, queuedAt, registerBlock, registerSuccess, withStore } from './pace.ts';
 
 /** Pausa por bloqueio. */
@@ -66,5 +67,20 @@ describe('fila da loja com prioridade', () => {
     expect(await cancelled).toBe('cancelada');
     expect(await next).toBe('rodou');
     await first;
+  });
+});
+
+describe('avisos para o admin', () => {
+  it('a loja avisa quando começa e quando termina de ler (o admin mostra "lendo agora" na hora)', async () => {
+    const seen: string[] = [];
+    const off = onChange((k) => seen.push(k));
+    let during: string[] = [];
+    await withStore('s3', new AbortController().signal, async () => {
+      during = [...seen];
+    });
+    off();
+    expect(during).toEqual(['store']);
+    expect(seen).toEqual(['store', 'store']);
+    emitChange('admin'); // sem ninguém ouvindo: nada quebra
   });
 });
