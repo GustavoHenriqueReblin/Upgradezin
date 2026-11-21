@@ -6,7 +6,8 @@ import { attemptCounts, lastAttempt, listAttempts, onAttempt, recordAttempt, typ
 import { attemptOutcome } from '../prices/collect.ts';
 import { isLive, modeDelay, routineInfo, routineNextAt, routineSettings, setRoutineSettings, stopRoutine, tick, useRoutineStorage } from '../prices/routine.ts';
 import { useStoreStorage } from '../stores.ts';
-import { collectNow, storesState } from './actions.ts';
+import { collectNow, readSheetNow, storesState } from './actions.ts';
+import { ensureTerms, idOf, saveCollection } from '../prices/prices.ts';
 
 describe('pausa manual e tirar pausa', () => {
   it('pausa sem bloqueio antes: próximo bloqueio começa em 15 min (não sobe a escada)', () => {
@@ -83,12 +84,12 @@ describe('rotina pelo admin', () => {
   it('o guardado vale no lugar do .env; mudar guarda, limpa lojas inválidas e reinicia', () => {
     const saved: unknown[] = [];
     useRoutineStorage({ enabled: false, stores: ['s2'] }, (s) => saved.push(s));
-    expect(routineSettings()).toEqual({ enabled: false, stores: ['s2'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 } }); // sem modos guardados: o padrão (ROUTINE_SLOW_STORES do .env começa no lento)
+    expect(routineSettings()).toEqual({ enabled: false, stores: ['s2'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 }, sheets: { enabled: true, perHour: 20 } }); // sem modos guardados: o padrão (ROUTINE_SLOW_STORES do .env começa no lento)
     expect(routineInfo()).toMatchObject({ enabled: false, nextTickAt: null, busy: false });
 
     setRoutineSettings({ enabled: true, stores: ['s3', 's1', 'x9' as 's1'] });
-    expect(routineSettings()).toEqual({ enabled: true, stores: ['s1', 's3'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 } }); // ordem das lojas, sem a inválida
-    expect(saved.at(-1)).toEqual({ enabled: true, stores: ['s1', 's3'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 } });
+    expect(routineSettings()).toEqual({ enabled: true, stores: ['s1', 's3'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 }, sheets: { enabled: true, perHour: 20 } }); // ordem das lojas, sem a inválida
+    expect(saved.at(-1)).toEqual({ enabled: true, stores: ['s1', 's3'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 }, sheets: { enabled: true, perHour: 20 } });
     expect(routineInfo().nextTickAt).not.toBeNull(); // ligada: próxima rodada marcada
 
     setRoutineSettings({ enabled: false, stores: ['s1'] });
@@ -121,6 +122,21 @@ describe('rotina pelo admin', () => {
     setRoutineSettings({ enabled: false, stores: [] });
     expect(routineSettings().live.s3).toBe(true); // não enviado: fica como estava
     expect(saved.at(-1)?.seconds.reduced).toBe(45);
+    stopRoutine();
+  });
+
+  it('rotina de fichas: ligar, parar e fichas por hora, guardados; inválido fica como estava', () => {
+    const saved: RoutineSettings[] = [];
+    useRoutineStorage({ enabled: false, stores: [] }, (s) => saved.push(s));
+    expect(routineSettings().sheets).toEqual({ enabled: true, perHour: 20 }); // padrão: ligada, ROUTINE_SHEETS_PER_HOUR
+    setRoutineSettings({ enabled: false, stores: [], sheets: { enabled: false } });
+    expect(routineSettings().sheets).toEqual({ enabled: false, perHour: 20 });
+    setRoutineSettings({ enabled: false, stores: [], sheets: { perHour: 45 } });
+    expect(routineSettings().sheets).toEqual({ enabled: false, perHour: 45 }); // ligar/parar não mexe no ritmo e vice-versa
+    setRoutineSettings({ enabled: false, stores: [], sheets: { perHour: 0 } });
+    setRoutineSettings({ enabled: false, stores: [], sheets: { perHour: 500 } });
+    expect(routineSettings().sheets.perHour).toBe(45);
+    expect(saved.at(-1)?.sheets).toEqual({ enabled: false, perHour: 45 });
     stopRoutine();
   });
 
@@ -164,6 +180,36 @@ describe('coletar agora e painel das lojas', () => {
     expect(collectNow(db, 's1', 'psu', '<x>')).toMatchObject({ ok: false, error: expect.stringContaining('Termo inválido') });
     expect(collectNow(db, 's9' as 's1', 'psu', '750W')).toMatchObject({ ok: false });
     expect(db.prepare('SELECT count(*) AS n FROM search_terms').get()).toEqual({ n: 0 });
+  });
+
+  it('"Ler ficha": recusa produto fora do catálogo, categoria sem ficha física e loja em pausa', () => {
+    const db = openDb(':memory:');
+    useStoreStorage(db);
+    useBackoffStorage([], () => {});
+    const ids = ensureTerms(db, [{ category: 'cpu', term: 'Ryzen 5' }], 'seed');
+    saveCollection(db, {
+      store: 's1',
+      category: 'cpu',
+      termId: idOf(ids, { category: 'cpu', term: 'Ryzen 5' }),
+      offers: [{ store: 's1', storeSku: 'p1', title: 'Ryzen 5 5600', url: 'https://www.s1.example/produto/p1', priceCash: 800, inStock: true, specs: {}, modelKey: 'p1', collectedAt: '' } as never],
+      at: new Date().toISOString(),
+      complete: true,
+    });
+    expect(readSheetNow(db, 's1', 'nao-existe')).toMatchObject({ ok: false, error: expect.stringContaining('não encontrado') });
+    expect(readSheetNow(db, 's1', 'p1')).toMatchObject({ ok: false, error: expect.stringContaining('ficha física') });
+    expect(readSheetNow(db, 's9' as 's1', 'p1')).toMatchObject({ ok: false });
+    pauseStore('s1', 60);
+    const ids2 = ensureTerms(db, [{ category: 'gpu', term: 'RTX' }], 'seed');
+    saveCollection(db, {
+      store: 's1',
+      category: 'gpu',
+      termId: idOf(ids2, { category: 'gpu', term: 'RTX' }),
+      offers: [{ store: 's1', storeSku: 'g1', title: 'RTX 5060', url: 'https://www.s1.example/produto/g1', priceCash: 2000, inStock: true, specs: {}, modelKey: 'g1', collectedAt: '' } as never],
+      at: new Date().toISOString(),
+      complete: true,
+    });
+    expect(readSheetNow(db, 's1', 'g1')).toMatchObject({ ok: false, error: expect.stringContaining('pausa') });
+    clearBackoff('s1');
   });
 
   it('painel: pausa, rotina, últimas consultas e contagem do dia', () => {

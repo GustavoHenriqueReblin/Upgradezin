@@ -1,5 +1,6 @@
 import { cpuPerf, gpuPerf, type AdminTerm, type CategoryId, type CoverageRow, type Offer, type PerfGap, type StoreId, type TimelineBucket } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
+import { SHEET_CATEGORIES, sheetCounts } from '../prices/sheets.ts';
 
 /**
  * Processadores e placas de vídeo vistos nas lojas nos últimos `days` dias que a tabela de desempenho
@@ -51,6 +52,7 @@ export function coverage(db: Db, now = Date.now()): CoverageRow[] {
     ).map((r) => [`${r.store}|${r.category}`, r.last]),
   );
   const okBy = new Map(terms.map((t) => [`${t.store}|${t.category}`, t]));
+  const sheets = sheetCounts(db);
   return listings
     .map((l) => {
       const key = `${l.store}|${l.category}`;
@@ -63,6 +65,8 @@ export function coverage(db: Db, now = Date.now()): CoverageRow[] {
         terms: totals.get(l.category) ?? 0,
         termsOk: okBy.get(key)?.ok ?? 0,
         lastOkAt: lastAny.get(key) ?? null,
+        // Fichas técnicas lidas: só nas categorias com ficha física.
+        sheets: SHEET_CATEGORIES.includes(l.category) ? (sheets.get(key) ?? 0) : null,
       };
     })
     .sort((a, b) => a.store.localeCompare(b.store) || a.category.localeCompare(b.category));

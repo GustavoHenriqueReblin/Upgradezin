@@ -1,6 +1,7 @@
 import { matchesCategory, normalizeBrand, normalizeListing, parseCouponText, type CategoryId, type Offer } from '@upgradezin/shared';
 import { loadPage, saveDebugHtml, type LoadedPage, type PageError } from '../browser.ts';
 import { config } from '../config.ts';
+import { parseHTML } from 'linkedom';
 import { BlockedError, jitter, SearchRedirectError, sleep, takePage } from '../pace.ts';
 import { searchUrl, storeConfig } from '../stores.ts';
 import type { StoreAdapter } from './types.ts';
@@ -149,6 +150,26 @@ function couponFromCategories(cats?: { name?: string }[]): Offer['coupon'] {
   return undefined;
 }
 
+/**
+ * Ficha técnica da página do produto: a tabela de especificações, uma linha (<tr>) por campo, com
+ * o rótulo e o valor em células separadas. Vira um parágrafo por campo com rótulo e valor juntos
+ * ("Dimensões: 228 x 123 x 50 mm"), que é como o leitor da ficha (parseSpecSheet) lê; quebras
+ * dentro do valor ficam ("Frente: 360 mm<br>Superior: 240 mm"). null quando a página não tem.
+ */
+export function s2SheetFromHtml(html: string): string | null {
+  const { document } = parseHTML(html);
+  const table = document.querySelector('th.name-field')?.closest('table');
+  if (!table) return null;
+  const rows = Array.from(table.querySelectorAll('tr'))
+    .map((tr) => {
+      const label = tr.querySelector('th')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+      const value = tr.querySelector('td')?.innerHTML.trim() ?? '';
+      return label || value ? `<p>${label} ${value}</p>` : '';
+    })
+    .filter(Boolean);
+  return rows.length ? rows.join('\n') : null;
+}
+
 /** Espera antes de conferir se a página da busca foi redirecionada por script. */
 const REDIRECT_WAIT_MS = 2000;
 
@@ -220,6 +241,12 @@ export const s2: StoreAdapter = {
       if (mapped.length < items.length * 0.2) break;
     }
     return offers;
+  },
+  /** Ficha técnica pela página do produto (o endereço guardado no anúncio: a loja usa o nome, não o código). */
+  async productSheet({ url }, signal) {
+    if (!url) throw new Error('S2: ficha técnica sem o endereço do produto');
+    takePage('s2');
+    return s2SheetFromHtml((await loadPage('s2', url, { signal })).html);
   },
   /** Página da categoria (aberta direto traz a lista, 36 itens por página, paginada com ?page=N). */
   async sweepPage({ category, url, page, signal }) {

@@ -208,6 +208,10 @@ const MIGRATIONS: (string | Rebuild)[] = [
   `
   ALTER TABLE term_runs ADD COLUMN redirect_path TEXT;
   `,
+  // 10: lista de produtos do admin (paginada, do visto há menos tempo) e cobertura por frescor
+  `
+  CREATE INDEX listings_seen ON listings (last_seen_at, id);
+  `,
 ];
 
 export type Db = DatabaseSync;

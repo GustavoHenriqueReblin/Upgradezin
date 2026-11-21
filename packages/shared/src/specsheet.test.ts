@@ -25,4 +25,11 @@ describe('ficha técnica da página do produto', () => {
     expect(parseSpecSheet('gpu', '<p>Dimensões: 30,5 x 12,6 x 6,1 cm</p><p>Conector: 1x 16 pinos (12V-2x6)</p>').specs).toEqual({ gpuLength: 305, gpu16Pin: true });
     expect(parseSpecSheet('case', '<p>Suporte para placa de vídeo: até 360 mm</p><p>Altura máxima do cooler: 165 mm</p>').specs).toEqual({ caseMaxGpu: 360, caseMaxCooler: 165 });
   });
+  it('cooler com cada medida marcada pela letra: "104 (C) x 126 (L) x 159 (A) mm"', () => {
+    expect(parseSpecSheet('cooler', '<p>Dimensões: 104 (C) x 126 (L) x 159 (A) mm</p>').specs.coolerHeight).toBe(159);
+  });
+  it('radiadores numa lista com barra: "radiador de 120/140/240/280/360 mm"', () => {
+    const html = '<p>Refrigeração líquida:</p><p>Superior: radiador de 120/140/240/280/360 mm (opcional)</p><p>Traseira: radiador de 120 mm</p>';
+    expect(parseSpecSheet('case', html).specs.caseRadiators).toEqual([120, 140, 240, 280, 360]);
+  });
 });

@@ -83,7 +83,9 @@ export function parseSpecSheet(category: CategoryId, html: string): SpecSheet {
       // "Altura: 154 mm" ou "Dimensões (C x L x A): 120 x 79 x 154 mm" (do dissipador, não do fan).
       const explicit = l.match(/\baltura\b[^:]{0,20}:\s*(\d{2,3}(?:[.,]\d+)?)\s*mm/);
       const dims = /dimens/.test(l) && /\(\s*[clp]\s*x\s*[lp]\s*x\s*a\s*\)/.test(l) ? lengthsMm(l.replace(/\([^)]*\)/, '')) : [];
-      const h = explicit ? num(explicit[1]!) : dims.length >= 3 ? dims[2] : undefined;
+      // "Dimensões: 104 (C) x 126 (L) x 159 (A) mm": cada medida marcada pela letra.
+      const marked = /dimens/.test(l) ? l.match(/(\d{2,3}(?:[.,]\d+)?)\s*(?:mm\s*)?\(\s*a\s*\)/) : null;
+      const h = explicit ? num(explicit[1]!) : dims.length >= 3 ? dims[2] : marked ? num(marked[1]!) : undefined;
       if (h && h >= 30 && h <= 200) {
         specs.coolerHeight = Math.round(h);
         break;
@@ -105,7 +107,8 @@ export function parseSpecSheet(category: CategoryId, html: string): SpecSheet {
       // Radiadores: na linha do título da seção e nas linhas de posição logo abaixo ("- Topo: 360 mm, 280 mm").
       if (/refrigeracao\s+liquida|radiador|water\s*cooler/.test(l)) inRadiators = true;
       else if (inRadiators && !/^-?\s*(topo|superior|frontal|frente|traseira|traseiro|lateral|inferior|fundo)\b/.test(l)) inRadiators = false;
-      if (inRadiators) for (const m of l.matchAll(/\b(\d{3})\s*mm/g)) if (RADIATORS.includes(Number(m[1]))) radiators.add(Number(m[1]));
+      // "360 mm" e listas com barra ("radiador de 120/140/240/280/360 mm").
+      if (inRadiators) for (const m of l.matchAll(/\b(\d{3}(?:\s*\/\s*\d{3})*)\s*mm/g)) for (const n of m[1]!.split('/').map(Number)) if (RADIATORS.includes(n)) radiators.add(n);
     }
     if (radiators.size) specs.caseRadiators = [...radiators].sort((a, b) => a - b);
   }

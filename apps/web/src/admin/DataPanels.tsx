@@ -173,7 +173,7 @@ export function CoveragePanel({ onUnauthorized }: Props) {
   const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
   return (
     <Box title="Cobertura por loja e categoria">
-      <Table head={['Loja', 'Categoria', 'Anúncios', 'Vistos em 24 h', 'Vistos em 7 dias', 'Termos coletados', 'Última coleta boa']}>
+      <Table head={['Loja', 'Categoria', 'Anúncios', 'Vistos em 24 h', 'Vistos em 7 dias', 'Termos coletados', 'Fichas lidas', 'Última coleta boa']}>
         {data.map((r) => (
           <tr key={`${r.store}|${r.category}`} className="border-t border-zinc-100 dark:border-zinc-800">
             <Td>{names.get(r.store) ?? r.store}</Td>
@@ -188,11 +188,23 @@ export function CoveragePanel({ onUnauthorized }: Props) {
             <Td className={`tabular-nums ${r.termsOk < r.terms ? 'text-amber-600 dark:text-amber-400' : ''}`}>
               {r.termsOk} de {r.terms}
             </Td>
+            <Td className="tabular-nums">
+              {r.sheets === null ? (
+                <span className="text-zinc-400">—</span>
+              ) : (
+                <>
+                  {r.sheets} <span className="text-zinc-500">({pct(r.sheets, r.listings)}%)</span>
+                </>
+              )}
+            </Td>
             <Td>{r.lastOkAt ? formatWhen(r.lastOkAt) : '—'}</Td>
           </tr>
         ))}
       </Table>
-      <p className="mt-2 text-xs text-zinc-500">Termos coletados em amarelo: a loja ainda não teve coleta boa de todos os termos da categoria (comum enquanto a rotina ainda não deu a volta nos termos).</p>
+      <p className="mt-2 text-xs text-zinc-500">
+        Termos coletados em amarelo: a loja ainda não teve coleta boa de todos os termos da categoria (comum enquanto a rotina ainda não deu a volta nos termos). Fichas lidas: medidas físicas da página do
+        produto (placa de vídeo, gabinete, cooler), lidas uma vez por produto pela rotina, aos poucos.
+      </p>
     </Box>
   );
 }
@@ -330,7 +342,7 @@ export function TermsPanel({ onUnauthorized }: Props) {
   );
 }
 
-function Box({ title, children }: { title: ReactNode; children: ReactNode }) {
+export function Box({ title, children }: { title: ReactNode; children: ReactNode }) {
   return (
     <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <h2 className="mb-3 font-semibold">{title}</h2>
@@ -339,7 +351,7 @@ function Box({ title, children }: { title: ReactNode; children: ReactNode }) {
   );
 }
 
-function Table({ head, children }: { head: string[]; children: ReactNode }) {
+export function Table({ head, children }: { head: string[]; children: ReactNode }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -358,7 +370,7 @@ function Table({ head, children }: { head: string[]; children: ReactNode }) {
   );
 }
 
-const Td = ({ children, className = '' }: { children: ReactNode; className?: string }) => <td className={`py-1.5 pr-3 align-top ${className}`}>{children}</td>;
+export const Td = ({ children, className = '' }: { children: ReactNode; className?: string }) => <td className={`py-1.5 pr-3 align-top ${className}`}>{children}</td>;
 
 const IconBtn = ({ children, ...rest }: { children: ReactNode } & React.ButtonHTMLAttributes<HTMLButtonElement>) => (
   <button type="button" {...rest} className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">

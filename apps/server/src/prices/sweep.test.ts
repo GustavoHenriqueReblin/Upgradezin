@@ -102,12 +102,13 @@ describe('varredura: configuração e adapter da S1', () => {
 });
 
 describe('ficha técnica guardada', () => {
-  it('guarda, devolve enquanto vale e regrava; página sem ficha também fica guardada', async () => {
+  it('guarda e regrava; com dados vale para sempre; página sem ficha também fica guardada', async () => {
     const { getSheet, saveSheet } = await import('./sheets.ts');
     const db = openDb(':memory:');
     saveSheet(db, 's1', '7', { specs: { gpuLength: 300 }, mpn: 'ABC-123' }, '2026-11-20T00:00:00.000Z');
-    expect(getSheet(db, 's1', '7', '2026-11-01T00:00:00.000Z')).toEqual({ specs: { gpuLength: 300 }, mpn: 'ABC-123' });
-    expect(getSheet(db, 's1', '7', '2026-11-21T00:00:00.000Z')).toBeUndefined(); // velha demais
+    expect(getSheet(db, 's1', '7', '2026-11-21T00:00:00.000Z')).toEqual({ specs: { gpuLength: 300 }, mpn: 'ABC-123' }); // a ficha do produto não muda
+    saveSheet(db, 's1', '7', { specs: { gpuLength: 305 } });
+    expect(getSheet(db, 's1', '7', '2026-11-21T00:00:00.000Z')?.specs.gpuLength).toBe(305);
     saveSheet(db, 's1', '8', { specs: {} });
     expect(getSheet(db, 's1', '8', '2026-01-01T00:00:00.000Z')).toEqual({ specs: {} });
   });
