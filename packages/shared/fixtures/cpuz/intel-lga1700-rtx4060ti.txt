@@ -1,0 +1,141 @@
+CPU-Z TXT Report
+-------------------------------------------------------------------------
+
+Binaries
+-------------------------------------------------------------------------
+
+CPU-Z version		2.17.0.x64
+
+Processors Information
+-------------------------------------------------------------------------
+
+Socket 1		ID = 0
+	Number of cores		10 (max 10)
+	Number of threads		16 (max 16)
+	Manufacturer		GenuineIntel
+	Name		Intel Core i5 13400F
+	Codename		Raptor Lake
+	Specification		13th Gen Intel(R) Core(TM) i5-13400F
+	Package 		Socket 1700 LGA
+	Technology		10 nm
+	TDP Limit		65.0 Watts
+	Core Speed		4389.6 MHz
+
+Chipset
+-------------------------------------------------------------------------
+
+Northbridge		Intel Raptor Lake rev. 02
+Southbridge		Intel B760 rev. 11
+Bus Specification		PCI-Express 4.0 (16.0 GT/s)
+Graphic Interface		PCI-Express 4.0
+PCI-E Link Width		x8 (max 16x)
+PCI-E Link Speed		16.0 GT/s (max 16.0 GT/s)
+Memory Type		DDR5
+Memory Size		32 GBytes
+Channels		4 x 32-bit
+Memory Frequency		2394.3 MHz (1:24)
+CAS# latency (CL)		40.0
+
+Memory SPD
+-------------------------------------------------------------------------
+
+DIMM #		1
+	SMBus address		0x50
+	Memory type		DDR5
+	Module format		UDIMM
+	Module Manufacturer(ID)		Kingston (7F.98.00.00.00.00.00.00.00.00.00.00.00.00.00.00)
+	Size		16384 MBytes
+	Max bandwidth		DDR5-4800 (2400 MHz)
+	Part number		KF560C36-16
+	Serial number		XXXXXXXX
+	XMP		yes, rev. 3.0
+	EXPO		no
+XMP profile		XMP-6000
+	Specification		DDR5-6000
+	VDD Voltage		1.350 Volts
+	Max CL		36.0
+
+DIMM #		2
+	SMBus address		0x52
+	Memory type		DDR5
+	Module format		UDIMM
+	Module Manufacturer(ID)		Kingston (7F.98.00.00.00.00.00.00.00.00.00.00.00.00.00.00)
+	Size		16384 MBytes
+	Max bandwidth		DDR5-4800 (2400 MHz)
+	Part number		KF560C36-16
+	Serial number		XXXXXXXX
+	XMP		yes, rev. 3.0
+	EXPO		no
+XMP profile		XMP-6000
+	Specification		DDR5-6000
+	VDD Voltage		1.350 Volts
+	Max CL		36.0
+
+DMI
+-------------------------------------------------------------------------
+
+DMI Baseboard		
+	vendor		Micro-Star International Co., Ltd.
+	model		PRO B760M-A WIFI (MS-7D99)
+	revision		1.0
+	serial		XXXXXXXX
+
+DMI Physical Memory Array		
+	location		Motherboard
+	max capacity		192 GB
+	max# of devices		4
+
+Storage
+-------------------------------------------------------------------------
+
+Drive		0/0/-1/-1
+	Name		Exemplo NVMe 500GB
+	Capacity		465.8 GB
+	Type		Fixed, SSD
+	Bus Type		NVMe (17)
+	Volume		c:\, 465.0 GBytes (6.2 percent available)
+
+Drive		1/1/-1/-1
+	Name		Exemplo HDD 2TB
+	Capacity		1.82 TB
+	Type		Fixed
+	Bus Type		SATA (11)
+	Rotation speed		7200 RPM
+	Volume		d:\, 1863.0 GBytes (40.0 percent available)
+
+Drive		2/2/-1/-1
+	Name		Pendrive Exemplo
+	Capacity		28.9 GB
+	Type		Removable
+	Bus Type		USB (7)
+
+Graphics
+-------------------------------------------------------------------------
+
+Number of adapters		1
+
+Display Adapters
+-------------------------------------------------------------------------
+
+Display adapter 0 (primary)		
+	Name		NVIDIA GeForce RTX 4060 Ti
+	Board Manufacturer		Gigabyte
+	Codename		AD106
+	Technology		5 nm
+	Memory type		GDDR6
+	Memory size		8 GB
+	Current Link Width		x8
+	Current Link Speed		16.0 GT/s
+
+Monitor 0		
+	Model		Monitor Exemplo 27 ()
+	Size		27.0 inches
+	Max Resolution		2560 x 1440 @ 60 Hz
+	Vertical Freq. Range		48-165 Hz
+	Video Input		DisplayPort
+
+Software
+-------------------------------------------------------------------------
+
+Windows Version		Microsoft Windows 11  Home (x64) Build 26100
+WHEA errors		0

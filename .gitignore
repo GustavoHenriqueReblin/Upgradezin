@@ -1,0 +1,28 @@
+# deps / build
+node_modules/
+dist/
+.vite/
+coverage/
+
+# env / segredos
+.env
+.env.*
+!.env.example
+
+# dados locais: banco SQLite (preços e montagens compartilhadas) e debug (DEBUG_DUMPS=true)
+data/
+
+# notas pessoais
+prompt-*.md
+*.local.md
+
+# SO / editor
+.DS_Store
+Thumbs.db
+
+# ferramentas e relatórios locais (cloudflared do pnpm share, vitest)
+.tools/
+.vitest/
+
+# scripts e serviços do servidor
+deploy/

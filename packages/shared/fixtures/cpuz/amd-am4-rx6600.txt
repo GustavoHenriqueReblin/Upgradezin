@@ -1,0 +1,389 @@
+CPU-Z TXT Report
+-------------------------------------------------------------------------
+
+Binaries
+-------------------------------------------------------------------------
+
+CPU-Z version			2.17.0.x64
+
+Processors Information
+-------------------------------------------------------------------------
+
+Socket 1			ID = 0
+	Number of cores		8 (max 8)
+	Number of threads	16 (max 16)
+	Secondary bus #		0
+	Number of CCDs		1
+	Manufacturer		AuthenticAMD
+	Name			AMD Ryzen 7 5800X3D
+	Codename		Vermeer
+	Specification		AMD Ryzen 7 5800X3D 8-Core Processor           
+	Package 		Socket AM4 (1331)
+	CPUID			F.1.2
+	Extended CPUID		19.21
+	Core Stepping		VMR-B2
+	Technology		7 nm
+	TDP Limit		105.0 Watts
+	Tjmax			90.0 C
+	Core Speed		3592.6 MHz
+	Multiplier x Bus Speed	36.0 x 99.8 MHz
+	Base frequency (cores)	99.8 MHz
+	Instructions sets	MMX (+), SSE, SSE2, SSE3, SSSE3, SSE4.1, SSE4.2, SSE4A, x86-64, AMD-V, AES, AVX, AVX2, FMA3, SHA
+	Microcode Revision	0xA201213
+	L1 Data cache		8 x 32 KB (8-way, 64-byte line)
+	L1 Instruction cache	8 x 32 KB (8-way, 64-byte line)
+	L2 cache		8 x 512 KB (8-way, 64-byte line)
+	L3 cache		96 MB (16-way, 64-byte line)
+	Max CPUID level		00000010h
+	Max CPUID ext. level	80000023h
+	Max FID			34.0x
+	# of P-States		3
+	P-State			FID 0x888 - VID 0x48 (34.00x - 1.100 V)
+	P-State			FID 0xA8C - VID 0x58 (28.00x - 1.000 V)
+	P-State			FID 0xC84 - VID 0x68 (22.00x - 0.900 V)
+
+BIOS
+-------------------------------------------------------------------------
+
+UEFI				Yes
+
+Chipset
+-------------------------------------------------------------------------
+
+Northbridge			AMD Ryzen SOC rev. 00
+Southbridge			AMD B450 rev. 51
+Bus Specification		PCI-Express 3.0 (8.0 GT/s)
+Graphic Interface		PCI-Express 4.0
+PCI-E Link Width		x16 (max 16x)
+PCI-E Link Speed		16.0 GT/s (max 16.0 GT/s)
+Memory Type			DDR4
+Memory Size			32 GBytes
+Channels			2 x 64-bit
+Memory Frequency		1197.5 MHz (1:12)
+Memory Max Frequency		1600.0 MHz
+CAS# latency (CL)		17.0
+RAS# to CAS# delay (tRCD)	17
+RAS# Precharge (tRP)		17
+Cycle Time (tRAS)		39
+Bank Cycle Time (tRC)		56
+Command Rate (CR)		2T
+Memory Controller Frequency	1197.5 MHz
+
+Memory SPD
+-------------------------------------------------------------------------
+
+DIMM #				1
+	SMBus address		0x52
+	Memory type		DDR4
+	Module format		UDIMM
+	Module Manufacturer(ID)	Kingston (7F.98.00.00.00.00.00.00.00.00.00.00.00.00.00.00)
+	SDRAM Manufacturer (ID)	SK Hynix (AD.00.00.00.00.00.00.00.00.00.00.00.00.00.00.00)
+	Size			16384 MBytes
+	Max bandwidth		DDR4-3200 (1600 MHz)
+	Max JEDEC		DDR4-2400 (1200 MHz)
+	Part number		KF3200C16D4/16GX    
+	Serial number		XXXXXXXX
+	Manufacturing date	(removido)
+	Nominal Voltage		1.20 Volts
+	EPP			no
+	XMP			yes, rev. 2.0
+	AMP			no
+	EXPO			no
+JEDEC timings table		CL-tRCD-tRP-tRAS-tRC @ frequency
+	JEDEC #1		10.0-11-11-24-34 @ 733 MHz
+	JEDEC #2		11.0-11-11-26-37 @ 800 MHz
+	JEDEC #3		12.0-12-12-28-40 @ 866 MHz
+	JEDEC #4		13.0-13-13-30-43 @ 933 MHz
+	JEDEC #5		14.0-15-15-34-48 @ 1033 MHz
+	JEDEC #6		15.0-16-16-36-51 @ 1100 MHz
+	JEDEC #7		16.0-17-17-38-54 @ 1166 MHz
+	JEDEC #8		17.0-17-17-39-55 @ 1200 MHz
+	JEDEC #9		18.0-17-17-39-55 @ 1200 MHz
+XMP profile			XMP-3200
+	Specification		DDR4-3200
+	VDD Voltage		1.350 Volts
+	Min Cycle time		0.625 ns (1600 MHz)
+	Max CL			16.0
+	Min tRP			11.25 ns
+	Min tRCD		11.25 ns
+	Min tRAS		22.50 ns
+	Min tRC			45.75 ns
+	Min tRRD		4.38 ns
+XMP timings table		CL-tRCD-tRP-tRAS-tRC-CR @ frequency (voltage)
+	XMP #1			9.0-11-11-21-42-n.a @ 899 MHz (1.350 Volts)
+	XMP #2			10.0-12-12-23-46-n.a @ 1000 MHz (1.350 Volts)
+	XMP #3			11.0-13-13-25-51-n.a @ 1100 MHz (1.350 Volts)
+	XMP #4			12.0-14-14-27-55-n.a @ 1200 MHz (1.350 Volts)
+	XMP #5			13.0-15-15-30-60-n.a @ 1300 MHz (1.350 Volts)
+	XMP #6			14.0-16-16-32-65-n.a @ 1400 MHz (1.350 Volts)
+	XMP #7			15.0-17-17-34-69-n.a @ 1500 MHz (1.350 Volts)
+	XMP #8			16.0-18-18-36-74-n.a @ 1600 MHz (1.350 Volts)
+	XMP #9			17.0-18-18-36-74-n.a @ 1600 MHz (1.350 Volts)
+	XMP #10			18.0-18-18-36-74-n.a @ 1600 MHz (1.350 Volts)
+XMP profile			XMP-3002
+	Specification		DDR4-3002
+	VDD Voltage		1.350 Volts
+	Min Cycle time		0.666 ns (1501 MHz)
+	Max CL			15.0
+	Min tRP			11.32 ns
+	Min tRCD		11.32 ns
+	Min tRAS		23.88 ns
+	Min tRC			45.75 ns
+	Min tRRD		4.66 ns
+XMP timings table		CL-tRCD-tRP-tRAS-tRC-CR @ frequency (voltage)
+	XMP #1			9.0-11-11-22-42-n.a @ 900 MHz (1.350 Volts)
+	XMP #2			10.0-12-12-24-46-n.a @ 1001 MHz (1.350 Volts)
+	XMP #3			11.0-13-13-27-51-n.a @ 1101 MHz (1.350 Volts)
+	XMP #4			12.0-14-14-29-55-n.a @ 1201 MHz (1.350 Volts)
+	XMP #5			13.0-15-15-32-60-n.a @ 1301 MHz (1.350 Volts)
+	XMP #6			14.0-16-16-34-65-n.a @ 1401 MHz (1.350 Volts)
+	XMP #7			15.0-17-17-36-69-n.a @ 1501 MHz (1.350 Volts)
+	XMP #8			16.0-17-17-36-69-n.a @ 1501 MHz (1.350 Volts)
+	XMP #9			17.0-17-17-36-69-n.a @ 1501 MHz (1.350 Volts)
+	XMP #10			18.0-17-17-36-69-n.a @ 1501 MHz (1.350 Volts)
+
+DIMM #				2
+	SMBus address		0x53
+	Memory type		DDR4
+	Module format		UDIMM
+	Module Manufacturer(ID)	Kingston (7F.98.00.00.00.00.00.00.00.00.00.00.00.00.00.00)
+	SDRAM Manufacturer (ID)	SK Hynix (AD.00.00.00.00.00.00.00.00.00.00.00.00.00.00.00)
+	Size			16384 MBytes
+	Max bandwidth		DDR4-3200 (1600 MHz)
+	Max JEDEC		DDR4-2400 (1200 MHz)
+	Part number		KF3200C16D4/16GX    
+	Serial number		XXXXXXXX
+	Manufacturing date	(removido)
+	Nominal Voltage		1.20 Volts
+	EPP			no
+	XMP			yes, rev. 2.0
+	AMP			no
+	EXPO			no
+JEDEC timings table		CL-tRCD-tRP-tRAS-tRC @ frequency
+	JEDEC #1		10.0-11-11-24-34 @ 733 MHz
+	JEDEC #2		11.0-11-11-26-37 @ 800 MHz
+	JEDEC #3		12.0-12-12-28-40 @ 866 MHz
+	JEDEC #4		13.0-13-13-30-43 @ 933 MHz
+	JEDEC #5		14.0-15-15-34-48 @ 1033 MHz
+	JEDEC #6		15.0-16-16-36-51 @ 1100 MHz
+	JEDEC #7		16.0-17-17-38-54 @ 1166 MHz
+	JEDEC #8		17.0-17-17-39-55 @ 1200 MHz
+	JEDEC #9		18.0-17-17-39-55 @ 1200 MHz
+XMP profile			XMP-3200
+	Specification		DDR4-3200
+	VDD Voltage		1.350 Volts
+	Min Cycle time		0.625 ns (1600 MHz)
+	Max CL			16.0
+	Min tRP			11.25 ns
+	Min tRCD		11.25 ns
+	Min tRAS		22.50 ns
+	Min tRC			45.75 ns
+	Min tRRD		4.38 ns
+XMP timings table		CL-tRCD-tRP-tRAS-tRC-CR @ frequency (voltage)
+	XMP #1			9.0-11-11-21-42-n.a @ 899 MHz (1.350 Volts)
+	XMP #2			10.0-12-12-23-46-n.a @ 1000 MHz (1.350 Volts)
+	XMP #3			11.0-13-13-25-51-n.a @ 1100 MHz (1.350 Volts)
+	XMP #4			12.0-14-14-27-55-n.a @ 1200 MHz (1.350 Volts)
+	XMP #5			13.0-15-15-30-60-n.a @ 1300 MHz (1.350 Volts)
+	XMP #6			14.0-16-16-32-65-n.a @ 1400 MHz (1.350 Volts)
+	XMP #7			15.0-17-17-34-69-n.a @ 1500 MHz (1.350 Volts)
+	XMP #8			16.0-18-18-36-74-n.a @ 1600 MHz (1.350 Volts)
+	XMP #9			17.0-18-18-36-74-n.a @ 1600 MHz (1.350 Volts)
+	XMP #10			18.0-18-18-36-74-n.a @ 1600 MHz (1.350 Volts)
+XMP profile			XMP-3002
+	Specification		DDR4-3002
+	VDD Voltage		1.350 Volts
+	Min Cycle time		0.666 ns (1501 MHz)
+	Max CL			15.0
+	Min tRP			11.32 ns
+	Min tRCD		11.32 ns
+	Min tRAS		23.88 ns
+	Min tRC			45.75 ns
+	Min tRRD		4.66 ns
+XMP timings table		CL-tRCD-tRP-tRAS-tRC-CR @ frequency (voltage)
+	XMP #1			9.0-11-11-22-42-n.a @ 900 MHz (1.350 Volts)
+	XMP #2			10.0-12-12-24-46-n.a @ 1001 MHz (1.350 Volts)
+	XMP #3			11.0-13-13-27-51-n.a @ 1101 MHz (1.350 Volts)
+	XMP #4			12.0-14-14-29-55-n.a @ 1201 MHz (1.350 Volts)
+	XMP #5			13.0-15-15-32-60-n.a @ 1301 MHz (1.350 Volts)
+	XMP #6			14.0-16-16-34-65-n.a @ 1401 MHz (1.350 Volts)
+	XMP #7			15.0-17-17-36-69-n.a @ 1501 MHz (1.350 Volts)
+	XMP #8			16.0-17-17-36-69-n.a @ 1501 MHz (1.350 Volts)
+	XMP #9			17.0-17-17-36-69-n.a @ 1501 MHz (1.350 Volts)
+	XMP #10			18.0-17-17-36-69-n.a @ 1501 MHz (1.350 Volts)
+
+DIMM #				1
+SPD registers	
+		00 01 02 03
+
+DIMM #				2
+SPD registers	
+		00 01 02 03
+
+DMI
+-------------------------------------------------------------------------
+
+SMBIOS Version			3.3
+
+DMI BIOS		
+	vendor			American Megatrends International LLC.
+	version			5.17
+	date			(removido)
+	ROM size		16384 KB
+
+DMI Baseboard		
+	vendor			Default string
+	model			B450M-DA
+	revision		Default string
+	serial			XXXXXXXX
+
+DMI Physical Memory Array		
+	location		Motherboard
+	usage			System Memory
+	correction		None
+	max capacity		128 GB
+	max# of devices		4
+
+DMI Memory Device		
+	designation		DIMM 1
+	format			DIMM
+	type			DDR4
+	total width		64 bits
+	data width		64 bits
+	size			16 GB
+	speed			2400 MHz
+	manufacturer		Kingston
+	part number		KF3200C16D4/16GX    
+	serial number		XXXXXXXX
+	voltage			1.200000
+	manufacturer id		0x9801
+	product id		0x0
+
+DMI Memory Device		
+	designation		DIMM 1
+	format			DIMM
+	type			DDR4
+	total width		64 bits
+	data width		64 bits
+	size			16 GB
+	speed			2400 MHz
+	manufacturer		Kingston
+	part number		KF3200C16D4/16GX    
+	serial number		XXXXXXXX
+	voltage			1.200000
+	manufacturer id		0x9801
+	product id		0x0
+
+Storage
+-------------------------------------------------------------------------
+
+Drive	0/0/-1/-1
+	Device Path		(removido)
+	Name			TOSHIBA DT01ACA050
+	Revision		MS1OA750
+	Serial			XXXXXXXX
+	Capacity		465.8 GB
+	Type			Fixed
+	Bus Type		SATA (11)
+	Rotation speed		7200 RPM
+	Features		SMART
+	Controller		Serial ATA Controller - AHCI at bus 2, device 0, function 1
+	Link Speed		PCI-E 4x @ 8.0 GT/s
+	Volume			d:\, 465.8 GBytes (100.0 percent available)
+
+Drive	1/1/-1/-1
+	Device Path		(removido)
+	Name			KINGSTON SA400S37240G
+	Revision		SBFKB1D1
+	Serial			XXXXXXXX
+	Capacity		223.6 GB
+	Type			Fixed, SSD
+	Bus Type		SATA (11)
+	Features		SMART, TRIM
+	Controller		Serial ATA Controller - AHCI at bus 2, device 0, function 1
+	Link Speed		PCI-E 4x @ 8.0 GT/s
+	Volume			c:\, 222.6 GBytes (15.7 percent available)
+
+Drive	2/2/-1/-1
+	Device Path		(removido)
+	Name			KINGSTON SNV3S1000G
+	Revision		P3BR0A27
+	Serial			XXXXXXXX
+	Capacity		931.5 GB
+	Type			Fixed, SSD
+	Bus Type		NVMe (17)
+	Features		SMART
+	Controller		NVM Express (NVMe) Controller at bus 1, device 0, function 0
+	Link Speed		PCI-E 4x @ 8.0 GT/s
+	Volume			e:\, 931.5 GBytes (37.7 percent available)
+
+Graphics
+-------------------------------------------------------------------------
+
+Number of adapters		1
+
+Display Adapters
+-------------------------------------------------------------------------
+
+Display adapter 0 (primary)	
+	ID			0x2170003
+	Name			AMD Radeon RX 6600
+	Board Manufacturer	ASRock Inc.
+	Codename		Navi 23 XL
+	SMU Version		59.50.00
+	PPT Limit		100.0 W
+	Power Limit		132.0 W (default)
+	Cores			1792
+	ROP Units		64
+	Technology		7 nm
+	Memory type		GDDR6
+	Memory vendor		Samsung
+	Memory size		8176 MB
+	Current Link Width	x8
+	Current Link Speed	8.0 GT/s
+	PCI device		bus 12 (0xC), device 0 (0x0), function 0 (0x0)
+		Vendor ID	0x1002 (0x1849)
+		Model ID	0x73FF (0x5217)
+		Revision ID	0xC7
+	PCI device		bus 11 (0xB), device 0 (0x0), function 0 (0x0)
+		Vendor ID	0x1002
+		Model ID	0x1479
+		Revision ID	0x0
+	PCI device		bus 10 (0xA), device 0 (0x0), function 0 (0x0)
+		Vendor ID	0x1002
+		Model ID	0x1478
+		Revision ID	0xC7
+	Root device		bus 0 (0x0), device 3 (0x3), function 1 (0x1)
+	Performance Level	Base
+		Core clock	2689.0 MHz
+		Memory clock	1750.0 MHz
+	Performance Level	Current
+		Core clock	8.0 MHz
+		Memory clock	46.0 MHz
+	Driver version		32.0.21045.16010
+	WDDM Model		3.2
+
+Win32_VideoController		AdapterRAM = 0xFFF00000 (4293918720)
+Win32_VideoController		DriverVersion = 32.0.21045.16010
+Win32_VideoController		DriverDate = (removido)
+
+Monitor 0	
+	Model			Monitor Exemplo ()
+	ID			XXX0000
+	Serial			XXXXXXXX
+	Manufacturing Date	(removido)
+	Size			23.8 inches
+	Max Resolution		1920 x 1080 @ 60 Hz
+	Horizontal Freq. Range	31-180 kHz
+	Vertical Freq. Range	48-144 Hz
+	Max Pixel Clock		360 MHz
+	Gamma Factor		2.2
+	Video Input		HDMI-A
+
+Software
+-------------------------------------------------------------------------
+
+Windows Version			Microsoft Windows 11  Professional (x64) Build 26100.8457
+Windows Installation Date	(removido)
+DirectX Version			12.0
+WHEA errors			7

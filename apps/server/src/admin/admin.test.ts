@@ -1,0 +1,320 @@
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { RoutineInfo } from '@upgradezin/shared';
+import Fastify from 'fastify';
+import { describe, expect, it } from 'vitest';
+import { openDb } from '../db/db.ts';
+import { adminStores, saveStoreConfig, useStoreStorage } from '../stores.ts';
+import { AdminAuth, readCookie, sessionCookie } from './auth.ts';
+import { Backups, MergeUploads } from './backup.ts';
+import { listAttempts, onAttempt } from '../prices/attempts.ts';
+import { attemptTimeline, coverage, deleteTerm, listTerms, prioritizeTerm } from './data.ts';
+import { registerAdmin } from './routes.ts';
+import { baseName, serverStatus } from './status.ts';
+
+describe('status', () => {
+  it('banco: só o nome do arquivo, sem o caminho da máquina', () => {
+    expect(baseName('E:\\Github\\Upgradezin\\data\\upgradezin.db')).toBe('upgradezin.db');
+    expect(baseName('/home/server/Upgradezin/data/upgradezin.db')).toBe('upgradezin.db');
+  });
+});
+
+const OPTS = { user: 'admin', password: 'senha-forte-123', sessionHours: 1 };
+
+describe('AdminAuth', () => {
+  it('só liga com usuário e senha de 10+ caracteres', () => {
+    expect(AdminAuth.isConfigured('admin', 'senha-forte-123')).toBe(true);
+    expect(AdminAuth.isConfigured('admin', 'curta')).toBe(false);
+    expect(AdminAuth.isConfigured('', 'senha-forte-123')).toBe(false);
+    expect(AdminAuth.isConfigured(undefined, undefined)).toBe(false);
+  });
+
+  it('login certo cria sessão que expira; errado não', () => {
+    const auth = new AdminAuth(OPTS);
+    expect(auth.login('admin', 'errada', '1.1.1.1')).toEqual({ ok: false, reason: 'invalid' });
+    expect(auth.login('outro', 'senha-forte-123', '1.1.1.1').ok).toBe(false);
+    const r = auth.login('admin', 'senha-forte-123', '1.1.1.1', 1_000);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(auth.check(r.token, 2_000)).toBe(true);
+    expect(auth.check(r.token, 1_000 + 3_600_000)).toBe(false); // expirou
+    expect(auth.check('inventado')).toBe(false);
+    expect(auth.check(undefined)).toBe(false);
+  });
+
+  it('logout encerra a sessão', () => {
+    const auth = new AdminAuth(OPTS);
+    const r = auth.login('admin', 'senha-forte-123', 'x');
+    if (!r.ok) throw new Error('login');
+    auth.logout(r.token);
+    expect(auth.check(r.token)).toBe(false);
+  });
+
+  it('força bruta: depois de 5 erros por IP, recusa sem conferir (nem a senha certa) até a janela passar', () => {
+    const auth = new AdminAuth({ ...OPTS, maxFails: 5, failWindowMs: 60_000 });
+    for (let i = 0; i < 5; i++) expect(auth.login('admin', `errada${i}`, '9.9.9.9', 1000 + i).ok).toBe(false);
+    const blocked = auth.login('admin', 'senha-forte-123', '9.9.9.9', 2000);
+    expect(blocked).toMatchObject({ ok: false, reason: 'too-many-attempts', retryAt: 61_000 });
+    // Outro IP não é afetado.
+    expect(auth.login('admin', 'senha-forte-123', '8.8.8.8', 2000).ok).toBe(true);
+    // Passada a janela, volta a aceitar.
+    expect(auth.login('admin', 'senha-forte-123', '9.9.9.9', 62_000).ok).toBe(true);
+  });
+});
+
+describe('cookie da sessão', () => {
+  it('HttpOnly, Secure, SameSite=Strict, só em /api/admin', () => {
+    const c = sessionCookie('abc', 3600);
+    for (const part of ['uz_admin=abc', 'Path=/api/admin', 'HttpOnly', 'Secure', 'SameSite=Strict', 'Max-Age=3600']) expect(c).toContain(part);
+  });
+  it('lê o cookie certo no cabeçalho', () => {
+    expect(readCookie('a=1; uz_admin=tok%2Bx; b=2', 'uz_admin')).toBe('tok+x');
+    expect(readCookie('a=1', 'uz_admin')).toBeUndefined();
+    expect(readCookie(undefined, 'uz_admin')).toBeUndefined();
+  });
+});
+
+/** Chamadas feitas às ações do admin (as de verdade são testadas em ops.test.ts). */
+const calls: unknown[][] = [];
+
+function makeApp() {
+  const app = Fastify();
+  const db = openDb(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'uz-routes-'));
+  calls.length = 0;
+  const routine: RoutineInfo = { enabled: false, stores: [], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, busy: false, lastTickAt: null, nextTickAt: null, minutes: { normal: 5, reduced: 5, slow: 10 } };
+  registerAdmin(app, {
+    auth: new AdminAuth(OPTS),
+    status: () => serverStatus(db, { version: '9.9.9', browserOpen: false, activeSessions: 0 }),
+    stores: { list: () => adminStores(db), save: (id, input) => saveStoreConfig(db, id, input) },
+    ops: {
+      storesState: () => [],
+      unpause: (id) => (calls.push(['unpause', id]), true),
+      pause: (id, minutes) => void calls.push(['pause', id, minutes]),
+      collect: (id, category, term) => (calls.push(['collect', id, category, term]), term === 'pausada' ? { ok: false, error: 'Loja em pausa.' } : { ok: true, startsAt: '2026-11-20T21:00:00.000Z' }),
+      routine: () => routine,
+      setRoutine: (s) => (calls.push(['routine', s]), { ...routine, ...s, modes: { ...routine.modes, ...s.modes } }),
+    },
+    data: {
+      coverage: () => coverage(db),
+      terms: (f) => listTerms(db, f),
+      deleteTerm: (id) => deleteTerm(db, id),
+      prioritizeTerm: (id) => prioritizeTerm(db, id),
+      attempts: (f) => listAttempts(db, f),
+      timeline: (hours) => attemptTimeline(db, hours),
+    },
+    activity: () => ({ recent: [], people: 0, searchesOpen: 0, watchesOpen: 0, atLimit: { force: 0, text: 0, sheets: 0, share: 0 } }),
+    live: { recent: () => listAttempts(db, { limit: 50 }), subscribe: onAttempt },
+    db: () => db,
+    backups: new Backups(join(dir, 'backups')),
+    merges: new MergeUploads(join(dir, 'tmp')),
+  });
+  useStoreStorage(db);
+  return app;
+}
+
+const login = (app: ReturnType<typeof makeApp>, password = 'senha-forte-123', headers: Record<string, string> = { 'x-admin': '1' }) =>
+  app.inject({ method: 'POST', url: '/api/admin/login', headers, payload: { user: 'admin', password } });
+
+const cookieOf = (res: { headers: Record<string, unknown> }) => String(res.headers['set-cookie']).split(';')[0]!;
+
+describe('rotas /api/admin', () => {
+  it('sem sessão: 401; com sessão: responde, sem cache', async () => {
+    const app = makeApp();
+    expect((await app.inject('/api/admin/me')).statusCode).toBe(401);
+    const res = await login(app);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ user: 'admin' });
+    const me = await app.inject({ url: '/api/admin/me', headers: { cookie: cookieOf(res) } });
+    expect(me.statusCode).toBe(200);
+    expect(me.json()).toEqual({ user: 'admin' });
+    expect(me.headers['cache-control']).toBe('no-store');
+  });
+
+  it('senha errada: 401; muitas: 429 com quando volta', async () => {
+    const app = makeApp();
+    expect((await login(app, 'errada')).statusCode).toBe(401);
+    for (let i = 0; i < 4; i++) await login(app, 'errada');
+    const r = await login(app);
+    expect(r.statusCode).toBe(429);
+    expect(r.json()).toHaveProperty('retryAt');
+  });
+
+  it('sem o cabeçalho X-Admin, nada que muda algo passa (nem o login)', async () => {
+    const app = makeApp();
+    expect((await login(app, 'senha-forte-123', {})).statusCode).toBe(403);
+    const ok = await login(app);
+    expect((await app.inject({ method: 'POST', url: '/api/admin/logout', headers: { cookie: cookieOf(ok) } })).statusCode).toBe(403);
+  });
+
+  it('logout encerra a sessão e apaga o cookie', async () => {
+    const app = makeApp();
+    const cookie = cookieOf(await login(app));
+    const out = await app.inject({ method: 'POST', url: '/api/admin/logout', headers: { cookie, 'x-admin': '1' } });
+    expect(out.statusCode).toBe(200);
+    expect(String(out.headers['set-cookie'])).toContain('Max-Age=0');
+    expect((await app.inject({ url: '/api/admin/me', headers: { cookie } })).statusCode).toBe(401);
+  });
+
+  it('status: versão, banco, memória, Chrome', async () => {
+    const app = makeApp();
+    const cookie = cookieOf(await login(app));
+    const s = (await app.inject({ url: '/api/admin/status', headers: { cookie } })).json();
+    expect(s).toMatchObject({ version: '9.9.9', browserOpen: false, activeSessions: 0, db: { file: ':memory:', migration: 9 } });
+    expect(s.uptimeS).toBeGreaterThanOrEqual(0);
+    expect(s.memory.rssMb).toBeGreaterThan(0);
+  });
+});
+
+describe('rotas /api/admin/stores', () => {
+  const body = {
+    enabled: true,
+    name: 'Loja Editada',
+    url: 'https://www.editada.example',
+    search: '/busca/{slug}',
+    categories: { psu: 'hardware/fontes' },
+    sweep: { psu: '/hardware/fontes' },
+    colors: '#123456',
+  };
+
+  it('lista as três lojas, com a configuração copiada do .env', async () => {
+    const app = makeApp();
+    const cookie = cookieOf(await login(app));
+    const list = (await app.inject({ url: '/api/admin/stores', headers: { cookie } })).json();
+    expect(list.map((s: { id: string }) => s.id)).toEqual(['s1', 's2', 's3']);
+    expect(list[0]).toMatchObject({ configured: true, enabled: true, name: 'Loja S1', url: 'https://www.s1.example' });
+  });
+
+  it('salva e devolve a loja; erro de validação volta com as mensagens', async () => {
+    const app = makeApp();
+    const cookie = cookieOf(await login(app));
+    const put = (id: string, payload: unknown, headers: Record<string, string> = { cookie, 'x-admin': '1' }) =>
+      app.inject({ method: 'PUT', url: `/api/admin/stores/${id}`, headers, payload: payload as object });
+    const ok = await put('s1', body);
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toMatchObject({ id: 's1', name: 'Loja Editada', colors: ['#123456'] });
+
+    const bad = await put('s1', { ...body, url: 'http://x.example', search: '/busca' });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().errors).toHaveLength(2);
+
+    expect((await put('s1', { ...body, categories: { inventada: 'x' } })).statusCode).toBe(400);
+    expect((await put('s9', body)).statusCode).toBe(404);
+    expect((await put('s1', body, { cookie })).statusCode).toBe(403); // sem X-Admin
+    expect((await put('s1', body, { 'x-admin': '1' })).statusCode).toBe(401); // sem sessão
+  });
+});
+
+describe('rotas das ações (pausa, coletar agora, rotina)', () => {
+  const setup = async () => {
+    const app = makeApp();
+    const cookie = cookieOf(await login(app));
+    const post = (url: string, payload?: object) => app.inject({ method: 'POST', url, headers: { cookie, 'x-admin': '1' }, ...(payload ? { payload } : {}) });
+    return { app, cookie, post };
+  };
+
+  it('tirar pausa e pausar (5 min a 7 dias)', async () => {
+    const { post } = await setup();
+    expect((await post('/api/admin/stores/s2/unpause')).json()).toEqual({ ok: true, hadPause: true });
+    expect((await post('/api/admin/stores/s2/pause', { minutes: 60 })).statusCode).toBe(200);
+    expect((await post('/api/admin/stores/s2/pause', { minutes: 1 })).statusCode).toBe(400);
+    expect((await post('/api/admin/stores/s2/pause', { minutes: 99_999 })).statusCode).toBe(400);
+    expect((await post('/api/admin/stores/s9/unpause')).statusCode).toBe(404);
+    expect(calls).toEqual([['unpause', 's2'], ['pause', 's2', 60]]);
+  });
+
+  it('coletar agora: aceito com o horário; recusado (409) com o motivo', async () => {
+    const { post } = await setup();
+    const ok = await post('/api/admin/stores/s1/collect', { category: 'gpu', term: 'RTX 3050' });
+    expect(ok.json()).toEqual({ ok: true, startsAt: '2026-11-20T21:00:00.000Z' });
+    const no = await post('/api/admin/stores/s1/collect', { category: 'gpu', term: 'pausada' });
+    expect(no.statusCode).toBe(409);
+    expect(no.json().errors).toEqual(['Loja em pausa.']);
+    expect((await post('/api/admin/stores/s1/collect', { category: 'inventada', term: 'x' })).statusCode).toBe(400);
+  });
+
+  it('rotina: lê e muda', async () => {
+    const { app, cookie } = await setup();
+    expect((await app.inject({ url: '/api/admin/routine', headers: { cookie } })).json()).toMatchObject({ enabled: false });
+    const put = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s1', 's3'] } });
+    expect(put.json()).toMatchObject({ enabled: true, stores: ['s1', 's3'] });
+    const bad = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s9'] } });
+    expect(bad.statusCode).toBe(400);
+    const mode = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s2'], modes: { s2: 'reduced' } } });
+    expect(mode.json()).toMatchObject({ modes: { s1: 'normal', s2: 'reduced', s3: 'slow' } });
+    const badMode = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s2'], modes: { s2: 'turbo' } } });
+    expect(badMode.statusCode).toBe(400);
+  });
+
+  it('painel das lojas responde com sessão', async () => {
+    const { app, cookie } = await setup();
+    expect((await app.inject({ url: '/api/admin/stores/state', headers: { cookie } })).json()).toEqual([]);
+    expect((await app.inject({ url: '/api/admin/stores/state' })).statusCode).toBe(401);
+  });
+});
+
+describe('rotas de dados (cobertura, termos, consultas)', () => {
+  it('respondem com sessão e validam os filtros', async () => {
+    const app = makeApp();
+    const cookie = cookieOf(await login(app));
+    const get = (url: string) => app.inject({ url, headers: { cookie } });
+    expect((await get('/api/admin/coverage')).json()).toEqual([]);
+    expect((await get('/api/admin/terms?category=gpu')).json()).toEqual([]);
+    expect((await get('/api/admin/terms?category=inventada')).statusCode).toBe(400);
+    expect((await get('/api/admin/attempts?store=s2&status=blocked&limit=10')).json()).toEqual([]);
+    expect((await get('/api/admin/attempts?limit=9999')).statusCode).toBe(400);
+    expect((await get('/api/admin/attempts/timeline?hours=48')).json()).toEqual([]);
+    expect((await get('/api/admin/attempts/timeline?hours=0')).statusCode).toBe(400);
+    const del = await app.inject({ method: 'DELETE', url: '/api/admin/terms/999', headers: { cookie, 'x-admin': '1' } });
+    expect(del.statusCode).toBe(404);
+    expect((await app.inject({ method: 'DELETE', url: '/api/admin/terms/abc', headers: { cookie, 'x-admin': '1' } })).statusCode).toBe(404);
+  });
+});
+
+describe('rotas de backup, merge e atividade', () => {
+  it('backup: cria, lista, baixa e apaga; nome inválido 404', async () => {
+    const app = makeApp();
+    const cookie = cookieOf(await login(app));
+    const h = { cookie, 'x-admin': '1' };
+    const b = (await app.inject({ method: 'POST', url: '/api/admin/backups', headers: h })).json();
+    expect(b.name).toMatch(/^manual-.*\.db\.gz$/);
+    expect((await app.inject({ url: '/api/admin/backups', headers: { cookie } })).json().map((x: { name: string }) => x.name)).toEqual([b.name]);
+    const dl = await app.inject({ url: `/api/admin/backups/${b.name}`, headers: { cookie } });
+    expect(dl.statusCode).toBe(200);
+    expect(dl.headers['content-disposition']).toContain(b.name);
+    expect(dl.rawPayload[0]).toBe(0x1f); // gzip
+    expect((await app.inject({ url: '/api/admin/backups/..%2Fapp.db', headers: { cookie } })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'DELETE', url: `/api/admin/backups/${b.name}`, headers: h })).statusCode).toBe(200);
+    expect((await app.inject({ url: '/api/admin/backups', headers: { cookie } })).json()).toEqual([]);
+  });
+
+  it('merge: arquivo que não é banco é recusado; banco válido mostra a prévia e aplica com backup antes', async () => {
+    const app = makeApp();
+    const cookie = cookieOf(await login(app));
+    const h = { cookie, 'x-admin': '1', 'content-type': 'application/octet-stream' };
+    const bad = await app.inject({ method: 'POST', url: '/api/admin/merge', headers: h, payload: Buffer.from('oi') });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().errors[0]).toContain('SQLite');
+
+    const src = join(mkdtempSync(join(tmpdir(), 'uz-src-')), 'local.db');
+    const sdb = openDb(src);
+    sdb.prepare("INSERT INTO search_terms (category, term, origin, created_at) VALUES ('gpu', 'Zotac RTX 3050', 'text', '2026-11-20')").run();
+    sdb.close();
+    const up = await app.inject({ method: 'POST', url: '/api/admin/merge', headers: h, payload: readFileSync(src) });
+    expect(up.statusCode).toBe(200);
+    const { id, report } = up.json();
+    expect(report).toMatchObject({ newTerms: 1, newListings: 0 });
+    const applied = await app.inject({ method: 'POST', url: `/api/admin/merge/${id}/apply`, headers: { cookie, 'x-admin': '1' } });
+    expect(applied.statusCode).toBe(200);
+    expect(applied.json()).toMatchObject({ backup: expect.stringMatching(/^pre-merge-/), report: { newTerms: 1 } });
+    // Já aplicado: o envio não existe mais.
+    expect((await app.inject({ method: 'POST', url: `/api/admin/merge/${id}/apply`, headers: { cookie, 'x-admin': '1' } })).statusCode).toBe(404);
+  });
+
+  it('atividade responde com sessão', async () => {
+    const app = makeApp();
+    const cookie = cookieOf(await login(app));
+    expect((await app.inject({ url: '/api/admin/activity', headers: { cookie } })).json()).toMatchObject({ searchesOpen: 0, atLimit: { force: 0 } });
+  });
+});

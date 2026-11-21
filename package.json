@@ -1,0 +1,25 @@
+{
+  "name": "upgradezin",
+  "version": "0.2.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "packageManager": "pnpm@11.0.9",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,magenta \"pnpm --filter @upgradezin/server dev\" \"pnpm --filter @upgradezin/web dev\"",
+    "build": "pnpm --filter @upgradezin/web build",
+    "start": "pnpm --filter @upgradezin/server start",
+    "serve": "pnpm build && pnpm start",
+    "scan": "pnpm --filter @upgradezin/server scan",
+    "share": "node scripts/share.mjs",
+    "test": "vitest run",
+    "typecheck": "pnpm -r typecheck",
+    "release": "node scripts/release.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.7",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.1"
+  }
+}
