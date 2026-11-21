@@ -4,7 +4,8 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { z } from 'zod';
 import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, pickUpgrades, STORES, type CategoryId, type Offer, type SpecSheet, type StoreId } from '@upgradezin/shared';
-import { collectNow, stopAdminJobs, storesState } from './admin/actions.ts';
+import { collectNow, readSheetNow, stopAdminJobs, storesState } from './admin/actions.ts';
+import { listProducts, sheetStoreStatus } from './admin/products.ts';
 import { AdminAuth, MIN_PASSWORD } from './admin/auth.ts';
 import { ActivityLog } from './admin/activity.ts';
 import { Backups, MergeUploads } from './admin/backup.ts';
@@ -21,11 +22,11 @@ import { closeDb, getDb } from './db/instance.ts';
 import { activeSessions, canReadSheet, sheetOf } from './prices/collect.ts';
 import { listingBrands, listingsHistory, recentOffers } from './prices/prices.ts';
 import { getSheet } from './prices/sheets.ts';
-import { routineInfo, setRoutineSettings, startRoutine, stopRoutine, useRoutineStorage } from './prices/routine.ts';
+import { routineInfo, routineSettings, setRoutineSettings, startRoutine, stopRoutine, useRoutineStorage } from './prices/routine.ts';
 import { runSearch, stopBackgroundSearches, storedList } from './search.ts';
 import { onCollected } from './prices/events.ts';
 import { clientIp, forceLimiter, registerSecurity, searchStreams, shareLimiter, sheetLimiter, textLimiter, watchStreams } from './security.ts';
-import { ACTIVE_STORES, adminStores, publicStores, saveStoreConfig, useStoreStorage } from './stores.ts';
+import { ACTIVE_STORES, adminStores, publicStores, saveStoreConfig, storeConfig, useStoreStorage } from './stores.ts';
 
 /** Versão do app (package.json da raiz; ver CHANGELOG.md). */
 const VERSION: string = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')).version;
@@ -100,6 +101,17 @@ if (AdminAuth.isConfigured(config.ADMIN_USER, config.ADMIN_PASSWORD)) {
       collect: (id, category, term) => collectNow(getDb(), id, category, term),
       routine: routineInfo,
       setRoutine: (s) => (setRoutineSettings(s), routineInfo()),
+    },
+    products: {
+      list: (f) => listProducts(getDb(), f),
+      sheets: () => ({
+        ...routineSettings().sheets,
+        stores: sheetStoreStatus(
+          getDb(),
+          ACTIVE_STORES.map((id) => ({ id, name: storeConfig(id).name, canRead: canReadSheet(id) })),
+        ),
+      }),
+      readSheet: (store, sku) => readSheetNow(getDb(), store, sku),
     },
     data: {
       coverage: () => coverage(getDb()),

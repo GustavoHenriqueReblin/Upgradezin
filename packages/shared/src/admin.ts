@@ -1,4 +1,5 @@
-import type { BlockReason, CategoryId, StoreId } from './types.ts';
+import type { SpecSheet } from './specsheet.ts';
+import type { BlockReason, CategoryId, Specs, StoreId } from './types.ts';
 
 /** Tipos das respostas do admin (/api/admin), usados pelo servidor e pela tela /admin. */
 
@@ -96,7 +97,12 @@ export interface RoutineSettings {
   live: Record<StoreId, boolean>;
   /** Segundos entre uma coleta da rotina e a próxima, em cada modo. */
   seconds: Record<RoutineMode, number>;
+  /** Fichas técnicas do catálogo: ligada e quantas por loja por hora (dentro das vezes da rotina). */
+  sheets: { enabled: boolean; perHour: number };
 }
+
+/** Limites das fichas por hora no admin. */
+export const SHEETS_PER_HOUR_MAX = 60;
 
 /** O que o admin manda para mudar a rotina (o que falta fica como está). */
 export interface RoutineInput {
@@ -105,6 +111,7 @@ export interface RoutineInput {
   modes?: Partial<Record<StoreId, RoutineMode>>;
   live?: Partial<Record<StoreId, boolean>>;
   seconds?: Partial<Record<RoutineMode, number>>;
+  sheets?: Partial<{ enabled: boolean; perHour: number }>;
 }
 
 /** Estado da rotina no admin. */
@@ -163,6 +170,8 @@ export interface CoverageRow {
   terms: number;
   termsOk: number;
   lastOkAt: string | null;
+  /** Anúncios com ficha técnica lida (placa de vídeo, gabinete, cooler); null nas outras categorias. */
+  sheets: number | null;
 }
 
 /**
@@ -177,6 +186,73 @@ export interface PerfGap {
   /** Um título de exemplo e a loja. */
   example: string;
   store: StoreId;
+}
+
+/**
+ * Ficha técnica de um produto do catálogo: lida (com medidas ou part number), vazia (a página não
+ * tinha ficha), ainda não lida, ou a categoria não tem ficha física (só placa de vídeo, gabinete e cooler têm).
+ */
+export type SheetStatus = 'ok' | 'empty' | 'missing' | 'na';
+
+/** Um produto do catálogo (anúncio de uma loja) para a aba Produtos do admin. */
+export interface AdminProduct {
+  store: StoreId;
+  sku: string;
+  category: CategoryId;
+  title: string;
+  url: string;
+  /** À vista com cupom, da última coleta. */
+  price: number;
+  inStock: boolean;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  /** Specs lidas do título. */
+  specs: Specs;
+  /** Índice de desempenho em jogos (processador e placa de vídeo), quando a tabela conhece o modelo. */
+  perf?: number;
+  sheetStatus: SheetStatus;
+  sheet?: SpecSheet;
+  sheetAt?: string;
+}
+
+export interface AdminProductPage {
+  items: AdminProduct[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** Filtros da lista de produtos. */
+export interface AdminProductFilter {
+  store?: StoreId;
+  category?: CategoryId;
+  sheet?: SheetStatus;
+  inStock?: boolean;
+  q?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+/** Andamento das fichas numa loja (produtos de placa de vídeo, gabinete e cooler vistos nos últimos 14 dias). */
+export interface SheetStoreStatus {
+  store: StoreId;
+  name: string;
+  /** A loja sabe ler a ficha da página do produto. */
+  canRead: boolean;
+  total: number;
+  ok: number;
+  empty: number;
+  missing: number;
+  /** Fichas lidas na última hora (rotina, montagem e admin) e a última. */
+  lastHour: number;
+  lastAt: string | null;
+}
+
+/** Rotina de fichas: configuração e andamento por loja. */
+export interface SheetRoutineStatus {
+  enabled: boolean;
+  perHour: number;
+  stores: SheetStoreStatus[];
 }
 
 /** Um termo da rotina, com a última coleta em cada loja. */

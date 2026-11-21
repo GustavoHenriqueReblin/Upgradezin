@@ -30,7 +30,10 @@ export interface StoreAdapter {
   search(ctx: SearchContext): Promise<Offer[]>;
   /** Uma página da categoria inteira (varredura da rotina). Só nas lojas que suportam. */
   sweepPage?(ctx: SweepContext): Promise<{ offers: Offer[]; totalPages: number }>;
-  /** HTML da ficha técnica da página de um produto (null: a página não tem). Só nas lojas que suportam. */
-  productSheet?(sku: string, signal: AbortSignal): Promise<string | null>;
+  /**
+   * HTML da ficha técnica da página de um produto (null: a página não tem). `url` é o endereço do
+   * anúncio guardado no banco (a S2 monta a página pelo nome do produto, não pelo código).
+   */
+  productSheet?(product: { sku: string; url?: string }, signal: AbortSignal): Promise<string | null>;
 }
 

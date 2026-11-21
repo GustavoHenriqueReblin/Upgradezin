@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Offer } from '@upgradezin/shared';
-import { grabJson, mapS2Item, parseS2Rsc, rscFromHtml, s2Redirect } from './s2.ts';
+import { parseSpecSheet, type Offer } from '@upgradezin/shared';
+import { grabJson, mapS2Item, parseS2Rsc, rscFromHtml, s2Redirect, s2SheetFromHtml } from './s2.ts';
 import { COLLECTED_AT, fixture } from './fixtures.ts';
 
 const parse = (file: string) => parseS2Rsc(rscFromHtml(fixture(file)));
@@ -95,5 +95,19 @@ describe('S2: placa-mãe', () => {
 
   it('cupom também em placa-mãe', () => {
     expect(offers.find((o) => o.storeSku === '21748')!.coupon).toEqual({ code: 'PROMO10OFF', percent: 10 });
+  });
+});
+
+describe('S2: ficha técnica da página do produto', () => {
+  it('tabela de especificações: rótulo e valor juntos na mesma linha, lida pelo parseSpecSheet', () => {
+    expect(parseSpecSheet('gpu', s2SheetFromHtml(fixture('s2-product-gpu.html'))!)).toEqual({ specs: { gpuLength: 228, gpu16Pin: false }, mpn: 'DUAL-RTX5060-8G-NAC' });
+    expect(parseSpecSheet('case', s2SheetFromHtml(fixture('s2-product-case.html'))!)).toEqual({
+      specs: { caseMaxCooler: 165, caseMaxGpu: 360, caseRadiators: [240, 360] },
+      mpn: 'AG-STRIKER-A411-WH',
+    });
+  });
+
+  it('página sem a tabela: sem ficha', () => {
+    expect(s2SheetFromHtml('<html><body><p>Produto</p></body></html>')).toBeNull();
   });
 });

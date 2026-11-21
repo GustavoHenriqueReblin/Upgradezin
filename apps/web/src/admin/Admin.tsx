@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Activity, Database, Gauge, History, ListTree, LogOut, Lock, PieChart, Radio, Store, Users } from 'lucide-react';
+import { Activity, Database, Gauge, History, ListTree, LogOut, Lock, Package, PieChart, Radio, Store, Users } from 'lucide-react';
 import { AdminError, adminApi } from './api.ts';
 import { loginError } from './format.ts';
 import { CollectPanel } from './CollectPanel.tsx';
 import { AttemptsPanel, CoveragePanel, PerfGapsPanel, TermsPanel } from './DataPanels.tsx';
 import { ActivityPanel, BackupsPanel, LivePanel } from './OpsPanels.tsx';
+import { ProductsPanel } from './ProductsPanel.tsx';
 import { StatusPanel } from './StatusPanel.tsx';
 import { StoresPanel } from './StoresPanel.tsx';
 
@@ -16,6 +17,7 @@ const TABS = [
   { id: 'collect', label: 'Coleta', icon: Gauge },
   { id: 'attempts', label: 'Consultas', icon: History },
   { id: 'coverage', label: 'Cobertura', icon: PieChart },
+  { id: 'products', label: 'Produtos', icon: Package },
   { id: 'terms', label: 'Termos', icon: ListTree },
   { id: 'live', label: 'Ao vivo', icon: Radio },
   { id: 'activity', label: 'Atividade', icon: Users },
@@ -99,6 +101,7 @@ export function Admin() {
             <PerfGapsPanel onUnauthorized={toLogin} />
           </div>
         )}
+        {session.state === 'in' && tab === 'products' && <ProductsPanel onUnauthorized={toLogin} />}
         {session.state === 'in' && tab === 'terms' && <TermsPanel onUnauthorized={toLogin} />}
         {session.state === 'in' && tab === 'live' && <LivePanel onUnauthorized={toLogin} />}
         {session.state === 'in' && tab === 'activity' && <ActivityPanel onUnauthorized={toLogin} />}

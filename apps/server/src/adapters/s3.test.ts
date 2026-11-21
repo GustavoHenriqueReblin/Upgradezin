@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Offer } from '@upgradezin/shared';
-import { mapS3Card, parseS3Cards } from './s3.ts';
+import { parseSpecSheet, type Offer } from '@upgradezin/shared';
+import { mapS3Card, parseS3Cards, s3SheetFromHtml } from './s3.ts';
 import { COLLECTED_AT, fixture } from './fixtures.ts';
 
 /** A mesma leitura do adapter: os cards a partir do HTML da página. */
@@ -75,5 +75,25 @@ describe('S3: produto aberto', () => {
     const open = mapS3Card({ ...card, title: `${card.title} - OPEN BOX` }, COLLECTED_AT, 'motherboard')!;
     expect(asNew.openbox).toBe(false);
     expect(open.openbox).toBe(true);
+  });
+});
+
+describe('S3: ficha técnica da página do produto', () => {
+  it('bloco "Especificações Técnicas": rótulo em negrito e valor na linha de baixo viram uma linha só', () => {
+    expect(parseSpecSheet('gpu', s3SheetFromHtml(fixture('s3-product-gpu.html'))!).specs).toEqual({ gpuLength: 249, gpu16Pin: false });
+    expect(parseSpecSheet('case', s3SheetFromHtml(fixture('s3-product-case.html'))!)).toEqual({
+      specs: { caseMaxGpu: 395, caseRadiators: [120, 140, 240, 280, 360] },
+      mpn: 'V1-BK-V1',
+    });
+    expect(parseSpecSheet('cooler', s3SheetFromHtml(fixture('s3-product-cooler.html'))!)).toEqual({ specs: { coolerHeight: 159 }, mpn: 'ACFRE00125A' });
+  });
+
+  it('dois-pontos dentro do rótulo não ficam duplicados', () => {
+    const html = '<div id="esptec"><p><strong>Liberação de GPU:&nbsp;&nbsp;</strong><br>até 395 mm</p><p><strong>Modelo</strong><b>:</b><br>V1-BK</p></div>';
+    expect(s3SheetFromHtml(html)).toBe('<p><strong>Liberação de GPU:</strong> até 395 mm</p><p><strong>Modelo</strong>: V1-BK</p>');
+  });
+
+  it('página sem o bloco: sem ficha', () => {
+    expect(s3SheetFromHtml('<html><body><div id="esptec"> </div></body></html>')).toBeNull();
   });
 });

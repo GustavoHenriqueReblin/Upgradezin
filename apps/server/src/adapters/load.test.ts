@@ -60,8 +60,22 @@ describe('todas as lojas pelo mesmo caminho (loadPage)', () => {
   it('S1: ficha técnica pela página do produto', async () => {
     const page = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { product: { technicalInformation: { text: '<p>ficha</p>' } } } } })}</script>`;
     const calls = fakeChrome(() => ({ html: page }));
-    expect(await s1.productSheet!('123', signal())).toBe('<p>ficha</p>');
+    expect(await s1.productSheet!({ sku: '123' }, signal())).toBe('<p>ficha</p>');
     expect(calls[0]!.url).toBe('https://www.s1.example/produto/123');
+  });
+
+  it('S2: ficha técnica pelo endereço do anúncio (a loja usa o nome do produto, não o código)', async () => {
+    const calls = fakeChrome(() => ({ html: fixture('s2-product-gpu.html') }));
+    const url = 'https://www.s2.example/placa-de-video-teste-8gb';
+    expect(await s2.productSheet!({ sku: '63306', url }, signal())).toContain('228 x 123 x 50 mm');
+    expect(calls[0]!.url).toBe(url);
+    await expect(s2.productSheet!({ sku: '63306' }, signal())).rejects.toThrow(/endereço/);
+  });
+
+  it('S3: ficha técnica pela página /produto/<código>', async () => {
+    const calls = fakeChrome(() => ({ html: fixture('s3-product-gpu.html') }));
+    expect(await s3.productSheet!({ sku: '35120' }, signal())).toContain('249');
+    expect(calls[0]!.url).toBe('https://www.s3.example/produto/35120');
   });
 
   it('S2: busca lê o payload do HTML e pede releitura se a página trocar sozinha', async () => {

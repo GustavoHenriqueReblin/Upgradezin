@@ -218,7 +218,7 @@ export const s1: StoreAdapter = {
     return offers;
   },
   /** Ficha técnica da página do produto (product.technicalInformation.text no __NEXT_DATA__). */
-  async productSheet(sku, signal) {
+  async productSheet({ sku }, signal) {
     takePage('s1');
     return s1SheetFromHtml((await loadPage('s1', productUrl(sku), { signal })).html);
   },

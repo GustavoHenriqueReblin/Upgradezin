@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countdown, modeHint, queueLabel, matchesNever, neverCollectedIn, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground } from './format.ts';
+import { sheetSummary, specPairs, countdown, modeHint, queueLabel, matchesNever, neverCollectedIn, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground } from './format.ts';
 
 describe('formatação do admin', () => {
   it('duração', () => {
@@ -99,5 +99,21 @@ describe('rotina: contagem e modos', () => {
     expect(modeHint('reduced', s)).toBe('rotina: 1 termo a cada 20 s');
     expect(modeHint('slow', s)).toBe('rotina: 1 termo a cada 1 min');
     expect(modeHint('slow', { ...s, slow: 90 })).toContain('1 min 30 s');
+  });
+});
+
+describe('ficha técnica e specs na aba Produtos', () => {
+  it('resumo do que a ficha trouxe', () => {
+    expect(sheetSummary({ specs: { gpuLength: 228, gpu16Pin: false }, mpn: 'DUAL-RTX5060' })).toBe('placa 228 mm · sem 12V-2x6 · part number DUAL-RTX5060');
+    expect(sheetSummary({ specs: { caseMaxGpu: 360, caseMaxCooler: 165, caseRadiators: [240, 360] } })).toBe('placa até 360 mm · cooler até 165 mm · radiadores 240/360 mm');
+    expect(sheetSummary({ specs: {} })).toBe('sem medidas');
+    expect(sheetSummary(undefined)).toBe('');
+  });
+  it('specs do título como campo e valor, sem os vazios', () => {
+    expect(specPairs({ socket: 'AM5', igpu: true, coolerSockets: ['AM4', 'AM5'], ramModules: undefined, coolerBrands: [] })).toEqual([
+      ['socket', 'AM5'],
+      ['igpu', 'sim'],
+      ['coolerSockets', 'AM4, AM5'],
+    ]);
   });
 });

@@ -17,7 +17,7 @@ describe('cobertura', () => {
     saveCollection(db, { store: 's2', category: 'gpu', termId: idOf(ids, T[0]!), offers: [offer('1'), offer('2')], at: '2026-11-20T19:00:00.000Z', complete: true });
     saveCollection(db, { store: 's2', category: 'gpu', termId: idOf(ids, T[1]!), offers: [offer('3')], at: '2026-11-10T19:00:00.000Z', complete: true });
     expect(coverage(db, now)).toEqual([
-      { store: 's2', category: 'gpu', listings: 3, seen24h: 2, seen7d: 2, terms: 2, termsOk: 2, lastOkAt: '2026-11-20T19:00:00.000Z' },
+      { store: 's2', category: 'gpu', listings: 3, seen24h: 2, seen7d: 2, terms: 2, termsOk: 2, lastOkAt: '2026-11-20T19:00:00.000Z', sheets: 0 },
     ]);
   });
 });

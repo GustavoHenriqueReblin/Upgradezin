@@ -1,10 +1,11 @@
-import { allSearchTerms, ENABLED_CATEGORIES, MODE_SECONDS_MAX, MODE_SECONDS_MIN, ROUTINE_MODES, STORES, type CategoryId, type RoutineInfo, type RoutineInput, type RoutineMode, type RoutineSettings, type StoreId } from '@upgradezin/shared';
+import { allSearchTerms, ENABLED_CATEGORIES, MODE_SECONDS_MAX, MODE_SECONDS_MIN, ROUTINE_MODES, SHEETS_PER_HOUR_MAX, STORES, type CategoryId, type RoutineInfo, type RoutineInput, type RoutineMode, type RoutineSettings, type StoreId } from '@upgradezin/shared';
 import { config } from '../config.ts';
 import { getDb } from '../db/instance.ts';
 import { backoffInfo, BlockedError, PageLimitError, pageLimitUntil, pagesUsed, registerSuccess, SearchRedirectError } from '../pace.ts';
 import { ACTIVE_STORES, storeConfig } from '../stores.ts';
-import { canSweep, collectSweepPage, collectTerm, withBrowserSession } from './collect.ts';
+import { canReadSheet, canSweep, collectSweepPage, collectTerm, sheetOf, withBrowserSession } from './collect.ts';
 import { dueTerms, ensureTerms } from './prices.ts';
+import { nextSheets, SHEET_SCOPE_DAYS } from './sheets.ts';
 import { nextSweep } from './sweep.ts';
 
 /**
@@ -16,7 +17,8 @@ import { nextSweep } from './sweep.ts';
  * Cada loja tem seu modo (admin) e sua própria agenda: os segundos do modo (editáveis no admin;
  * padrão ROUTINE_NORMAL_GAP_S / _REDUCED_ / _SLOW_), + até 20% aleatório, depois de cada coisa
  * que a rotina faz: uma página da varredura (só no normal, loja com varredura, se estiver na hora
- * e houver orçamento; alternando com os termos) ou um termo, com as categorias espalhadas (dueTerms).
+ * e houver orçamento), um termo, com as categorias espalhadas (dueTerms), ou uma ficha técnica do
+ * catálogo (placa de vídeo, gabinete, cooler) ainda não lida, em rodízio (turn).
  * O modo é só da rotina. A busca do site é outra chave por loja (`live`): ligada, vai na hora.
  */
 
@@ -47,6 +49,8 @@ const DEFAULT_SECONDS: Record<RoutineMode, number> = {
 
 const validSeconds = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= MODE_SECONDS_MIN && n <= MODE_SECONDS_MAX;
 
+const validPerHour = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= SHEETS_PER_HOUR_MAX;
+
 /** Junta o enviado com o que já valia (`base`); o que falta ou é inválido fica como estava (ou o padrão). */
 const sanitize = (s: RoutineInput, base?: RoutineSettings): RoutineSettings => ({
   enabled: !!s.enabled,
@@ -69,6 +73,10 @@ const sanitize = (s: RoutineInput, base?: RoutineSettings): RoutineSettings => (
       return [m, validSeconds(v) ? v : (base?.seconds[m] ?? DEFAULT_SECONDS[m])];
     }),
   ) as RoutineSettings['seconds'],
+  sheets: {
+    enabled: typeof s.sheets?.enabled === 'boolean' ? s.sheets.enabled : (base?.sheets.enabled ?? true),
+    perHour: validPerHour(s.sheets?.perHour) ? s.sheets!.perHour! : (base?.sheets.perHour ?? Math.min(config.ROUTINE_SHEETS_PER_HOUR, SHEETS_PER_HOUR_MAX)),
+  },
 });
 
 /** Ligada, lojas, modos, busca ao vivo e segundos: do .env até o admin mudar; depois, o que está guardado no banco. */
@@ -87,6 +95,7 @@ export const routineSettings = (): RoutineSettings => ({
   modes: { ...settings.modes },
   live: { ...settings.live },
   seconds: { ...settings.seconds },
+  sheets: { ...settings.sheets },
 });
 
 /** A loja é consultada na hora quando alguém pesquisa no site (admin, "Busca ao vivo"). */
@@ -94,7 +103,7 @@ export const isLive = (store: StoreId): boolean => settings.live[store] ?? true;
 
 /**
  * Muda a rotina pelo admin e guarda. Ligar, desligar ou mudar as lojas reinicia na hora (desligar
- * interrompe as coletas em andamento); modo, segundos e busca ao vivo valem sem reiniciar (o
+ * interrompe as coletas em andamento); modo, segundos, busca ao vivo e fichas valem sem reiniciar (o
  * intervalo novo conta a partir da próxima coleta de cada loja).
  */
 export function setRoutineSettings(next: RoutineInput): RoutineSettings {
@@ -135,6 +144,7 @@ export function startRoutine(): void {
 
 export function stopRoutine(): void {
   clearInterval(timer);
+  lastJob.clear(); // ao religar, o rodízio recomeça pela varredura
   timer = undefined;
   nextAt.clear();
   ac.abort();
@@ -170,8 +180,44 @@ export const modeDelay = (gapS: number, rand = Math.random()) => Math.round(gapS
 export const sweepCategories = (store: StoreId): CategoryId[] =>
   canSweep(store) ? ENABLED_CATEGORIES.filter((c) => storeConfig(store).sweep[c]) : [];
 
-/** A última vez da loja foi uma página da varredura (a próxima vai para um termo). */
-const sweptLast = new Map<StoreId, boolean>();
+/**
+ * O que a rotina faz em cada vez, em rodízio: uma página da varredura, um termo, uma ficha técnica.
+ * Começa pelo seguinte ao da vez anterior e pula o que não tem nada a fazer (ou está sem orçamento
+ * na hora). Assim cada um fica com no máximo um terço das vezes quando há de tudo, e os termos
+ * nunca ficam parados atrás da varredura ou das fichas.
+ */
+type Job = 'sweep' | 'term' | 'sheet';
+const JOBS: Job[] = ['sweep', 'term', 'sheet'];
+const lastJob = new Map<StoreId, Job>();
+
+/** Fichas lidas pela rotina por loja na última hora (orçamento próprio: as fichas por hora do admin). */
+const sheetLog = new Map<StoreId, number[]>();
+const sheetsLastHour = (store: StoreId) => {
+  const log = (sheetLog.get(store) ?? []).filter((t) => Date.now() - t < 3_600_000);
+  sheetLog.set(store, log);
+  return log.length;
+};
+
+/**
+ * Uma ficha técnica do catálogo (placa de vídeo, gabinete, cooler) que ainda não foi lida, se a
+ * loja sabe ler e sobra orçamento na hora. Devolve se foi à loja.
+ */
+async function sheetOne(store: StoreId, signal: AbortSignal): Promise<boolean> {
+  if (!settings.sheets.enabled || !canReadSheet(store) || sheetsLastHour(store) >= settings.sheets.perHour) return false;
+  const now = Date.now();
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const [next] = nextSheets(getDb(), store, iso(now - SHEET_SCOPE_DAYS * 86_400_000), iso(now - config.SHEET_MAX_AGE_DAYS * 86_400_000));
+  if (!next) return false;
+  sheetLog.get(store)!.push(now);
+  try {
+    const sheet = await sheetOf(store, next.sku, next.category, signal, { origin: 'routine' });
+    registerSuccess(store);
+    console.info(`[ficha ${store}] ${next.category} ${next.sku}: ${sheet && (Object.keys(sheet.specs).length || sheet.mpn) ? 'lida' : 'página sem ficha'}`);
+  } catch (err) {
+    if (!signal.aborted && !(err instanceof BlockedError) && !(err instanceof PageLimitError)) console.error(`[ficha ${store}] ${next.category} ${next.sku}:`, err);
+  }
+  return true;
+}
 
 /** Páginas de varredura por loja na última hora (orçamento próprio, dentro do da rotina). */
 const sweepLog = new Map<StoreId, number[]>();
@@ -201,25 +247,8 @@ async function sweepOne(store: StoreId, signal: AbortSignal): Promise<boolean> {
   return true;
 }
 
-/**
- * A vez de uma loja: uma coisa só (uma página da varredura ou um termo) e marca a próxima vez
- * para o intervalo do modo depois que ela terminar.
- */
-async function turn(store: StoreId, signal: AbortSignal): Promise<void> {
-  const gap = modeDelay(settings.seconds[settings.modes[store]]);
-  if (backoffInfo(store) || pageLimitUntil(store) || !hasBudget(store)) {
-    nextAt.set(store, Date.now() + IDLE_MS);
-    return;
-  }
-  // Varredura só no modo normal (no reduzido e no lento, cada vez vai para um termo) e alternando
-  // com os termos: depois de uma página da varredura, a vez seguinte é de um termo (se houver).
-  const sweep = settings.modes[store] === 'normal' && sweptLast.get(store) !== true;
-  if (sweep && (await sweepOne(store, signal))) {
-    sweptLast.set(store, true);
-    nextAt.set(store, Date.now() + gap);
-    return;
-  }
-  sweptLast.set(store, false);
+/** Um termo devido da loja (o mais atrasado, com as categorias espalhadas). Devolve se foi à loja. */
+async function termOne(store: StoreId, signal: AbortSignal): Promise<boolean> {
   const now = Date.now();
   const iso = (ms: number) => new Date(ms).toISOString();
   const due = dueTerms(
@@ -230,13 +259,34 @@ async function turn(store: StoreId, signal: AbortSignal): Promise<void> {
     1,
     iso(now - config.ROUTINE_TEXT_DAYS * 86_400_000),
   );
-  if (!due.length) {
-    // Termos em dia: se a vez era de termo porque a anterior foi varredura, a varredura segue na próxima.
-    nextAt.set(store, sweep ? now + IDLE_MS : now + gap);
+  if (!due.length) return false;
+  await collectOne(store, due[0]!, signal);
+  return true;
+}
+
+/**
+ * A vez de uma loja: uma coisa só (página da varredura, termo ou ficha técnica, em rodízio) e marca
+ * a próxima vez para o intervalo do modo depois que ela terminar. Varredura e fichas só no modo
+ * normal: no reduzido e no lento, cada vez vai para um termo.
+ */
+async function turn(store: StoreId, signal: AbortSignal): Promise<void> {
+  const gap = modeDelay(settings.seconds[settings.modes[store]]);
+  if (backoffInfo(store) || pageLimitUntil(store) || !hasBudget(store)) {
+    nextAt.set(store, Date.now() + IDLE_MS);
     return;
   }
-  await collectOne(store, due[0]!, signal);
-  nextAt.set(store, Date.now() + gap);
+  const jobs: Job[] = settings.modes[store] === 'normal' ? JOBS : ['term'];
+  const start = (jobs.indexOf(lastJob.get(store) ?? 'sheet') + 1) % jobs.length;
+  for (let i = 0; i < jobs.length; i++) {
+    const job = jobs[(start + i) % jobs.length]!;
+    const did = job === 'sweep' ? await sweepOne(store, signal) : job === 'term' ? await termOne(store, signal) : await sheetOne(store, signal);
+    if (did) {
+      lastJob.set(store, job);
+      nextAt.set(store, Date.now() + gap);
+      return;
+    }
+  }
+  nextAt.set(store, Date.now() + IDLE_MS); // nada a fazer: confere de novo depois
 }
 
 async function collectOne(store: StoreId, t: ReturnType<typeof dueTerms>[number], signal: AbortSignal): Promise<void> {

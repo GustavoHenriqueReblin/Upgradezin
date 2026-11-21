@@ -89,6 +89,23 @@ export function mapS3Card(c: S3Card, collectedAt: string, category: CategoryId):
   };
 }
 
+/**
+ * Ficha técnica da página do produto: o bloco "Especificações Técnicas" (#esptec). Cada campo vem
+ * como "<strong>Rótulo</strong>:<br>valor": junta rótulo e valor na mesma linha ("Dimensões: 249 x
+ * 132 x 41 mm"), que é como o leitor da ficha (parseSpecSheet) lê. null quando a página não tem.
+ */
+export function s3SheetFromHtml(html: string): string | null {
+  const { document } = parseHTML(html);
+  const block = document.querySelector('#esptec');
+  if (!block || !block.textContent?.trim()) return null;
+  const end = String.raw`(?:\s|&nbsp;|&#160;)*<\/strong>\s*(?:<b>\s*:\s*<\/b>)?\s*<br\s*\/?>`;
+  return block.innerHTML
+    .replace(new RegExp(`:${end}`, 'gi'), ':</strong> ') // "Rótulo:</strong><br>": os dois-pontos já estão no rótulo
+    .replace(new RegExp(end, 'gi'), '</strong>: ');
+}
+
+const productUrl = (sku: string) => `${storeConfig('s3').url}/produto/${encodeURIComponent(sku)}`;
+
 export const s3: StoreAdapter = {
   id: 's3',
   async search({ category, q, signal, onPage, onNeedsHuman }) {
@@ -99,5 +116,10 @@ export const s3: StoreAdapter = {
     const offers = cards.map((c) => mapS3Card(c, now, category)).filter((o): o is Offer => !!o);
     onPage?.({ page: 1, total: 1, found: offers.length, offers });
     return offers;
+  },
+  /** Ficha técnica pela página do produto (/produto/<código>: a loja completa o endereço). */
+  async productSheet({ sku }, signal) {
+    takePage('s3');
+    return s3SheetFromHtml((await loadPage('s3', productUrl(sku), { signal })).html);
   },
 };

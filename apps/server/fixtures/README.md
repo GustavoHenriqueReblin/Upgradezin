@@ -19,6 +19,8 @@ Recortes **anonimizados** de páginas reais de busca, usados pelos testes dos pa
 | `s1-case.html` | busca "gabinete" | formato citado, pela torre e ausente, vidro, fans; tela de monitoramento descartada |
 | `s2-cpu.html` | busca "processador" | formato "8-Core, 16-Threads", Core Ultra |
 | `s3-cpu.html` | busca "processador" | cooler dito no título, LGA1155 e cooler avulso descartados |
+| `s2-product-gpu.html`, `s2-product-case.html` | página de produto, só a tabela de especificações | ficha técnica da S2 (comprimento, cooler e placa máximos, radiadores, part number) |
+| `s3-product-gpu.html`, `s3-product-case.html`, `s3-product-cooler.html` | página de produto, só o bloco "Especificações Técnicas" | ficha técnica da S3 (rótulo e valor em linhas separadas, dois-pontos no rótulo, altura marcada por "(A)", radiadores com barra) |
 | `s3-gpu.html` | busca "placa de video" | placa profissional descartada, GDDR ausente (DDR3), mesma placa da S1 |
 
 ## Regras

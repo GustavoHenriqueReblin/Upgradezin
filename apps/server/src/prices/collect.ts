@@ -150,20 +150,31 @@ export function collectSweepPage(
 export const canReadSheet = (store: StoreId) => !!ADAPTERS[store].productSheet;
 
 /**
- * Ficha técnica de um produto: do banco, se lida há menos de SHEET_MAX_AGE_DAYS; senão abre a
- * página (na fila da loja, com o intervalo de sempre) e guarda, inclusive quando não há ficha.
+ * Ficha técnica de um produto: do banco, se já lida (vazia: só se lida há menos de
+ * SHEET_MAX_AGE_DAYS); senão abre a página (na fila da loja, com o intervalo de sempre) e guarda,
+ * inclusive quando não há ficha. A montagem pede com prioridade; a rotina, na vez dela.
  */
-export async function sheetOf(store: StoreId, sku: string, category: CategoryId, signal: AbortSignal): Promise<SpecSheet | null> {
+export async function sheetOf(
+  store: StoreId,
+  sku: string,
+  category: CategoryId,
+  signal: AbortSignal,
+  opts: { origin?: 'search' | 'routine' | 'admin'; force?: boolean } = {},
+): Promise<SpecSheet | null> {
   const db = getDb();
-  const cached = getSheet(db, store, sku, new Date(Date.now() - config.SHEET_MAX_AGE_DAYS * 86_400_000).toISOString());
+  // force (admin, "Ler ficha"): abre a página mesmo com ficha guardada.
+  const cached = opts.force ? undefined : getSheet(db, store, sku, new Date(Date.now() - config.SHEET_MAX_AGE_DAYS * 86_400_000).toISOString());
   if (cached) return cached;
   const adapter = ADAPTERS[store];
   if (!adapter.productSheet) return null;
+  const origin = opts.origin ?? 'search';
+  // Endereço do anúncio (a S2 abre a página pelo nome do produto, não pelo código).
+  const url = (db.prepare('SELECT url FROM listings WHERE store = ? AND store_sku = ?').get(store, sku) as { url: string } | undefined)?.url;
   return withStore(store, signal, async () => {
     const t0 = Date.now();
-    const base = { store, kind: 'sheet' as const, origin: 'search' as const, category, term: sku };
+    const base = { store, kind: 'sheet' as const, origin, category, term: sku };
     try {
-      const html = await adapter.productSheet!(sku, signal);
+      const html = await adapter.productSheet!({ sku, ...(url && { url }) }, signal);
       const sheet = html ? parseSpecSheet(category, html) : { specs: {} };
       saveSheet(db, store, sku, sheet);
       logAttempt(base, t0, { count: html ? 1 : 0 });
@@ -173,7 +184,7 @@ export async function sheetOf(store: StoreId, sku: string, category: CategoryId,
       if (err instanceof BlockedError && !err.paused && !signal.aborted) registerBlock(store, err.reason);
       throw err;
     }
-  }, { priority: true });
+  }, { priority: origin !== 'routine' });
 }
 
 /** Primeira página da varredura, sem gravar (conferir o caminho: pnpm scan --sweep). */

@@ -75,7 +75,10 @@ const Env = z.object({
   SHEETS_PER_HOUR: z.coerce.number().default(30),
   /** Buscas com texto livre ("Buscar nas lojas" do filtro de texto) por pessoa por hora; além disso, só os termos do formulário. */
   TEXT_SEARCHES_PER_HOUR: z.coerce.number().default(20),
-  /** Ficha técnica guardada vale isto (dias); depois a página é lida de novo. */
+  /**
+   * Ficha técnica: com dados, vale para sempre (a ficha do produto não muda). Página sem ficha é lida
+   * de novo depois disto (dias): a loja pode ter completado a página.
+   */
   SHEET_MAX_AGE_DAYS: z.coerce.number().default(30),
   /** Links de montagem novos por pessoa por hora. */
   SHARE_PER_HOUR: z.coerce.number().default(20),
@@ -136,6 +139,12 @@ const Env = z.object({
    * os termos (uma vez cada), então no máximo metade das vezes da rotina vai para ela.
    */
   ROUTINE_SWEEP_PAGES_PER_HOUR: z.coerce.number().default(20),
+  /**
+   * Fichas técnicas (páginas de produto) que a rotina lê por loja por hora, percorrendo o catálogo de
+   * placa de vídeo, gabinete e cooler (saem de ROUTINE_PAGES_PER_HOUR). Cada ficha é lida uma vez.
+   * Valor inicial: depois, vale o que o admin (aba Produtos) guardar.
+   */
+  ROUTINE_SHEETS_PER_HOUR: z.coerce.number().default(20),
   /** Teto de páginas por categoria numa volta (120 itens por página na S1, 36 na S2). */
   ROUTINE_SWEEP_MAX_PAGES: z.coerce.number().default(40),
   /** Intervalo aleatório entre páginas da MESMA loja. */
