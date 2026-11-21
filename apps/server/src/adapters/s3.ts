@@ -1,5 +1,6 @@
 import { matchesCategory, mpnFromTitle, normalizeBrand, normalizeListing, parseBRL, parseCouponText, type CategoryId, type Offer } from '@upgradezin/shared';
-import { getTab, gotoChecked } from '../browser.ts';
+import { parseHTML } from 'linkedom';
+import { loadPage } from '../browser.ts';
 import { takePage } from '../pace.ts';
 import { searchUrl, storeConfig } from '../stores.ts';
 import type { StoreAdapter } from './types.ts';
@@ -7,7 +8,7 @@ import type { StoreAdapter } from './types.ts';
 /**
  * Loja S3: HTML renderizado no servidor, até 300 resultados numa página.
  * Cada card tem atributos data-tss-* (preço PIX, marca, estoque).
- * Protegida contra robôs: exige navegador real.
+ * Lida no Chrome da loja como as outras (loadPage).
  */
 
 export interface S3Card {
@@ -25,14 +26,16 @@ export interface S3Card {
   coupon?: string;
 }
 
-export const S3_CARD_SELECTOR = '.product-item[data-tss-product]';
+const S3_CARD_SELECTOR = '.product-item[data-tss-product]';
 
-/**
- * Lê os cards da busca. Roda DENTRO da página (Playwright serializa a função),
- * então não pode usar nada de fora dela. Sem funções nomeadas aqui dentro: o
- * esbuild (tsx) as envolveria em __name(). Exportada para testes com DOM em Node.
- */
-export function readS3Cards(els: Element[]): S3Card[] {
+/** Cards da busca a partir do HTML da página (DOM do linkedom, no servidor). */
+export function parseS3Cards(html: string): S3Card[] {
+  const { document } = parseHTML(html);
+  return readS3Cards(Array.from(document.querySelectorAll(S3_CARD_SELECTOR)) as unknown as Element[]);
+}
+
+/** Lê os dados de cada card (elementos do DOM). */
+function readS3Cards(els: Element[]): S3Card[] {
   return els.map((el) => {
     const a = el.querySelector<HTMLAnchorElement>('a.product-item__name');
     const juros = el.querySelectorAll('.product-item__juros span');
@@ -90,10 +93,8 @@ export const s3: StoreAdapter = {
   id: 's3',
   async search({ category, q, signal, onPage, onNeedsHuman }) {
     takePage('s3');
-    const tab = await getTab('s3');
-    await gotoChecked(tab, 's3', searchUrl('s3', category, q), signal, onNeedsHuman);
-    await tab.waitForSelector('.product-item, .tss-filter-results-count', { timeout: 15_000 }).catch(() => {});
-    const cards = await tab.$$eval(S3_CARD_SELECTOR, readS3Cards);
+    const { html } = await loadPage('s3', searchUrl('s3', category, q), { signal, onNeedsHuman, waitFor: '.product-item, .tss-filter-results-count' });
+    const cards = parseS3Cards(html);
     const now = new Date().toISOString();
     const offers = cards.map((c) => mapS3Card(c, now, category)).filter((o): o is Offer => !!o);
     onPage?.({ page: 1, total: 1, found: offers.length, offers });

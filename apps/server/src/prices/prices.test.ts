@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Offer } from '@upgradezin/shared';
 import { openDb } from '../db/db.ts';
 import { withStore } from '../pace.ts';
-import { dueTerms, dueTermsSpread, ensureTerms, idOf, listingBrands, markFailedRun, matchingListings, priceHistory, readResult, saveCollection } from './prices.ts';
+import { dueTerms, ensureTerms, idOf, listingBrands, markFailedRun, matchingListings, priceHistory, readResult, saveCollection } from './prices.ts';
 
 const offer = (sku: string, priceCash: number, patch: Partial<Offer> = {}): Offer => ({
   store: 's1',
@@ -93,7 +93,7 @@ describe('preços no banco', () => {
     ]);
   });
 
-  it('rotina: nunca coletados primeiro, os pesquisados antes dos outros, depois os mais antigos; respeita a espera após falha', () => {
+  it('rotina: pesquisado e ainda não coletado primeiro, depois nunca coletados, depois os mais antigos; respeita a espera após falha', () => {
     const { db, t750, t850 } = setup();
     const ids = ensureTerms(db, [{ category: 'psu', term: '650W' }], 'user', '2026-11-19T09:00:00.000Z');
     const t650 = idOf(ids, { category: 'psu', term: '650W' });
@@ -105,13 +105,13 @@ describe('preços no banco', () => {
     saveCollection(db, { store: 's1', category: 'psu', termId: t850, offers: [], at: '2026-11-19T08:00:00.000Z', complete: true });
     // 750W nunca coletado vem antes. 650W foi coletado depois do corte das 9h.
     expect(due('2026-11-19T09:00:00.000Z')).toEqual(['750W', '850W']);
-    // Entre os já coletados, o que alguém pesquisou (650W) vem antes do mais antigo.
-    expect(due('2026-11-19T12:00:00.000Z')).toEqual(['750W', '650W', '850W']);
+    // 650W já foi coletado depois de pesquisado: vale a idade, e o mais antigo (850W) vem antes.
+    expect(due('2026-11-19T12:00:00.000Z')).toEqual(['750W', '850W', '650W']);
 
     // Falhou agora: fica de fora até passar a espera.
     markFailedRun(db, 's1', t750, '2026-11-19T11:30:00.000Z', 'blocked');
-    expect(due('2026-11-19T12:00:00.000Z', '2026-11-19T11:00:00.000Z')).toEqual(['650W', '850W']);
-    expect(due('2026-11-19T12:00:00.000Z', '2026-11-19T12:00:00.000Z')).toEqual(['750W', '650W', '850W']);
+    expect(due('2026-11-19T12:00:00.000Z', '2026-11-19T11:00:00.000Z')).toEqual(['850W', '650W']);
+    expect(due('2026-11-19T12:00:00.000Z', '2026-11-19T12:00:00.000Z')).toEqual(['750W', '850W', '650W']);
   });
 });
 
@@ -208,7 +208,7 @@ describe('marcas dos anúncios (listingBrands)', () => {
   });
 });
 
-describe('ordem da rotina nas lojas lentas (dueTermsSpread)', () => {
+describe('ordem da rotina: categorias espalhadas (dueTerms)', () => {
   it('pesquisado primeiro; depois a categoria há mais tempo sem coleta; dentro dela, o termo nunca coletado', () => {
     const db = openDb(':memory:');
     const ids = ensureTerms(db, [
@@ -219,7 +219,7 @@ describe('ordem da rotina nas lojas lentas (dueTermsSpread)', () => {
     const run = (termId: number, at: string) => saveCollection(db, { store: 's2', category: 'cpu', termId, offers: [], at, complete: true });
     run(id('cpu', 'Ryzen 5'), '2026-11-20T10:00:00.000Z');
     run(id('cpu', 'Ryzen 7'), '2026-11-20T11:00:00.000Z');
-    const due = (limit = 4) => dueTermsSpread(db, 's2', '2026-11-21T00:00:00.000Z', '2026-11-21T00:00:00.000Z', limit).map((t) => t.term);
+    const due = (limit = 4) => dueTerms(db, 's2', '2026-11-21T00:00:00.000Z', '2026-11-21T00:00:00.000Z', limit).map((t) => t.term);
     // Gabinete (categoria nunca coletada) antes de processador; em processador, o nunca coletado (Core i5) primeiro.
     expect(due()).toEqual(['Gabinete', 'Core i5', 'Ryzen 5', 'Ryzen 7']);
     // Alguém pesquisou Ryzen 7 depois da última coleta dele: vai para o topo.
@@ -243,14 +243,11 @@ describe('texto livre pesquisado (origem "text")', () => {
       { term: 'NVIDIA GeForce', origin: 'seed', last_requested_at: '2026-11-20T12:00:00.000Z' },
       { term: 'Zotac RTX 3050 Twin Edge OC', origin: 'text', last_requested_at: '2026-11-20T12:00:00.000Z' },
     ]);
-    const all = (textSince: string) => [
-      dueTerms(db, 's2', '2026-11-21T00:00:00.000Z', '2026-11-21T00:00:00.000Z', 10, textSince).map((t) => t.term),
-      dueTermsSpread(db, 's2', '2026-11-21T00:00:00.000Z', '2026-11-21T00:00:00.000Z', 10, textSince).map((t) => t.term),
-    ];
-    // Pesquisado há pouco: entra nas duas ordens.
-    for (const list of all('2026-11-13T12:00:00.000Z')) expect(list).toContain('Zotac RTX 3050 Twin Edge OC');
+    const due = (textSince: string) => dueTerms(db, 's2', '2026-11-21T00:00:00.000Z', '2026-11-21T00:00:00.000Z', 10, textSince).map((t) => t.term);
+    // Pesquisado há pouco: entra na rotina.
+    expect(due('2026-11-13T12:00:00.000Z')).toContain('Zotac RTX 3050 Twin Edge OC');
     // Ninguém pesquisa desde antes do corte: a rotina esquece o texto; o termo do formulário fica.
-    expect(all('2026-11-20T13:00:00.000Z')).toEqual([['NVIDIA GeForce'], ['NVIDIA GeForce']]);
+    expect(due('2026-11-20T13:00:00.000Z')).toEqual(['NVIDIA GeForce']);
   });
 });
 

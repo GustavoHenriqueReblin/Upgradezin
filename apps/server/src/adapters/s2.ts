@@ -1,5 +1,5 @@
 import { matchesCategory, normalizeBrand, normalizeListing, parseCouponText, type CategoryId, type Offer } from '@upgradezin/shared';
-import { getTab, gotoChecked, saveDebug } from '../browser.ts';
+import { loadPage, saveDebugHtml, type LoadedPage, type PageError } from '../browser.ts';
 import { config } from '../config.ts';
 import { BlockedError, jitter, SearchRedirectError, sleep, takePage } from '../pace.ts';
 import { searchUrl, storeConfig } from '../stores.ts';
@@ -8,7 +8,7 @@ import type { StoreAdapter } from './types.ts';
 /**
  * Loja S2: Next.js App Router. Os produtos vêm no payload RSC
  * (self.__next_f, lido do HTML), num objeto {"products":{"items":[...]}}.
- * Protegida contra robôs: exige navegador real.
+ * Lida no Chrome da loja como as outras (loadPage).
  */
 
 interface S2Prices {
@@ -158,7 +158,6 @@ export const s2: StoreAdapter = {
     // Termo que a busca já redirecionou: abre direto o destino (a página da categoria, aberta direto,
     // traz a lista normalmente; só chegando pelo redirecionamento da busca é que vem a "manutenção").
     const base = path ? storeConfig('s2').url + path : searchUrl('s2', category, q);
-    const tab = await getTab('s2');
     const offers: Offer[] = [];
     let total = 1;
     for (let page = 1; page <= Math.min(total, config.MAX_PAGES_S2); page++) {
@@ -169,43 +168,32 @@ export const s2: StoreAdapter = {
       // Termo igual ao nome de uma categoria ("Water Cooler", "Gabinete"): a loja redireciona a busca
       // para a página da categoria, que não traz a lista (para o navegador da coleta, vem a página de
       // "manutenção"). Não é bloqueio: confere o endereço final antes de ler o título como bloqueio.
-      const redirected = () => {
-        const to = new URL(tab.url());
+      const redirectedTo = (finalUrl?: string) => {
+        if (!finalUrl) return null;
+        const to = new URL(finalUrl);
         return to.pathname !== url.pathname ? to.pathname : null;
       };
+      let loaded: LoadedPage;
       try {
-        await gotoChecked(tab, 's2', url.toString(), signal, onNeedsHuman);
+        loaded = await loadPage('s2', url.toString(), {
+          signal,
+          onNeedsHuman,
+          // O redirecionamento é feito por script da página, instantes depois de abrir: sem lista e
+          // ainda no mesmo endereço, espera um pouco e lê de novo antes de chamar de bloqueio.
+          recheck: (p) => !redirectedTo(p.url) && !parseS2Rsc(rscFromHtml(p.html)).hasProducts,
+          recheckMs: REDIRECT_WAIT_MS,
+        });
       } catch (err) {
-        const to = redirected();
+        const to = redirectedTo((err as PageError).finalUrl);
         if (to) throw new SearchRedirectError('s2', to);
         throw err;
       }
-      // O redirecionamento é feito por script da página, instantes depois de abrir: sem lista (ou com a
-      // página trocando no meio da leitura), espera um pouco e confere o endereço antes de chamar de bloqueio.
-      const redirectedLater = async () => {
-        const now = redirected();
-        if (now) return now;
-        await sleep(REDIRECT_WAIT_MS, signal);
-        return redirected();
-      };
-      const to = redirected();
+      const to = redirectedTo(loaded.url);
       if (to) throw new SearchRedirectError('s2', to);
       // Lê do HTML: depois da hidratação o Next.js esvazia self.__next_f no navegador.
-      let html: string;
-      try {
-        html = await tab.content();
-      } catch (err) {
-        const later = await redirectedLater();
-        if (later) throw new SearchRedirectError('s2', later);
-        throw err;
-      }
-      const { items, totalPages, hasProducts, redirect } = parseS2Rsc(rscFromHtml(html));
+      const { items, totalPages, hasProducts, redirect } = parseS2Rsc(rscFromHtml(loaded.html));
       if (!hasProducts && redirect) throw new SearchRedirectError('s2', redirect);
-      if (!hasProducts) {
-        const later = await redirectedLater();
-        if (later) throw new SearchRedirectError('s2', later);
-      }
-      if (page === 1 && items.length === 0) await saveDebug('s2', tab, 'no-items');
+      if (page === 1 && items.length === 0) await saveDebugHtml('s2', loaded.html, 'no-items');
       // Página sem dados de produto não é "0 resultados": a loja limitou o acesso. Respeita e para.
       if (!hasProducts) throw new BlockedError('s2', 'unavailable', 'Página sem dados de produto');
       total = totalPages;

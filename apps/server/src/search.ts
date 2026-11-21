@@ -1,7 +1,7 @@
 import type { Offer, SearchParams, StoreId, StoreStatusEvent } from '@upgradezin/shared';
 import { config } from './config.ts';
 import { getDb } from './db/instance.ts';
-import { backoffInfo, BlockedError, SearchRedirectError, isSlowStore, PageLimitError, pageLimitUntil, registerSuccess, slowReadyAt } from './pace.ts';
+import { backoffInfo, BlockedError, SearchRedirectError, PageLimitError, pageLimitUntil, registerSuccess } from './pace.ts';
 import { collectTerm, partialOf, withBrowserSession } from './prices/collect.ts';
 import { ensureTerms, idOf, matchingListings, readResult, withHistoryStats, type DueTerm } from './prices/prices.ts';
 
@@ -13,9 +13,9 @@ export interface SearchHandlers {
 
 /**
  * Busca do site: responde na hora com o que o banco tem (termos + anúncios que batem pelas
- * specs) e, por trás, consulta as lojas para os termos coletados há mais de REVALIDATE_MIN
- * (nas lojas lentas, 1 termo e só se o intervalo mínimo passou). O resultado troca quando a
- * consulta chega, e o que ela trouxer também vai para o banco.
+ * specs) e, por trás, consulta as lojas para os termos coletados há mais de REVALIDATE_MIN,
+ * na frente da rotina (no reduzido e no lento, respeitando o intervalo do modo). O resultado
+ * troca quando a consulta chega, e o que ela trouxer também vai para o banco.
  */
 export async function runSearch(p: SearchParams, handlers: SearchHandlers, signal: AbortSignal, force = false) {
   // A pessoa saiu da página (ou "Parar"): a tela para de receber, mas a consulta que já saiu
@@ -30,9 +30,6 @@ export async function runSearch(p: SearchParams, handlers: SearchHandlers, signa
 /** Consultas da busca que seguem depois de a pessoa sair; só param quando o servidor desliga. */
 const background = new AbortController();
 export const stopBackgroundSearches = () => background.abort();
-
-/** Loja lenta com consulta da busca em andamento: outra busca não enfileira mais uma. */
-const slowLive = new Set<StoreId>();
 
 async function runStores(p: SearchParams, h: SearchHandlers, signal: AbortSignal, force: boolean) {
   const seen = new Set<string>();
@@ -67,21 +64,10 @@ async function runStores(p: SearchParams, h: SearchHandlers, signal: AbortSignal
         return ats.length ? ats.sort()[0] : undefined;
       };
 
-      // Loja lenta (S2/S3): aceita a 1ª página e bloqueia a seguinte que vem logo depois. A busca
-      // não dispara uma página por termo: vai à loja com 1 termo (o há mais tempo sem coleta, ou
-      // nunca coletado) e só se o intervalo mínimo já passou. Os outros termos ficaram marcados
-      // como pedidos (ensureTerms "user") e a rotina das lojas lentas pega esses primeiro.
-      if (need.length && isSlowStore(store)) {
-        const ready = slowReadyAt(store) <= now && !slowLive.has(store);
-        const oldestFirst = [...need].sort((a, b) => atOf(items.indexOf(a)) - atOf(items.indexOf(b)));
-        need = ready ? oldestFirst.slice(0, 1) : [];
-        if (!need.length && !current().length) {
-          // Nada no banco e a loja não pode receber agora: diz quando volta (pausa por bloqueio, se houver; senão o intervalo).
-          const bo = backoffInfo(store);
-          h.onStatus({ store, state: 'blocked', reason: bo?.reason ?? 'hourly-limit', count: 0, at: new Date(bo ? bo.until : slowReadyAt(store)).toISOString() });
-          return;
-        }
-      }
+      // Todos os termos vão à loja, um por vez, com prioridade sobre a rotina na fila da loja.
+      // O modo da loja decide o intervalo: normal vai na hora; reduzido e lento esperam o
+      // intervalo do modo desde a última consulta (pace.ts, withStore). Termos mais antigos primeiro.
+      need = [...need].sort((a, b) => atOf(items.indexOf(a)) - atOf(items.indexOf(b)));
 
       if (!need.length) {
         const offers = current();
@@ -108,8 +94,6 @@ async function runStores(p: SearchParams, h: SearchHandlers, signal: AbortSignal
       const t0 = Date.now();
       h.onStatus({ store, state: 'running', count: current().length });
       let pending: Offer[] = [];
-      const slow = isSlowStore(store);
-      if (slow) slowLive.add(store);
       try {
         for (const t of need) {
           pending = [];
@@ -150,8 +134,6 @@ async function runStores(p: SearchParams, h: SearchHandlers, signal: AbortSignal
           console.error(`[${store}]`, err);
           h.onStatus({ store, state: 'error' });
         }
-      } finally {
-        if (slow) slowLive.delete(store);
       }
     }),
   );

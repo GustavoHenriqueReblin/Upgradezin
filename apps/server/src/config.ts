@@ -17,10 +17,15 @@ const bool = z
 const Env = z.object({
   PORT: z.coerce.number().default(8787),
   HOST: z.string().default('127.0.0.1'),
-  /** "chrome" = Google Chrome instalado na máquina (padrão). Vazio = Chromium do Playwright. */
-  BROWSER_CHANNEL: z.string().default('chrome'),
-  /** Headless é barrado pela proteção anti-bot das lojas com navegador. No Linux sem tela, rode com xvfb-run. */
-  BROWSER_HEADLESS: bool,
+  /**
+   * Chrome das lojas (um por loja, sem porta de depuração; a extensão em apps/server/extension
+   * abre as abas e lê o HTML). Padrão: o Google Chrome instalado. No Linux sem tela, rode com xvfb-run.
+   * Com Chromium (ou Chrome for Testing) a extensão carrega sozinha; com o Chrome comum, instale
+   * uma vez por loja (pnpm chrome-setup).
+   */
+  CHROME_PATH: z
+    .string()
+    .default(process.platform === 'win32' ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' : '/usr/bin/google-chrome'),
   /** Abre a janela do Chrome fora da área visível da tela (padrão: sim). */
   BROWSER_HIDE_WINDOW: z
     .string()
@@ -31,6 +36,22 @@ const Env = z.object({
    * Só faz sentido para quem opera o servidor; o usuário final não vê essa janela. Padrão: 0.
    */
   MANUAL_CHALLENGE_WAIT_S: z.coerce.number().default(0),
+  /**
+   * Porta local (só 127.0.0.1) por onde a extensão do Chrome recebe as ações e devolve o HTML.
+   * Separada do servidor do site (não passa pelo túnel).
+   */
+  EXT_PORT: z.coerce.number().default(8788),
+  /** Espera (ms) a cada passo no navegador (abrir aba, navegar, ler, fechar), com o passo no terminal. 0 = sem espera. */
+  BROWSER_STEP_MS: z.coerce.number().default(0),
+  /**
+   * Pausa automática da loja depois de um bloqueio (15 min, 1 h, 6 h, 24 h). Padrão: ligada.
+   * false = bloqueio só é registrado no log; a próxima busca vai à loja normalmente.
+   * A pausa manual do admin continua valendo.
+   */
+  BACKOFF_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => v !== '0' && v !== 'false'),
   DATA_DIR: z.string().default(resolve(ROOT, 'data')),
   /** Banco SQLite local (anúncios, histórico de preço, montagens compartilhadas). Padrão: <DATA_DIR>/upgradezin.db. */
   DB_PATH: z.string().optional(),
@@ -82,36 +103,26 @@ const Env = z.object({
     .string()
     .default('s1,s2,s3')
     .transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean)),
-  /**
-   * Lojas lentas (as que exigem navegador reconhecem consulta seguida e bloqueiam): valem para elas
-   * o intervalo mínimo SLOW_MIN_GAP_S entre quaisquer duas consultas e, até o admin mudar, o modo
-   * "lento" da rotina. Bloqueio pausa a loja (15 min, 1 h, 6 h, 24 h) e depois a rotina tenta de novo, sempre.
-   */
+  /** Lojas que começam no modo lento até o admin escolher (as de navegador). */
   ROUTINE_SLOW_STORES: z
     .string()
     .default('s2,s3')
     .transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean)),
-  /** Modo reduzido da rotina: um termo a cada tantos minutos (+ até 20% aleatório). */
-  ROUTINE_REDUCED_GAP_MIN: z.coerce.number().default(5),
-  /** Modo lento da rotina: um termo a cada tantos minutos (+ até 20% aleatório). */
-  ROUTINE_SLOW_GAP_MIN: z.coerce.number().default(10),
+  /**
+   * Modos da rotina (admin, aba Coleta): a cada tantos segundos (+ até 20% aleatório) a rotina faz
+   * uma coisa na loja: uma página da varredura, se houver e estiver na hora, ou um termo.
+   * Normal: a busca do site vai na hora. Reduzido e lento: entre duas consultas à loja, venham da
+   * rotina ou da busca do site, passa no mínimo o intervalo do modo.
+   */
+  ROUTINE_NORMAL_GAP_S: z.coerce.number().default(15),
+  ROUTINE_REDUCED_GAP_S: z.coerce.number().default(20),
+  ROUTINE_SLOW_GAP_S: z.coerce.number().default(60),
   /** Texto livre pesquisado ("Buscar nas lojas" do filtro de texto): a rotina mantém o termo por estes dias depois da última busca. */
   ROUTINE_TEXT_DAYS: z.coerce.number().default(7),
-  /**
-   * Mínimo entre duas consultas a uma loja lenta, da rotina ou da busca do site (segundos).
-   * Nos logs, elas aceitam a 1ª página e bloqueiam a seguinte quando vem segundos depois.
-   */
-  SLOW_MIN_GAP_S: z.coerce.number().default(180),
-  /** Nos modos reduzido e lento, um termo é recoletado quando a última coleta passou disto. */
-  ROUTINE_SLOW_REFRESH_H: z.coerce.number().default(24),
-  /** A rotina recoleta um termo quando a última coleta dele passou disto. */
+  /** A rotina recoleta um termo quando a última coleta dele passou disto (horas). */
   ROUTINE_REFRESH_H: z.coerce.number().default(12),
   /** Páginas por loja por hora que a rotina pode usar (do total MAX_PAGES_PER_HOUR; o resto fica para a busca). */
   ROUTINE_PAGES_PER_HOUR: z.coerce.number().default(12),
-  /** Modo normal: de quanto em quanto tempo a loja recebe uma rodada (varredura e até ROUTINE_BATCH termos). */
-  ROUTINE_TICK_MIN: z.coerce.number().default(5),
-  /** Termos por loja em cada rodada, no máximo. */
-  ROUTINE_BATCH: z.coerce.number().default(4),
   /** Termo que falhou (bloqueio, erro) só é tentado de novo depois disto. */
   ROUTINE_RETRY_MIN: z.coerce.number().default(60),
   /**

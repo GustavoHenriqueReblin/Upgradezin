@@ -3,7 +3,6 @@ import { s1 } from '../adapters/s1.ts';
 import { s2 } from '../adapters/s2.ts';
 import { s3 } from '../adapters/s3.ts';
 import type { SearchContext, StoreAdapter } from '../adapters/types.ts';
-import { closeBrowser } from '../browser.ts';
 import { config } from '../config.ts';
 import { getDb } from '../db/instance.ts';
 import { BlockedError, PageLimitError, registerBlock, SearchRedirectError, withStore } from '../pace.ts';
@@ -59,7 +58,10 @@ const didNotRun = (err: unknown, signal: AbortSignal) => signal.aborted || (err 
  * leu (incompleto), registra o bloqueio e repassa o erro para quem chamou.
  */
 export function collectTerm(store: StoreId, t: DueTerm, signal: AbortSignal, hooks: CollectHooks = {}): Promise<Offer[]> {
-  const key = `${store}|${t.id}`;
+  // Busca do site (e admin) passa na frente da rotina na fila da loja. Quem busca só reaproveita
+  // uma consulta igual se ela também for prioritária (a da rotina pode estar no fim da fila).
+  const priority = hooks.origin !== 'routine';
+  const key = `${store}|${t.id}|${priority ? 'p' : 'r'}`;
   const running = inflight.get(key);
   if (running) return running;
   const job = withStore(store, signal, async () => {
@@ -97,7 +99,7 @@ export function collectTerm(store: StoreId, t: DueTerm, signal: AbortSignal, hoo
       }
       throw Object.assign(err as object, { partial: pages });
     }
-  });
+  }, { priority });
   inflight.set(key, job);
   job.finally(() => inflight.delete(key)).catch(() => {});
   return job;
@@ -168,20 +170,23 @@ export async function sheetOf(store: StoreId, sku: string, category: CategoryId,
       if (err instanceof BlockedError && !err.paused && !signal.aborted) registerBlock(store, err.reason);
       throw err;
     }
-  });
+  }, { priority: true });
 }
 
 /** Primeira página da varredura, sem gravar (conferir o caminho: pnpm scan --sweep). */
 export function previewSweep(store: StoreId, category: CategoryId, signal: AbortSignal) {
   const path = storeConfig(store).sweep[category];
   if (!ADAPTERS[store].sweepPage || !path) return Promise.resolve(null);
-  return withStore(store, signal, () => ADAPTERS[store].sweepPage!({ category, url: storeConfig(store).url + path, page: 1, signal }));
+  return withStore(store, signal, () => ADAPTERS[store].sweepPage!({ category, url: storeConfig(store).url + path, page: 1, signal }), { priority: true });
 }
 
 /** Ofertas lidas antes de um bloqueio no meio da coleta. */
 export const partialOf = (err: unknown): Offer[] => ((err as { partial?: Offer[] })?.partial ?? []);
 
-/** Quem está usando as lojas agora (buscas do site e rotina); o Chrome fecha quando o último sai. */
+/**
+ * Quem está usando as lojas agora (buscas do site e rotina), para o status do admin.
+ * O Chrome de cada loja fica aberto entre as consultas (fecha só quando o servidor para).
+ */
 let active = 0;
 export const activeSessions = () => active;
 
@@ -190,7 +195,6 @@ export async function withBrowserSession<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } finally {
-    // Sessão anônima: fechar descarta abas, cookies e cache.
-    if (--active === 0) await closeBrowser();
+    active--;
   }
 }

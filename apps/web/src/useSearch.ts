@@ -50,8 +50,8 @@ export function useSearch() {
   /**
    * Desde o começo da busca, a tela fica escutando: quando uma coleta grava algo da categoria
    * (rotina, loja que estava em pausa, busca de outra pessoa), a lista daquela loja é trocada sozinha.
-   * Começa junto com a busca, não no fim: a rotina pode coletar uma loja lenta que a busca deixou para
-   * ela enquanto outra loja ainda está ao vivo (antes, essa coleta se perdia). Loja ainda na fila ou ao
+   * Começa junto com a busca, não no fim: a rotina pode coletar uma loja que ainda espera a vez (ou está
+   * em pausa) enquanto outra loja ainda está ao vivo (antes, essa coleta se perdia). Loja ainda na fila ou ao
    * vivo nesta busca é ignorada aqui: a lista dela vem da própria busca.
    */
   const watch = useCallback((params: URLSearchParams) => {

@@ -8,7 +8,7 @@ describe('lojas ao vivo na busca', () => {
     expect(isLive({ store: 's2', state: 'needs-human' })).toBe(true);
   });
 
-  it('terminada, do banco ou parada (ex. loja lenta deixada para a rotina): recebe a coleta nova na hora', () => {
+  it('terminada, do banco ou parada (ex. loja em pausa coletada depois pela rotina): recebe a coleta nova na hora', () => {
     expect(isLive({ store: 's2', state: 'blocked', reason: 'hourly-limit', count: 0 })).toBe(false);
     expect(isLive({ store: 's1', state: 'done', count: 10, ms: 900 })).toBe(false);
     expect(isLive({ store: 's3', state: 'cached', count: 5 })).toBe(false);

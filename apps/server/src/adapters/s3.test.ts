@@ -1,14 +1,10 @@
-import { parseHTML } from 'linkedom';
 import { describe, expect, it } from 'vitest';
 import type { Offer } from '@upgradezin/shared';
-import { mapS3Card, readS3Cards, S3_CARD_SELECTOR } from './s3.ts';
+import { mapS3Card, parseS3Cards } from './s3.ts';
 import { COLLECTED_AT, fixture } from './fixtures.ts';
 
-/** Mesma função que roda no navegador, aqui sobre um DOM em Node. */
-const cardsOf = (file: string) => {
-  const { document } = parseHTML(fixture(file));
-  return readS3Cards(Array.from(document.querySelectorAll(S3_CARD_SELECTOR)));
-};
+/** A mesma leitura do adapter: os cards a partir do HTML da página. */
+const cardsOf = (file: string) => parseS3Cards(fixture(file));
 const offersOf = (file: string, category: 'psu' | 'motherboard') =>
   cardsOf(file)
     .map((c) => mapS3Card(c, COLLECTED_AT, category))

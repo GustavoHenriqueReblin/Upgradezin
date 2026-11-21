@@ -19,7 +19,7 @@ Buscador de preços de hardware no varejo brasileiro. Uma rotina no servidor aco
 - Identificar gargalo: com o seu PC importado, o app diz se o processador ou a placa de vídeo segura o desempenho (considerando a resolução e os Hz do monitor) e o que fazer: placas de vídeo na faixa certa para o seu processador (e que cabem na sua fonte e na sua placa-mãe), memória, disco, os limites da placa-mãe e ajustes grátis como ativar o XMP. A fonte, que o CPU-Z não lê, você informa na importação. Cada sugestão abre a busca já filtrada.
 - Importar o seu PC pelo relatório do CPU-Z: as peças que você tem viram peças "Atual" na montagem (sem preço, mas conferidas na compatibilidade), e você troca só o que quiser; "Já Tenho" faz o mesmo com qualquer peça escolhida (ex. a fonte). O arquivo é lido no navegador e não sai dele.
 - "Buscar nas lojas" a partir do filtro de texto do resultado: um modelo específico (ex. "Zotac RTX 3050 Twin Edge OC") vai às lojas como termo próprio, o que vale mais nas lojas que aceitam uma página por consulta.
-- Admin em `/admin` (login fixo do `.env`) para quem opera o servidor: configuração das lojas, rotina por loja (liga e desliga, modo normal, reduzido ou lento, contagem até a próxima consulta), pausar e tirar pausa, coletar agora, registro de cada consulta e dos bloqueios, cobertura por loja e categoria, termos, consultas ao vivo, atividade do site (sem IP), backups e merge de outro banco.
+- Admin em `/admin` (login fixo do `.env`) para quem opera o servidor: configuração das lojas, rotina por loja (liga e desliga, modo normal, reduzido ou lento, fila de cada loja com as buscas do site e da rotina esperando, contagem até a próxima consulta), pausar e tirar pausa, coletar agora, registro de cada consulta e dos bloqueios, cobertura por loja e categoria, termos, consultas ao vivo, atividade do site (sem IP), backups e merge de outro banco.
 - Sem cadastro: a montagem fica no seu navegador, e "Compartilhar" gera um link curto para abrir em outro aparelho ou mandar para alguém (quem abre vê os preços mais recentes e pode copiar a montagem). O servidor guarda os preços das lojas e as montagens compartilhadas (SQLite local), nenhum dado de usuário.
 
 ## Rodando
@@ -28,6 +28,7 @@ Requisitos: Node 22.13+ (SQLite embutido), pnpm e Google Chrome instalado.
 
 ```bash
 pnpm install
+pnpm chrome-setup     # uma vez: instala a extensão leitora no Chrome de cada loja
 pnpm dev              # http://localhost:5173
 ```
 
@@ -42,20 +43,11 @@ pnpm scan 850W --stores=s1 --json
 pnpm scan --sweep          # confere os caminhos de varredura (admin, Lojas; antes STORE_Sx_SWEEP), sem gravar
 ```
 
-Duas das lojas usam proteção anti-robô. O app abre o seu Chrome em sessão anônima (nada fica salvo), com a janela fora da tela, só para pegar os preços, e fecha ao terminar; o resultado aparece na página do Upgradezin. Quando uma loja barra a consulta, a tela mostra "não deu para consultar agora" e um botão para abrir a mesma busca no site da loja.
+Todas as lojas são lidas do mesmo jeito: um Chrome comum por loja (perfil em `data/chrome/<loja>`, janela fora da tela), sem porta de depuração nem Playwright. A extensão em `apps/server/extension` abre cada página numa aba nova, lê o HTML, devolve ao app por uma porta local (`EXT_PORT`, só `127.0.0.1`) e fecha a aba; a aba de controle da extensão fica sempre aberta. No Chrome comum a extensão é instalada uma vez por loja (`pnpm chrome-setup`); no Chromium ela carrega sozinha. Quando uma loja barra a consulta, a tela mostra "não deu para consultar agora" e um botão para abrir a mesma busca no site da loja. `pnpm dev`, `pnpm scan` e `pnpm routine-test` usam a mesma porta local: um de cada vez.
 
-Ao subir, o servidor liga também a rotina de coleta, que atualiza o banco sozinha nas lojas ligadas nela (um switch por loja no admin, aba Coleta; até alguém mexer lá, valem `ROUTINE_ENABLED` e `ROUTINE_STORES` do `.env`). Cada loja tem um modo na rotina, escolhido no admin: normal (varredura e vários termos a cada 5 min), reduzido (1 termo a cada 5 min) ou lento (1 termo a cada 10 min); as lojas com proteção anti-robô começam no lento. Se uma loja bloquear, ela fica em pausa (15 min, 1 h, 6 h, até 24 h) e depois a rotina tenta de novo. Na loja com caminhos de varredura (admin, aba Lojas; hoje a s1), a rotina também varre cada categoria inteira, algumas páginas por hora, retomando de onde parou. Termo que a busca da loja leva para a página da categoria (ex. "Water Cooler" na s2) não conta como bloqueio: o destino fica guardado e as próximas coletas desse termo abrem a categoria direto. Limites e intervalos em `ROUTINE_*` no `.env`.
+Ao subir, o servidor liga também a rotina de coleta, que atualiza o banco sozinha nas lojas ligadas nela (um switch por loja no admin, aba Coleta; até alguém mexer lá, valem `ROUTINE_ENABLED` e `ROUTINE_STORES` do `.env`). Cada loja tem um modo, escolhido no admin: normal (1 termo a cada 15 s; a busca do site vai na hora), reduzido (a cada 20 s) ou lento (a cada 1 min); no reduzido e no lento, a busca do site também respeita o intervalo. Na fila de cada loja, a busca do site passa na frente da rotina. Se uma loja bloquear, ela fica em pausa (15 min, 1 h, 6 h, até 24 h; `BACKOFF_ENABLED`) e depois a rotina tenta de novo. Na loja com caminhos de varredura (admin, aba Lojas; hoje a s1), a rotina também varre cada categoria inteira, algumas páginas por hora, retomando de onde parou. Termo que a busca da loja leva para a página da categoria (ex. "Water Cooler" na s2) não conta como bloqueio: o destino fica guardado e as próximas coletas desse termo abrem a categoria direto. Limites e intervalos em `ROUTINE_*` no `.env`.
 
 As lojas são identificadas no código só por ID (`s1`, `s2`, `s3`). Nome, endereço, busca e cor de cada uma ficam no banco e são editados no admin (`/admin`, aba Lojas). Para começar, copie o [.env.example](.env.example) para `.env` e preencha: na primeira vez, o servidor copia as lojas dele para o banco. O mesmo arquivo tem as demais configurações, inclusive o usuário e a senha do admin (`ADMIN_USER`, `ADMIN_PASSWORD`).
-
-Mostrar para alguém fora de casa (link público temporário, sem conta):
-
-```bash
-pnpm serve                 # num terminal (build + servidor)
-pnpm share                 # em outro: imprime um link https://….trycloudflare.com
-```
-
-Na primeira vez, o `pnpm share` baixa o `cloudflared` oficial para `.tools/` (fora do git) e confere o hash. O link muda a cada execução e some com Ctrl+C. O app ainda não tem login: mande o link só para quem deve usar.
 
 ## Versões
 

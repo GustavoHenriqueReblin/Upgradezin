@@ -20,8 +20,7 @@ prompt-*.md
 .DS_Store
 Thumbs.db
 
-# ferramentas e relatórios locais (cloudflared do pnpm share, vitest)
-.tools/
+# relatórios locais (vitest)
 .vitest/
 
 # scripts e serviços do servidor

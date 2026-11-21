@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { BlockedError, registerBlock, registerSuccess, slowReadyAt, useSlowStorage, withStore } from './pace.ts';
+import { BlockedError, minGapMs, queuedAt, readyAt, registerBlock, registerSuccess, setStoreModes, useLastQueryStorage, withStore } from './pace.ts';
 
-/** Lojas lentas (S2/S3): aceitam a 1ª página e bloqueiam a seguinte que vem segundos depois. */
-describe('lojas lentas e pausa', () => {
+/** Pausa por bloqueio e intervalo de cada modo entre consultas à loja. */
+describe('pausa e intervalo do modo', () => {
   afterEach(() => {
     registerSuccess('s2');
     registerSuccess('s1');
@@ -19,11 +19,62 @@ describe('lojas lentas e pausa', () => {
     expect((err as BlockedError).paused).toBe(true);
   });
 
-  it('intervalo mínimo entre consultas a uma loja lenta vale depois de reiniciar (guardado fora da memória)', () => {
+  it('intervalo do modo entre consultas vale depois de reiniciar (guardado fora da memória)', () => {
     const saved: Record<string, number> = {};
-    const last = Date.now() - 60_000;
-    useSlowStorage([['s2', last]], (store, at) => (saved[store] = at));
-    expect(slowReadyAt('s2')).toBe(last + 180_000); // SLOW_MIN_GAP_S padrão: 3 min
-    expect(slowReadyAt('s1')).toBe(0); // S1 (HTTP) não é lenta
+    const last = Date.now() - 30_000;
+    useLastQueryStorage([['s2', last], ['s1', last]], (store, at) => (saved[store] = at));
+    setStoreModes({ s1: 'normal', s2: 'slow', s3: 'reduced' });
+    expect(readyAt('s2')).toBe(last + 60_000); // lento: ROUTINE_SLOW_GAP_S padrão, 60 s
+    expect(readyAt('s1')).toBe(last); // normal: a busca vai na hora
+    expect(minGapMs('s3')).toBe(20_000); // reduzido: 20 s
+  });
+});
+
+describe('fila da loja com prioridade', () => {
+  const signal = () => new AbortController().signal;
+
+  it('busca do site passa na frente da rotina que está esperando (a consulta em andamento termina antes)', async () => {
+    const order: string[] = [];
+    let finishFirst!: () => void;
+    const first = withStore('s1', signal(), () => {
+      order.push('rotina 1 (em andamento)');
+      return new Promise<void>((r) => (finishFirst = r));
+    });
+    await new Promise((r) => setTimeout(r, 5)); // a 1ª já pegou a loja
+    const r2 = withStore('s1', signal(), async () => void order.push('rotina 2'));
+    const r3 = withStore('s1', signal(), async () => void order.push('rotina 3'));
+    const u1 = withStore('s1', signal(), async () => void order.push('usuário 1'), { priority: true });
+    const u2 = withStore('s1', signal(), async () => void order.push('usuário 2'), { priority: true });
+    finishFirst();
+    await Promise.all([first, r2, r3, u1, u2]);
+    expect(order).toEqual(['rotina 1 (em andamento)', 'usuário 1', 'usuário 2', 'rotina 2', 'rotina 3']);
+  });
+
+  it('fila visível: em andamento e quantas esperam, prioritárias e da rotina', async () => {
+    expect(queuedAt('s1')).toEqual({ running: false, priority: 0, routine: 0 });
+    let finishFirst!: () => void;
+    const first = withStore('s1', signal(), () => new Promise<void>((r) => (finishFirst = r)));
+    await new Promise((r) => setTimeout(r, 5));
+    const r1 = withStore('s1', signal(), async () => {});
+    const u1 = withStore('s1', signal(), async () => {}, { priority: true });
+    const u2 = withStore('s1', signal(), async () => {}, { priority: true });
+    expect(queuedAt('s1')).toEqual({ running: true, priority: 2, routine: 1 });
+    finishFirst();
+    await Promise.all([first, r1, u1, u2]);
+    expect(queuedAt('s1')).toEqual({ running: false, priority: 0, routine: 0 });
+  });
+
+  it('cancelar quem espera tira da fila sem travar os outros', async () => {
+    let finishFirst!: () => void;
+    const first = withStore('s1', signal(), () => new Promise<void>((r) => (finishFirst = r)));
+    await new Promise((r) => setTimeout(r, 5));
+    const ac = new AbortController();
+    const cancelled = withStore('s1', ac.signal, async () => 'não devia rodar', { priority: true }).catch(() => 'cancelada');
+    const next = withStore('s1', signal(), async () => 'rodou');
+    ac.abort(new Error('saiu da página'));
+    finishFirst();
+    expect(await cancelled).toBe('cancelada');
+    expect(await next).toBe('rodou');
+    await first;
   });
 });

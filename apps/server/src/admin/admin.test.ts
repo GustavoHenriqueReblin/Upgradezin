@@ -83,7 +83,7 @@ function makeApp() {
   const db = openDb(':memory:');
   const dir = mkdtempSync(join(tmpdir(), 'uz-routes-'));
   calls.length = 0;
-  const routine: RoutineInfo = { enabled: false, stores: [], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, busy: false, lastTickAt: null, nextTickAt: null, minutes: { normal: 5, reduced: 5, slow: 10 } };
+  const routine: RoutineInfo = { enabled: false, stores: [], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, busy: false, lastTickAt: null, nextTickAt: null, seconds: { normal: 15, reduced: 20, slow: 60 } };
   registerAdmin(app, {
     auth: new AdminAuth(OPTS),
     status: () => serverStatus(db, { version: '9.9.9', browserOpen: false, activeSessions: 0 }),

@@ -165,7 +165,7 @@ export function CoveragePanel({ onUnauthorized }: Props) {
           </tr>
         ))}
       </Table>
-      <p className="mt-2 text-xs text-zinc-500">Termos coletados em amarelo: a loja ainda não teve coleta boa de todos os termos da categoria (comum nas lojas lentas).</p>
+      <p className="mt-2 text-xs text-zinc-500">Termos coletados em amarelo: a loja ainda não teve coleta boa de todos os termos da categoria (comum enquanto a rotina ainda não deu a volta nos termos).</p>
     </Box>
   );
 }

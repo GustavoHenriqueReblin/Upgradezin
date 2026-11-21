@@ -5,7 +5,10 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 ## [Não lançado]
 
 ### Adicionado
-- Admin, coleta: rotina com um switch por loja (roda nas lojas ligadas) e o modo de cada uma (normal: varredura e vários termos a cada 5 min; reduzido: 1 termo a cada 5 min; lento: 1 termo a cada 10 min), contagem regressiva até a próxima consulta de cada loja, painel de cada loja (pausa, páginas da hora, última coleta boa, último bloqueio, consultas do dia), tirar pausa, pausar por um tempo e "coletar agora", tudo valendo na hora.
+- Admin, coleta: fila de cada loja no painel (consultando agora e quantas buscas do site e da rotina esperam), atualizada a cada 5 s.
+- `pnpm routine-test`: a rotina de verdade nas lojas (um termo por categoria), com relatório por loja e categoria em `data/debug/`.
+- `BACKOFF_ENABLED=false` desliga a pausa automática depois de bloqueio; `BROWSER_STEP_MS` espera a cada passo no Chrome, para acompanhar.
+- Admin, coleta: rotina com um switch por loja (roda nas lojas ligadas) e o modo de cada uma (normal: 1 termo ou página de varredura a cada 15 s; reduzido: a cada 20 s; lento: a cada 1 min), contagem regressiva até a próxima consulta de cada loja, painel de cada loja (pausa, páginas da hora, última coleta boa, último bloqueio, consultas do dia), tirar pausa, pausar por um tempo e "coletar agora", tudo valendo na hora.
 - Admin, dados: registro de cada consulta às lojas (90 dias) com linha do tempo de bloqueios por hora, cobertura por loja e categoria, e termos (última coleta por loja, filtro de nunca coletados, dar prioridade, apagar pesquisados).
 - Admin, operação: consultas ao vivo, atividade do site (buscas recentes sem IP, conexões abertas, quem está no limite), backups (criar, baixar, apagar) e merge de outro banco com prévia e backup antes.
 - Lojas configuradas no banco e editadas no admin (aba Lojas): nome, site, busca, caminhos por categoria e de varredura, cores e ligada/desligada, valendo na hora, sem reiniciar. Na primeira vez, o servidor copia as variáveis `STORE_*` do `.env`; depois, elas não valem mais.
@@ -21,12 +24,12 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 - Bolinha da loja em degradê: a cor da loja (admin, aba Lojas) aceita duas ou três cores separadas por vírgula (`"#ffc300,#e30613"`); com uma só, continua lisa.
 
 ### Corrigido
-- Resultado: loja lenta que a busca deixou para a rotina (intervalo mínimo ainda correndo) não aparecia quando a rotina a coletava enquanto outra loja ainda estava ao vivo: a tela só escutava novidades depois do fim da busca. Agora escuta desde o começo (ignorando as lojas ainda ao vivo, que recebem a própria lista).
+- Resultado: loja que ainda esperava a vez (ou em pausa) não aparecia quando a rotina a coletava enquanto outra loja ainda estava ao vivo: a tela só escutava novidades depois do fim da busca. Agora escuta desde o começo (ignorando as lojas ainda ao vivo, que recebem a própria lista).
 - S2: termo igual ao nome de uma categoria ("Water Cooler", "Gabinete") contava como bloqueio e pausava a loja. A busca da loja redireciona esses termos, por script, para a página da categoria, sem lista de produtos. Agora o redirecionamento é reconhecido (pela instrução que vem na própria resposta da busca): a loja não pausa, o destino fica guardado no termo (migração 9) e as próximas coletas desse termo abrem a página da categoria direto, que traz a lista normalmente. Na primeira vez, a busca do site segue com os anúncios que o banco já tem.
 - Testes usam banco em memória (`DB_PATH=:memory:`); antes, os que usavam o banco do servidor abriam o `data/upgradezin.db` de quem rodava.
-- Busca sem a loja que tinha o produto (ex. i5-12400F sem a S2): a S2 nunca tinha coletado um termo de processador Intel (a rotina ia termo a termo e gastava o pouco que a loja aceita sempre nas mesmas categorias). As lojas lentas agora espalham a coleta pelas categorias, o pesquisado primeiro.
+- Busca sem a loja que tinha o produto (ex. i5-12400F sem a S2): a S2 nunca tinha coletado um termo de processador Intel (a rotina ia termo a termo e gastava o pouco que a loja aceita sempre nas mesmas categorias). A rotina agora espalha a coleta pelas categorias, o pesquisado primeiro.
 - Toda busca atualiza por trás o que foi coletado há mais de 10 min (antes, só o que tinha mais de 24 h), e sair da página não interrompe mais a consulta: ela termina e grava no banco.
-- S2 e S3 bloqueavam por rajada: aceitam a 1ª página e bloqueiam a seguinte que vem segundos depois, e a busca do site mandava uma página por termo. Agora há no mínimo 3 min entre consultas a elas (rotina ou site, guardado entre reinícios), a busca vai à loja com no máximo 1 termo e usa o banco no resto, e o modo lento passou de 30 para 15 min.
+- S2 e S3 bloqueavam da 2ª consulta em diante. A causa era o navegador controlado (Playwright e porta de depuração: o próprio Chrome se declara automatizado), não o ritmo. Resolvido com o Chrome comum e a extensão (ver Alterado); o último intervalo entre consultas fica guardado entre reinícios.
 - Consulta na fila atrás de uma que bloqueou ia à loja mesmo assim, e o 2º bloqueio subia a pausa de 15 min para 1 h.
 - A busca escondia anúncios que o banco já tinha: buscar processadores AM4 mostrava só a loja que tinha coletado o termo "AM4", e o mesmo processador nas outras lojas (vindo da coleta de "Ryzen 7", ou de uma loja bloqueada) não aparecia. Agora cada loja junta ao resultado do termo os anúncios dela que batem com ele pelas specs (encaixe, linha, potência, chipset, memória…), vistos nas últimas 72 h (`SEARCH_DB_MAX_AGE_H`).
 - Fonte do "Meu PC": a marca sugeria só 20 marcas fixas; agora sugere as mesmas que a busca de fontes mostra (78 nos anúncios do servidor em nov/2026, ex. Duex, ASRock, BRX, Be Quiet!) e grava a marca na mesma grafia da busca.
@@ -35,11 +38,16 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 - Kit de 4 pentes numa placa ATX sem os slots no título ficava "não deu para confirmar": ATX conta 4.
 
 ### Alterado
-- Rotina de preços volta às três lojas: as que bloqueiam coleta seguida vão em modo lento (um termo a cada meia hora ou mais) e, se bloquearem, pausam e voltam a tentar sozinhas, em vez de ficar fora da rotina.
+- Todas as lojas lidas do mesmo jeito: um Google Chrome comum por loja, sem porta de depuração e sem Playwright, com a extensão do projeto (`apps/server/extension`) abrindo cada página numa aba, lendo o HTML e fechando a aba. Acabaram os bloqueios da 2ª consulta em diante nas lojas com anti-robô. A S1 deixou de usar HTTP direto. Instalação da extensão uma vez por loja: `pnpm chrome-setup` (no Chromium ela carrega sozinha).
+- Modos da rotina em segundos: normal 15 s (a busca do site vai na hora), reduzido 20 s e lento 1 min (a busca do site também respeita o intervalo). Cada vez da rotina é uma coisa só: uma página da varredura ou um termo.
+- Na fila de cada loja, a busca do site passa na frente da rotina.
+- Rotina de preços volta às três lojas, por igual; se uma loja bloquear, pausa e volta a tentar sozinha, em vez de ficar fora da rotina.
 - "Parar" a busca fica junto da ordenação, acima dos resultados.
 - Rota da API que não existe responde 404 em JSON, em vez da página do app.
 
 ### Removido
+- `pnpm share` (link público temporário a partir do PC, usado antes de haver servidor). O link do servidor (`deploy/upgradezin-tunnel.service`) continua.
+- Playwright e os modos de abrir o Chrome por ele ou pela porta de depuração.
 - Catálogo de peças importado (BuildCores OpenDB) e `pnpm catalog:import`: o app usa só o que as lojas mostram. Ao subir, o banco apaga as tabelas do catálogo (anúncios, histórico e montagens ficam) e é compactado uma vez.
 
 ## [0.2.0] - 2026-11-20

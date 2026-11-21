@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { Offer } from '@upgradezin/shared';
 import { s1 } from '../adapters/s1.ts';
 import { fixture } from '../adapters/fixtures.ts';
+import { usePageLoader } from '../browser.ts';
 import { openDb } from '../db/db.ts';
 import { storeConfig } from '../stores.ts';
 import { dueTerms, ensureTerms, priceHistory } from './prices.ts';
@@ -76,7 +77,7 @@ describe('varredura de categoria', () => {
 });
 
 describe('varredura: configuração e adapter da S1', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => usePageLoader(null));
 
   it('STORE_S1_SWEEP só aceita caminho do próprio site e categoria conhecida', () => {
     expect(storeConfig('s1').sweep).toEqual({ cpu: '/hardware/processadores', psu: '/hardware/fontes' });
@@ -85,9 +86,9 @@ describe('varredura: configuração e adapter da S1', () => {
 
   it('lê a página da categoria com paginação e devolve o total de páginas', async () => {
     const urls: string[] = [];
-    vi.stubGlobal('fetch', async (u: URL | string) => {
-      urls.push(String(u));
-      return new Response(fixture('s1-cpu.html'), { status: 200 });
+    usePageLoader(async (_store, url) => {
+      urls.push(url);
+      return { html: fixture('s1-cpu.html'), url, title: '' };
     });
     const r = await s1.sweepPage!({ category: 'cpu', url: 'https://www.s1.example/hardware/processadores', page: 3, signal: new AbortController().signal });
     expect(urls[0]).toMatch(/^https:\/\/www\.s1\.example\/hardware\/processadores\?page_number=3&page_size=120/);

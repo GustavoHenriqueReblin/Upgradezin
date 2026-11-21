@@ -256,7 +256,7 @@ export function App() {
 
   /**
    * "Buscar nas lojas" do filtro de texto: os termos da busca atual mais o texto, que vai às lojas
-   * como termo próprio (nas lojas lentas, a única página aceita já traz o produto). O filtro de
+   * como termo próprio (na S2, que rende uma página por consulta, a página já traz o produto). O filtro de
    * texto continua, então a tela mostra o que bate com ele.
    */
   const searchText = (text: string) => {
