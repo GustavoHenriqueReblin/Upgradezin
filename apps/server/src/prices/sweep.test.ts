@@ -119,6 +119,22 @@ describe('ficha técnica guardada', () => {
     expect(s1SheetFromHtml(page({}))).toBeNull();
     expect(s1SheetFromHtml('<html></html>')).toBeNull();
   });
+  it('S1: junta a descrição (medidas que só estão nela, em marcas menores e alguns gabinetes); as informações técnicas vêm primeiro', async () => {
+    const { s1SheetFromHtml } = await import('../adapters/s1.ts');
+    const { parseSpecSheet } = await import('@upgradezin/shared');
+    const page = (product: unknown) => `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { product } } })}</script>`;
+    // Como num anúncio real (nov/2026): as informações técnicas só com garantia e modelo; a ficha na descrição.
+    const html = s1SheetFromHtml(
+      page({
+        technicalInformation: { text: '<p><strong>Garantia do Fornecedor</strong></p><p>3 Meses</p><p><strong>Modelo</strong></p><p>XYZ-RX580</p>' },
+        description: ':<br><br><b>Marca:</b> Exemplo<br><b>Interface de Alimentação:</b> 6 pinos<br><b>Dimensões (sem suporte):</b> 227 x 117 x 45 mm<br>',
+      }),
+    )!;
+    expect(html.indexOf('Garantia')).toBeLessThan(html.indexOf('Dimensões'));
+    expect(parseSpecSheet('gpu', html).specs.gpuLength).toBe(227);
+    expect(s1SheetFromHtml(page({ technicalInformation: { text: ' ' }, description: '<p>Dimensões: 300 x 120 x 50 mm</p>' }))).toBe('<p>Dimensões: 300 x 120 x 50 mm</p>');
+    expect(s1SheetFromHtml(page({ technicalInformation: { text: '' }, description: '' }))).toBeNull();
+  });
 });
 
 describe('varredura na rotina', () => {

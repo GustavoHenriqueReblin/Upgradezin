@@ -140,12 +140,17 @@ async function listPage(base: string, page: number, signal: AbortSignal): Promis
 
 const productUrl = (sku: string) => `${storeConfig('s1').url}/produto/${encodeURIComponent(sku)}`;
 
-/** HTML da ficha técnica na página do produto, ou null se a página não tem. */
+/**
+ * HTML da ficha técnica na página do produto, ou null se a página não tem. Junta as "informações
+ * técnicas" (primeiro: valem na frente) com a descrição: em muitos anúncios (marcas menores,
+ * vendedores parceiros, alguns gabinetes) as medidas só estão na descrição.
+ */
 export function s1SheetFromHtml(html: string): string | null {
   const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
   if (!m) return null;
-  const text = JSON.parse(m[1]!)?.props?.pageProps?.product?.technicalInformation?.text;
-  return typeof text === 'string' && text.trim() ? text : null;
+  const product = JSON.parse(m[1]!)?.props?.pageProps?.product;
+  const parts = [product?.technicalInformation?.text, product?.description].filter((t): t is string => typeof t === 'string' && !!t.trim());
+  return parts.length ? parts.join('<br>') : null;
 }
 
 /** "CUPOM CODIGO" -> { code: 'CODIGO' }. A porcentagem vem depois (resolveCoupons). */
@@ -217,7 +222,7 @@ export const s1: StoreAdapter = {
     await resolveCoupons(offers, signal);
     return offers;
   },
-  /** Ficha técnica da página do produto (product.technicalInformation.text no __NEXT_DATA__). */
+  /** Ficha técnica da página do produto (product.technicalInformation.text e product.description no __NEXT_DATA__). */
   async productSheet({ sku }, signal) {
     takePage('s1');
     return s1SheetFromHtml((await loadPage('s1', productUrl(sku), { signal })).html);

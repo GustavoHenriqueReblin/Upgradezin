@@ -62,7 +62,8 @@ export function parseSpecSheet(category: CategoryId, html: string): SpecSheet {
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i]!;
       if (noise.test(l)) continue;
-      if (/dimens|comprimento/.test(l)) {
+      // "Dimensões: 269 x 131 x 40 mm", "Comprimento: 304 mm" ou, na Gigabyte, "Tamanho do cartão: C=215 L=122 A=40 mm".
+      if (/dimens|comprimento|tamanho d[oa] (cartao|placa)|card size/.test(l)) {
         // "Dimensões:" sozinho na linha e as medidas na seguinte ("- 269,2 x 131,8 x 40,3 mm").
         const values = /\d/.test(l) ? l : `${l} ${lines[i + 1] ?? ''}`;
         const mm = lengthsMm(values).filter((n) => n >= 100 && n <= 450);
@@ -104,11 +105,21 @@ export function parseSpecSheet(category: CategoryId, html: string): SpecSheet {
         const h = Number(cooler[1]);
         if (h >= 50 && h <= 200) specs.caseMaxCooler = h;
       }
-      // Radiadores: na linha do título da seção e nas linhas de posição logo abaixo ("- Topo: 360 mm, 280 mm").
+      // Radiadores: na linha do título da seção e nas linhas logo abaixo, de posição ("- Topo: 360 mm, 280 mm")
+      // ou só com a medida ("- 240 mm", "- 2 x 140 mm" = radiador de 280).
+      const item = /^-?\s*(?:\d\s*x\s*)?\d{3}\s*mm$/.test(l);
       if (/refrigeracao\s+liquida|radiador|water\s*cooler/.test(l)) inRadiators = true;
-      else if (inRadiators && !/^-?\s*(topo|superior|frontal|frente|traseira|traseiro|lateral|inferior|fundo)\b/.test(l)) inRadiators = false;
-      // "360 mm" e listas com barra ("radiador de 120/140/240/280/360 mm").
-      if (inRadiators) for (const m of l.matchAll(/\b(\d{3}(?:\s*\/\s*\d{3})*)\s*mm/g)) for (const n of m[1]!.split('/').map(Number)) if (RADIATORS.includes(n)) radiators.add(n);
+      else if (inRadiators && !item && !/^-?\s*(topo|superior|frontal|frente|traseira|traseiro|lateral|inferior|fundo)\b/.test(l)) inRadiators = false;
+      if (inRadiators) {
+        const times = item ? l.match(/(\d)\s*x\s*(\d{3})\s*mm/) : null;
+        if (times) {
+          const n = Number(times[1]) * Number(times[2]);
+          if (RADIATORS.includes(n)) radiators.add(n);
+        } else {
+          // "360 mm" e listas com barra ("radiador de 120/140/240/280/360 mm").
+          for (const m of l.matchAll(/\b(\d{3}(?:\s*\/\s*\d{3})*)\s*mm/g)) for (const n of m[1]!.split('/').map(Number)) if (RADIATORS.includes(n)) radiators.add(n);
+        }
+      }
     }
     if (radiators.size) specs.caseRadiators = [...radiators].sort((a, b) => a - b);
   }

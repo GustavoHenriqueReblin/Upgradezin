@@ -16,6 +16,7 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ### Corrigido
 - S1 muito lenta: cada página esperava os 45 s do limite, porque a página da loja nunca termina de carregar para o Chrome (anúncios e rastreadores). A extensão agora lê assim que o HTML está pronto: busca de 46 s para ~2 s, e de ~90 s para ~6 s quando abre a página de um cupom. Vale para as três lojas.
+- Fichas da S1 vazias na maioria: o leitor só olhava as "informações técnicas", e em muitos anúncios (marcas menores, vendedores parceiros, alguns gabinetes) as medidas estão só na descrição. Agora junta as duas. Também lê "Tamanho do cartão: C=215 L=122 A=40 mm" (Gigabyte) e radiadores do gabinete em lista abaixo do título ("- 240 mm", "- 2 x 140 mm"). Em 8 páginas reais, as que rendem dado foram de 2 para 6 (as outras 2 não têm medida na página).
 - Admin: todas as telas atualizam sozinhas, sem precisar trocar de aba (status, coleta, consultas, cobertura, produtos e rotina de fichas, termos, atividade, backups). Um canal ao vivo só para a página avisa quando uma consulta termina, uma loja começa ou termina uma página, entra ou sai de pausa, algo muda pelo admin ou alguém busca no site; a tela recarrega o que mostra. Também recarrega ao voltar para a aba do navegador e, por garantia, de tempos em tempos.
 
 ### Alterado

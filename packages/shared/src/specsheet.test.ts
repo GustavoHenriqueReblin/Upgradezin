@@ -32,4 +32,13 @@ describe('ficha técnica da página do produto', () => {
     const html = '<p>Refrigeração líquida:</p><p>Superior: radiador de 120/140/240/280/360 mm (opcional)</p><p>Traseira: radiador de 120 mm</p>';
     expect(parseSpecSheet('case', html).specs.caseRadiators).toEqual([120, 140, 240, 280, 360]);
   });
+
+  it('placa de vídeo: "Tamanho do cartão: C=215 L=122 A=40 mm" (Gigabyte)', () => {
+    expect(parseSpecSheet('gpu', '<p>Tamanho do cartão: C=215 L=122 A=40 mm</p><p>Conectores de energia: 8 pinos*1</p>').specs).toEqual({ gpuLength: 215, gpu16Pin: false });
+  });
+
+  it('gabinete: radiadores em lista abaixo do título ("- 240 mm", "- 2 x 140 mm" = 280)', () => {
+    const html = '<p>Suporte do radiador (superior):</p><p>- 120 mm</p><p>- 2 x 140 mm</p><p>- 2 x 160 mm</p><p>Altura máxima do cooler da CPU:</p><p>- 360 mm</p>';
+    expect(parseSpecSheet('case', html).specs.caseRadiators).toEqual([120, 280]); // 2 x 160 não é radiador comum; a seção acaba no próximo título
+  });
 });
