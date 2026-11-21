@@ -92,6 +92,16 @@ describe('todas as lojas pelo mesmo caminho (loadPage)', () => {
     expect(err).toBeInstanceOf(BlockedError);
   });
 
+  it('S2: página da varredura abre a categoria direto, com ?page=N a partir da 2ª', async () => {
+    const calls = fakeChrome(() => ({ html: fixture('s2-psu.html') }));
+    const first = await s2.sweepPage!({ category: 'psu', url: 'https://www.s2.example/hardware/fonte', page: 1, signal: signal() });
+    await s2.sweepPage!({ category: 'psu', url: 'https://www.s2.example/hardware/fonte', page: 3, signal: signal() });
+    expect(calls.map((c) => c.url)).toEqual(['https://www.s2.example/hardware/fonte', 'https://www.s2.example/hardware/fonte?page=3']);
+    expect(first.totalPages).toBe(61);
+    expect(first.offers.length).toBeGreaterThan(0);
+    expect(first.offers.every((o) => o.store === 's2')).toBe(true);
+  });
+
   it('S3: espera os cards aparecerem e lê do HTML', async () => {
     const calls = fakeChrome(() => ({ html: fixture('s3-cpu.html') }));
     const offers = await s3.search({ category: 'cpu', q: 'Ryzen 5', signal: signal() });

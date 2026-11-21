@@ -16,7 +16,7 @@ import { nextSweep } from './sweep.ts';
  * Cada loja tem seu modo (admin) e sua própria agenda: os segundos do modo (editáveis no admin;
  * padrão ROUTINE_NORMAL_GAP_S / _REDUCED_ / _SLOW_), + até 20% aleatório, depois de cada coisa
  * que a rotina faz: uma página da varredura (só no normal, loja com varredura, se estiver na hora
- * e houver orçamento) ou um termo, com as categorias espalhadas (dueTerms).
+ * e houver orçamento; alternando com os termos) ou um termo, com as categorias espalhadas (dueTerms).
  * O modo é só da rotina. A busca do site é outra chave por loja (`live`): ligada, vai na hora.
  */
 
@@ -170,6 +170,9 @@ export const modeDelay = (gapS: number, rand = Math.random()) => Math.round(gapS
 export const sweepCategories = (store: StoreId): CategoryId[] =>
   canSweep(store) ? ENABLED_CATEGORIES.filter((c) => storeConfig(store).sweep[c]) : [];
 
+/** A última vez da loja foi uma página da varredura (a próxima vai para um termo). */
+const sweptLast = new Map<StoreId, boolean>();
+
 /** Páginas de varredura por loja na última hora (orçamento próprio, dentro do da rotina). */
 const sweepLog = new Map<StoreId, number[]>();
 const sweepPagesLastHour = (store: StoreId) => {
@@ -208,11 +211,15 @@ async function turn(store: StoreId, signal: AbortSignal): Promise<void> {
     nextAt.set(store, Date.now() + IDLE_MS);
     return;
   }
-  // Varredura só no modo normal: no reduzido e no lento, cada vez vai para um termo.
-  if (settings.modes[store] === 'normal' && (await sweepOne(store, signal))) {
+  // Varredura só no modo normal (no reduzido e no lento, cada vez vai para um termo) e alternando
+  // com os termos: depois de uma página da varredura, a vez seguinte é de um termo (se houver).
+  const sweep = settings.modes[store] === 'normal' && sweptLast.get(store) !== true;
+  if (sweep && (await sweepOne(store, signal))) {
+    sweptLast.set(store, true);
     nextAt.set(store, Date.now() + gap);
     return;
   }
+  sweptLast.set(store, false);
   const now = Date.now();
   const iso = (ms: number) => new Date(ms).toISOString();
   const due = dueTerms(
@@ -224,7 +231,8 @@ async function turn(store: StoreId, signal: AbortSignal): Promise<void> {
     iso(now - config.ROUTINE_TEXT_DAYS * 86_400_000),
   );
   if (!due.length) {
-    nextAt.set(store, now + IDLE_MS); // tudo em dia: confere de novo depois
+    // Termos em dia: se a vez era de termo porque a anterior foi varredura, a varredura segue na próxima.
+    nextAt.set(store, sweep ? now + IDLE_MS : now + gap);
     return;
   }
   await collectOne(store, due[0]!, signal);

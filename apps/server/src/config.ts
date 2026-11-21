@@ -131,10 +131,13 @@ const Env = z.object({
    * Recomeça a categoria quando a última volta completa passou disto.
    */
   ROUTINE_SWEEP_REFRESH_H: z.coerce.number().default(24),
-  /** Páginas de varredura por loja por hora (saem de ROUTINE_PAGES_PER_HOUR; o resto fica para os termos). */
-  ROUTINE_SWEEP_PAGES_PER_HOUR: z.coerce.number().default(6),
-  /** Teto de páginas por categoria numa volta (120 itens por página na S1). */
-  ROUTINE_SWEEP_MAX_PAGES: z.coerce.number().default(25),
+  /**
+   * Páginas de varredura por loja por hora (saem de ROUTINE_PAGES_PER_HOUR). A varredura alterna com
+   * os termos (uma vez cada), então no máximo metade das vezes da rotina vai para ela.
+   */
+  ROUTINE_SWEEP_PAGES_PER_HOUR: z.coerce.number().default(20),
+  /** Teto de páginas por categoria numa volta (120 itens por página na S1, 36 na S2). */
+  ROUTINE_SWEEP_MAX_PAGES: z.coerce.number().default(40),
   /** Intervalo aleatório entre páginas da MESMA loja. */
   PAGE_DELAY_MIN_MS: z.coerce.number().default(5000),
   PAGE_DELAY_MAX_MS: z.coerce.number().default(12000),
@@ -142,8 +145,8 @@ const Env = z.object({
   MAX_PAGES_PER_HOUR: z.coerce.number().default(30),
   /** 1 página de 120 itens por termo (termos já são específicos; a loja ordena pelos mais procurados). */
   MAX_PAGES_S1: z.coerce.number().default(1),
-  /** S2 limita frequência rápido; a 1ª página já traz os itens relevantes. */
-  MAX_PAGES_S2: z.coerce.number().default(1),
+  /** 36 itens por página na S2: até 3 páginas por termo (para antes, quando a página quase não traz itens da categoria). */
+  MAX_PAGES_S2: z.coerce.number().default(3),
 });
 
 const parsed = Env.parse(process.env);

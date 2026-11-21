@@ -152,6 +152,52 @@ function couponFromCategories(cats?: { name?: string }[]): Offer['coupon'] {
 /** Espera antes de conferir se a página da busca foi redirecionada por script. */
 const REDIRECT_WAIT_MS = 2000;
 
+/**
+ * Uma página da loja (busca ou categoria): abre no Chrome, confere redirecionamento e bloqueio
+ * e lê os itens do payload. Usada pela busca e pela varredura.
+ */
+async function readS2Page(url: URL, signal: AbortSignal, onNeedsHuman?: () => void): Promise<{ items: S2Item[]; totalPages: number }> {
+  takePage('s2');
+  // Termo igual ao nome de uma categoria ("Water Cooler", "Gabinete"): a loja redireciona a busca
+  // para a página da categoria, que não traz a lista (para o navegador da coleta, vem a página de
+  // "manutenção"). Não é bloqueio: confere o endereço final antes de ler o título como bloqueio.
+  const redirectedTo = (finalUrl?: string) => {
+    if (!finalUrl) return null;
+    const to = new URL(finalUrl);
+    return to.pathname !== url.pathname ? to.pathname : null;
+  };
+  let loaded: LoadedPage;
+  try {
+    loaded = await loadPage('s2', url.toString(), {
+      signal,
+      onNeedsHuman,
+      // O redirecionamento é feito por script da página, instantes depois de abrir: sem lista e
+      // ainda no mesmo endereço, espera um pouco e lê de novo antes de chamar de bloqueio.
+      recheck: (p) => !redirectedTo(p.url) && !parseS2Rsc(rscFromHtml(p.html)).hasProducts,
+      recheckMs: REDIRECT_WAIT_MS,
+    });
+  } catch (err) {
+    const to = redirectedTo((err as PageError).finalUrl);
+    if (to) throw new SearchRedirectError('s2', to);
+    throw err;
+  }
+  const to = redirectedTo(loaded.url);
+  if (to) throw new SearchRedirectError('s2', to);
+  // Lê do HTML: depois da hidratação o Next.js esvazia self.__next_f no navegador.
+  const { items, totalPages, hasProducts, redirect } = parseS2Rsc(rscFromHtml(loaded.html));
+  if (!hasProducts && redirect) throw new SearchRedirectError('s2', redirect);
+  if (items.length === 0) await saveDebugHtml('s2', loaded.html, 'no-items');
+  // Página sem dados de produto não é "0 resultados": a loja limitou o acesso. Respeita e para.
+  if (!hasProducts) throw new BlockedError('s2', 'unavailable', 'Página sem dados de produto');
+  return { items, totalPages };
+}
+
+const pageUrl = (base: string, page: number) => {
+  const url = new URL(base);
+  if (page > 1) url.searchParams.set('page', String(page));
+  return url;
+};
+
 export const s2: StoreAdapter = {
   id: 's2',
   async search({ category, q, path, signal, onPage, onNeedsHuman }) {
@@ -162,48 +208,22 @@ export const s2: StoreAdapter = {
     let total = 1;
     for (let page = 1; page <= Math.min(total, config.MAX_PAGES_S2); page++) {
       if (page > 1) await sleep(jitter(), signal);
-      const url = new URL(base);
-      if (page > 1) url.searchParams.set('page', String(page));
-      takePage('s2');
-      // Termo igual ao nome de uma categoria ("Water Cooler", "Gabinete"): a loja redireciona a busca
-      // para a página da categoria, que não traz a lista (para o navegador da coleta, vem a página de
-      // "manutenção"). Não é bloqueio: confere o endereço final antes de ler o título como bloqueio.
-      const redirectedTo = (finalUrl?: string) => {
-        if (!finalUrl) return null;
-        const to = new URL(finalUrl);
-        return to.pathname !== url.pathname ? to.pathname : null;
-      };
-      let loaded: LoadedPage;
-      try {
-        loaded = await loadPage('s2', url.toString(), {
-          signal,
-          onNeedsHuman,
-          // O redirecionamento é feito por script da página, instantes depois de abrir: sem lista e
-          // ainda no mesmo endereço, espera um pouco e lê de novo antes de chamar de bloqueio.
-          recheck: (p) => !redirectedTo(p.url) && !parseS2Rsc(rscFromHtml(p.html)).hasProducts,
-          recheckMs: REDIRECT_WAIT_MS,
-        });
-      } catch (err) {
-        const to = redirectedTo((err as PageError).finalUrl);
-        if (to) throw new SearchRedirectError('s2', to);
-        throw err;
-      }
-      const to = redirectedTo(loaded.url);
-      if (to) throw new SearchRedirectError('s2', to);
-      // Lê do HTML: depois da hidratação o Next.js esvazia self.__next_f no navegador.
-      const { items, totalPages, hasProducts, redirect } = parseS2Rsc(rscFromHtml(loaded.html));
-      if (!hasProducts && redirect) throw new SearchRedirectError('s2', redirect);
-      if (page === 1 && items.length === 0) await saveDebugHtml('s2', loaded.html, 'no-items');
-      // Página sem dados de produto não é "0 resultados": a loja limitou o acesso. Respeita e para.
-      if (!hasProducts) throw new BlockedError('s2', 'unavailable', 'Página sem dados de produto');
+      const { items, totalPages } = await readS2Page(pageUrl(base, page), signal, onNeedsHuman);
       total = totalPages;
       const now = new Date().toISOString();
-      const mapped = items.map((it) => mapS2Item(it, now, category)).filter((o): o is Offer => !!o);
+      const seen = new Set(offers.map((o) => o.storeSku));
+      const mapped = items.map((it) => mapS2Item(it, now, category)).filter((o): o is Offer => !!o && !seen.has(o.storeSku));
       offers.push(...mapped);
       onPage?.({ page, total: Math.min(total, config.MAX_PAGES_S2), found: offers.length, offers: mapped });
       // A busca da loja é ampla (traz PCs montados etc.). Página quase sem itens da categoria = fim da relevância.
       if (mapped.length < items.length * 0.2) break;
     }
     return offers;
+  },
+  /** Página da categoria (aberta direto traz a lista, 36 itens por página, paginada com ?page=N). */
+  async sweepPage({ category, url, page, signal }) {
+    const { items, totalPages } = await readS2Page(pageUrl(url, page), signal);
+    const now = new Date().toISOString();
+    return { offers: items.map((it) => mapS2Item(it, now, category)).filter((o): o is Offer => !!o), totalPages };
   },
 };
