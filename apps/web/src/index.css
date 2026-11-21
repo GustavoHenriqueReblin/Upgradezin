@@ -1,0 +1,90 @@
+@import 'tailwindcss';
+
+/* Tema escuro fixo: a variante dark: vale sempre (<html class="dark">). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Quicksand (arredondada), servida pelo próprio app: nenhuma requisição a terceiros. */
+  --font-sans: 'Quicksand Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* Destaque: laranja vivo (botões, seleção, links, logo). Verde fica só para o que é bom: preço, desconto, compatível. */
+  --color-accent-50: #fff7ed;
+  --color-accent-100: #ffedd5;
+  --color-accent-200: #fed7aa;
+  --color-accent-300: #fdba74;
+  --color-accent-400: #fb923c;
+  --color-accent-500: #f97316;
+  --color-accent-600: #ea580c;
+  --color-accent-700: #c2410c;
+  --color-accent-800: #9a3412;
+  --color-accent-900: #7c2d12;
+  --color-accent-950: #1f0b02;
+
+  /* Cinzas quentes: fundo quase preto e cards elevados, puxados para o marrom (não azulados). */
+  --color-zinc-50: #fafaf9;
+  --color-zinc-100: #f5f5f4;
+  --color-zinc-200: #e7e5e4;
+  --color-zinc-300: #d6d3d1;
+  --color-zinc-400: #a8a29e;
+  --color-zinc-500: #7d766f;
+  --color-zinc-600: #57534e;
+  --color-zinc-700: #3b3531;
+  --color-zinc-800: #2a2421;
+  --color-zinc-900: #1a1614;
+  --color-zinc-950: #080605;
+}
+
+:root {
+  color-scheme: dark;
+  font-family: var(--font-sans);
+}
+
+body {
+  background: var(--color-zinc-950);
+}
+
+/* Um brilho laranja bem discreto no alto da página: o fundo não fica chapado. */
+#root {
+  min-height: 100vh;
+  background: radial-gradient(1100px 380px at 50% -140px, rgb(249 115 22 / 0.09), transparent 70%);
+}
+#root > div {
+  background-color: transparent !important;
+}
+
+::selection {
+  background: rgb(249 115 22 / 0.35);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent-500);
+  outline-offset: 2px;
+}
+
+/* Tailwind 4 tira o cursor de mão dos botões; tudo que é clicável volta a ter. */
+button:not(:disabled),
+[role='button'],
+select,
+summary,
+label:has(input[type='checkbox']),
+input[type='checkbox'] {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
+/*
+ * Gráfico de histórico de preço: uma cor fixa por loja (paleta validada para daltonismo e
+ * contraste, ver docs §9.2). As cores das lojas no .env podem ser claras demais para linha
+ * (ex. branco), então o gráfico não as usa. Tons do tema escuro (o app é só escuro).
+ */
+.viz {
+  --viz-s1: #3987e5;
+  --viz-s2: #d95926;
+  --viz-s3: #199e70;
+  --viz-grid: #2a2421;
+  --viz-axis: #a8a29e;
+  --viz-surface: #1a1614;
+}

@@ -1,0 +1,74 @@
+# Changelog
+
+Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquanto for 0.x, a versão menor sobe a cada conjunto de recursos e a de correção a cada ajuste. Para lançar uma versão nova, veja a seção "Versões" do [README](README.md).
+
+## [Não lançado]
+
+### Adicionado
+- Admin, coleta: rotina com um switch por loja (roda nas lojas ligadas) e o modo de cada uma (normal: varredura e vários termos a cada 5 min; reduzido: 1 termo a cada 5 min; lento: 1 termo a cada 10 min), contagem regressiva até a próxima consulta de cada loja, painel de cada loja (pausa, páginas da hora, última coleta boa, último bloqueio, consultas do dia), tirar pausa, pausar por um tempo e "coletar agora", tudo valendo na hora.
+- Admin, dados: registro de cada consulta às lojas (90 dias) com linha do tempo de bloqueios por hora, cobertura por loja e categoria, e termos (última coleta por loja, filtro de nunca coletados, dar prioridade, apagar pesquisados).
+- Admin, operação: consultas ao vivo, atividade do site (buscas recentes sem IP, conexões abertas, quem está no limite), backups (criar, baixar, apagar) e merge de outro banco com prévia e backup antes.
+- Lojas configuradas no banco e editadas no admin (aba Lojas): nome, site, busca, caminhos por categoria e de varredura, cores e ligada/desligada, valendo na hora, sem reiniciar. Na primeira vez, o servidor copia as variáveis `STORE_*` do `.env`; depois, elas não valem mais.
+- Admin em `/admin`, com login fixo do `.env` (`ADMIN_USER`/`ADMIN_PASSWORD`): sessão em cookie protegido, limite de tentativas por IP e status do servidor (versão, commit, há quanto tempo está no ar, banco, memória, Chrome).
+- Varredura de categoria na rotina: a loja com caminhos de categoria (admin, aba Lojas; hoje a s1) é lida inteira, algumas páginas por hora, e todo produto à venda passa a ter histórico de preço, não só os que aparecem nas buscas do formulário. `pnpm scan --sweep` confere os caminhos.
+- Compatibilidade: TDP de referência de cada processador, para o aviso de cooler fraco valer também para o que está à venda (antes só para o PC importado); observações de water cooler de 120 mm com processador forte e de placa-mãe de entrada com processador de 105 W ou mais.
+- Licença proprietária (`LICENSE`): todos os direitos reservados.
+- Tela de resultado atualiza sozinha: depois da busca, quando chega coleta nova de uma loja (rotina, loja que saiu da pausa, busca de outra pessoa), a lista dela troca sem buscar de novo, com um aviso discreto no canto. Os cards já mostrados não mudam de lugar.
+- Checagem física na montagem, pela ficha técnica da página do produto (lida só das peças escolhidas, guardada 30 dias): placa de vídeo que não cabe ou fica justa no gabinete, cooler alto demais, radiador que o gabinete não aceita e conector 12V-2x6 da placa.
+- Condições do cupom (S1): "cupons limitados", valor mínimo, validade e PIX. O cupom só entra no preço quando vale para ele, e o card diz as condições ou por que não vale.
+- Identidade da peça entre lojas: part number do fabricante lido do título também na S3 (68% dos anúncios dela, que antes só casavam pela chave de modelo).
+- "Buscar nas lojas" a partir do filtro de texto do resultado: o texto (ex. "Zotac RTX 3050 Twin Edge OC") vai às lojas como termo próprio, junto com os da busca. Na S2, que rende uma página por consulta, a página já traz o produto procurado. Limitado por pessoa por hora; a rotina só mantém o texto enquanto alguém pesquisa (7 dias).
+- Bolinha da loja em degradê: a cor da loja (admin, aba Lojas) aceita duas ou três cores separadas por vírgula (`"#ffc300,#e30613"`); com uma só, continua lisa.
+
+### Corrigido
+- Resultado: loja lenta que a busca deixou para a rotina (intervalo mínimo ainda correndo) não aparecia quando a rotina a coletava enquanto outra loja ainda estava ao vivo: a tela só escutava novidades depois do fim da busca. Agora escuta desde o começo (ignorando as lojas ainda ao vivo, que recebem a própria lista).
+- S2: termo igual ao nome de uma categoria ("Water Cooler", "Gabinete") contava como bloqueio e pausava a loja. A busca da loja redireciona esses termos, por script, para a página da categoria, sem lista de produtos. Agora o redirecionamento é reconhecido (pela instrução que vem na própria resposta da busca): a loja não pausa, o destino fica guardado no termo (migração 9) e as próximas coletas desse termo abrem a página da categoria direto, que traz a lista normalmente. Na primeira vez, a busca do site segue com os anúncios que o banco já tem.
+- Testes usam banco em memória (`DB_PATH=:memory:`); antes, os que usavam o banco do servidor abriam o `data/upgradezin.db` de quem rodava.
+- Busca sem a loja que tinha o produto (ex. i5-12400F sem a S2): a S2 nunca tinha coletado um termo de processador Intel (a rotina ia termo a termo e gastava o pouco que a loja aceita sempre nas mesmas categorias). As lojas lentas agora espalham a coleta pelas categorias, o pesquisado primeiro.
+- Toda busca atualiza por trás o que foi coletado há mais de 10 min (antes, só o que tinha mais de 24 h), e sair da página não interrompe mais a consulta: ela termina e grava no banco.
+- S2 e S3 bloqueavam por rajada: aceitam a 1ª página e bloqueiam a seguinte que vem segundos depois, e a busca do site mandava uma página por termo. Agora há no mínimo 3 min entre consultas a elas (rotina ou site, guardado entre reinícios), a busca vai à loja com no máximo 1 termo e usa o banco no resto, e o modo lento passou de 30 para 15 min.
+- Consulta na fila atrás de uma que bloqueou ia à loja mesmo assim, e o 2º bloqueio subia a pausa de 15 min para 1 h.
+- A busca escondia anúncios que o banco já tinha: buscar processadores AM4 mostrava só a loja que tinha coletado o termo "AM4", e o mesmo processador nas outras lojas (vindo da coleta de "Ryzen 7", ou de uma loja bloqueada) não aparecia. Agora cada loja junta ao resultado do termo os anúncios dela que batem com ele pelas specs (encaixe, linha, potência, chipset, memória…), vistos nas últimas 72 h (`SEARCH_DB_MAX_AGE_H`).
+- Fonte do "Meu PC": a marca sugeria só 20 marcas fixas; agora sugere as mesmas que a busca de fontes mostra (78 nos anúncios do servidor em nov/2026, ex. Duex, ASRock, BRX, Be Quiet!) e grava a marca na mesma grafia da busca.
+- Placas A620A ("A620AM-K") não tinham o chipset reconhecido: a montagem não confirmava processador nenhum nelas.
+- H610 e H810 travam a frequência da memória: a montagem sugeria ativar o XMP.
+- Kit de 4 pentes numa placa ATX sem os slots no título ficava "não deu para confirmar": ATX conta 4.
+
+### Alterado
+- Rotina de preços volta às três lojas: as que bloqueiam coleta seguida vão em modo lento (um termo a cada meia hora ou mais) e, se bloquearem, pausam e voltam a tentar sozinhas, em vez de ficar fora da rotina.
+- "Parar" a busca fica junto da ordenação, acima dos resultados.
+- Rota da API que não existe responde 404 em JSON, em vez da página do app.
+
+### Removido
+- Catálogo de peças importado (BuildCores OpenDB) e `pnpm catalog:import`: o app usa só o que as lojas mostram. Ao subir, o banco apaga as tabelas do catálogo (anúncios, histórico e montagens ficam) e é compactado uma vez.
+
+## [0.2.0] - 2026-11-20
+
+### Adicionado
+- Categorias SSD, Cooler e Gabinete: busca, filtros (capacidade por faixa, geração PCIe, tipo de cooler e radiador, placa-mãe que cabe, vidro, fans), ordenação por preço por TB e por leitura, e specs no card.
+- Montagem com 8 peças: SSD, cooler e gabinete entram com compatibilidade (encaixe e TDP do cooler, placa-mãe que cabe no gabinete, SSD mais novo que o M.2 da placa, radiador grande no gabinete). Cooler na montagem tira o aviso de processador sem cooler.
+- Identificar Gargalo: a dica de Windows num HD abre a busca de SSD.
+
+## [0.1.0] - 2026-11-20
+
+Primeira versão numerada, já rodando no servidor.
+
+### Busca e preços
+- Categorias Fonte, Placa-Mãe, Processador, Placa de Vídeo e Memória RAM, em três lojas configuráveis pelo `.env`.
+- Preços guardados num banco SQLite local: uma rotina coleta sozinha, e o site responde do banco (consulta a loja na hora só quando falta ou está velho).
+- Preço à vista em destaque, com cupom, ofertas com prazo e estoque.
+- Histórico de preço por produto (gráfico por loja) e selo de menor preço em 30 dias.
+- Filtros calculados do resultado, ordenação (inclusive "Maior Desconto") e categoria e filtros lembrados no navegador.
+
+### Montagem
+- Montar o PC peça por peça, com compatibilidade conferida a cada escolha (encaixe, chipset × geração, DDR4/DDR5, slots, fonte).
+- Quantidade na memória, "Adicionar à Montagem" em qualquer resultado e compartilhamento por link curto.
+- "Já Tenho": a peça sai do total e conta como parte do PC atual.
+
+### Meu PC
+- Importar o PC pelo relatório do CPU-Z (lido só no navegador), com a fonte informada à mão.
+- Identificar Gargalo: equilíbrio processador × placa de vídeo pelo monitor, placas de vídeo na faixa certa (que cabem na fonte e na placa-mãe), memória, disco, limites da placa-mãe e ajustes grátis como o XMP.
+
+### Servidor
+- Proteções da API (limite por pessoa, buscas simultâneas, links de montagem), cabeçalhos de segurança e coleta respeitosa (bloqueio de loja pausa a consulta).
+- Tema escuro.
