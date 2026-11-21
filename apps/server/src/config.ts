@@ -145,6 +145,11 @@ const Env = z.object({
   MAX_PAGES_PER_HOUR: z.coerce.number().default(30),
   /** 1 página de 120 itens por termo (termos já são específicos; a loja ordena pelos mais procurados). */
   MAX_PAGES_S1: z.coerce.number().default(1),
+  /**
+   * Páginas por termo na busca do site (abaixo do MAX_PAGES_* da loja): quem busca não espera o
+   * intervalo entre páginas; as seguintes ficam para a rotina e a varredura.
+   */
+  SEARCH_MAX_PAGES: z.coerce.number().int().min(1).default(1),
   /** 36 itens por página na S2: até 3 páginas por termo (para antes, quando a página quase não traz itens da categoria). */
   MAX_PAGES_S2: z.coerce.number().default(3),
 });

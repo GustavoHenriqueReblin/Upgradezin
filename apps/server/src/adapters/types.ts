@@ -9,6 +9,8 @@ export interface SearchContext {
    */
   path?: string;
   signal: AbortSignal;
+  /** Teto de páginas desta consulta (abaixo do MAX_PAGES_* da loja). A busca do site usa SEARCH_MAX_PAGES. */
+  maxPages?: number;
   /** Chamado a cada página lida, com as ofertas novas dela (resultado parcial ao vivo). */
   onPage?: (info: { page: number; total?: number; found: number; offers: Offer[] }) => void;
   /** A loja pediu verificação humana; a busca está esperando alguém confirmar na janela. */

@@ -14,7 +14,7 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ### Alterado
 - Varredura de categoria também na s2 (a página da categoria inteira, 36 itens por página): todo produto à venda nela passa a ter histórico, não só os que aparecem nos termos. Caminhos no admin (aba Lojas).
-- s2: até 3 páginas por termo (`MAX_PAGES_S2`, antes 1).
+- s2: até 3 páginas por termo na rotina (`MAX_PAGES_S2`, antes 1). A busca do site lê só a 1ª página de cada termo (`SEARCH_MAX_PAGES`): o intervalo antes da 2ª página deixava a S2 em ~16 s, quase sempre por poucos itens a mais; o resto vem do banco (rotina e varredura).
 - Varredura alterna com os termos (no máximo metade das vezes da rotina), até 20 páginas por hora por loja (`ROUTINE_SWEEP_PAGES_PER_HOUR`, antes 6) e 40 por categoria (`ROUTINE_SWEEP_MAX_PAGES`, antes 25).
 - O modo da loja passa a valer só para a rotina. Antes, no reduzido e no lento, a busca do site também esperava o intervalo do modo; agora isso é a "Busca ao vivo", independente do modo. A chave `slowlast:` do banco deixou de ser usada e é apagada ao subir.
 
