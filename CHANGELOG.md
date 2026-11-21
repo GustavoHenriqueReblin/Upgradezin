@@ -4,6 +4,8 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+## [0.3.0] - 2026-11-21
+
 ### Adicionado
 - Admin, coleta: fila de cada loja no painel (consultando agora e quantas buscas do site e da rotina esperam), atualizada a cada 5 s.
 - `pnpm routine-test`: a rotina de verdade nas lojas (um termo por categoria), com relatório por loja e categoria em `data/debug/`.
@@ -24,6 +26,7 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 - Bolinha da loja em degradê: a cor da loja (admin, aba Lojas) aceita duas ou três cores separadas por vírgula (`"#ffc300,#e30613"`); com uma só, continua lisa.
 
 ### Corrigido
+- Chrome das lojas: às vezes a aba de início carregava antes de a extensão ficar pronta e parava lá ("A extensão não conectou"), e a loja só voltava depois de reiniciar o serviço. A extensão agora troca a aba quando ela termina de carregar, e o app abre outra aba de início se a extensão não conectar em 8 s (espera até 30 s).
 - Resultado: loja que ainda esperava a vez (ou em pausa) não aparecia quando a rotina a coletava enquanto outra loja ainda estava ao vivo: a tela só escutava novidades depois do fim da busca. Agora escuta desde o começo (ignorando as lojas ainda ao vivo, que recebem a própria lista).
 - S2: termo igual ao nome de uma categoria ("Water Cooler", "Gabinete") contava como bloqueio e pausava a loja. A busca da loja redireciona esses termos, por script, para a página da categoria, sem lista de produtos. Agora o redirecionamento é reconhecido (pela instrução que vem na própria resposta da busca): a loja não pausa, o destino fica guardado no termo (migração 9) e as próximas coletas desse termo abrem a página da categoria direto, que traz a lista normalmente. Na primeira vez, a busca do site segue com os anúncios que o banco já tem.
 - Testes usam banco em memória (`DB_PATH=:memory:`); antes, os que usavam o banco do servidor abriam o `data/upgradezin.db` de quem rodava.
