@@ -186,41 +186,60 @@ function startUrl(store: StoreId): string {
 /** Última vez que a extensão de cada loja não conectou: por um minuto, falha na hora (sem abrir outro Chrome). */
 const failedAt = new Map<StoreId, number>();
 
+/** Quanto esperar a extensão conectar, e depois de quanto tempo abrir outra aba de início. */
+const CONNECT_MS = 30_000;
+const RETRY_START_MS = 8_000;
+
+/**
+ * Abre a aba de início no Chrome da loja. Com o Chrome da loja fechado, abre o Chrome e guarda o
+ * processo (para fechar no fim). Com ele já aberto, o processo novo só entrega a aba ao que está
+ * rodando e sai: o guardado continua sendo o principal.
+ */
+function openStart(store: StoreId, windowArgs: string[]) {
+  const main = procs.get(store);
+  const running = !!main && main.exitCode === null;
+  const dir = profileDir(store);
+  mkdirSync(dir, { recursive: true });
+  // --load-extension: o Chromium e o Chrome for Testing carregam a extensão sozinhos; o Chrome
+  // comum ignora (nele, instalar uma vez com pnpm chrome-setup).
+  const proc = spawn(config.CHROME_PATH, [`--user-data-dir=${dir}`, `--load-extension=${EXTENSION_DIR}`, '--no-first-run', '--no-default-browser-check', '--lang=pt-BR', ...windowArgs, startUrl(store)], {
+    stdio: 'ignore',
+  });
+  if (!running) {
+    procs.set(store, proc);
+    proc.once('exit', () => procs.get(store) === proc && procs.delete(store));
+  }
+  return running;
+}
+
 export function ensureExtBrowser(store: StoreId, windowArgs: string[]): Promise<void> {
   if (connected(store)) return Promise.resolve();
   let p = starting.get(store);
   if (p) return p;
   const notConnected = () =>
     new ExtSetupError(
-      `A extensão não conectou no Chrome da ${store} em 20 s. Com o Chrome comum, ela precisa ser instalada uma vez ` +
+      `A extensão não conectou no Chrome da ${store} em ${CONNECT_MS / 1000} s. Com o Chrome comum, ela precisa ser instalada uma vez ` +
         `("pnpm chrome-setup", Carregar sem compactação: ${EXTENSION_DIR}); com o Chrome for Testing ou o Chromium, carrega sozinha.`,
     );
   if (Date.now() - (failedAt.get(store) ?? 0) < 60_000) return Promise.reject(notConnected());
   p = (async () => {
     await startBridge();
+    // Chrome da loja aberto e conectado antes: nada a abrir. Fechado, ou aberto mas sem conectar
+    // (a aba de início pode ter carregado antes de a extensão ficar pronta e parado lá): abre a aba.
     const main = procs.get(store);
-    const running = !!main && main.exitCode === null;
-    // Abre a aba de início: Chrome da loja fechado, ou aberto mas a extensão não conectou na
-    // tentativa anterior (ex. a aba de início carregou antes de a extensão ficar pronta e parou lá).
-    if (!running || failedAt.has(store)) {
-      const dir = profileDir(store);
-      mkdirSync(dir, { recursive: true });
-      // --load-extension: o Chromium e o Chrome for Testing carregam a extensão sozinhos; o Chrome
-      // comum ignora (nele, instalar uma vez com pnpm chrome-setup).
-      const proc = spawn(config.CHROME_PATH, [`--user-data-dir=${dir}`, `--load-extension=${EXTENSION_DIR}`, '--no-first-run', '--no-default-browser-check', '--lang=pt-BR', ...windowArgs, startUrl(store)], {
-        stdio: 'ignore',
-      });
-      // Com o Chrome da loja já aberto, este processo só entrega a aba de início a ele e sai: o
-      // Chrome principal continua sendo o guardado (para fechar no fim).
-      if (!running) {
-        procs.set(store, proc);
-        proc.once('exit', () => procs.get(store) === proc && procs.delete(store));
-      }
-    }
-    for (const until = Date.now() + 20_000; Date.now() < until; ) {
+    if (!main || main.exitCode !== null || failedAt.has(store)) openStart(store, windowArgs);
+    const t0 = Date.now();
+    let retried = false;
+    while (Date.now() - t0 < CONNECT_MS) {
       if (connected(store)) {
         failedAt.delete(store);
         return;
+      }
+      // Ainda sem conectar depois de alguns segundos: outra aba de início no mesmo Chrome (a
+      // extensão já está pronta, então esta não fica parada).
+      if (!retried && Date.now() - t0 >= RETRY_START_MS) {
+        retried = true;
+        openStart(store, windowArgs);
       }
       await sleep(300);
     }

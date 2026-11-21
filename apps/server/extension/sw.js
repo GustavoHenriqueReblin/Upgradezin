@@ -1,9 +1,11 @@
 // Troca a aba de /start (ponte local do Upgradezin) pela página de controle, com os mesmos parâmetros.
 //
-// Dois caminhos, porque na inicialização do Chrome a aba de /start (vinda da linha de comando) pode
-// carregar antes de a extensão registrar o start.js, e aí o script não roda nela:
+// Três caminhos, porque na inicialização do Chrome a aba de /start (vinda da linha de comando) pode
+// carregar antes de a extensão registrar o start.js (e aí o script não roda nela), e o service
+// worker pode subir antes de a aba ter o endereço /start (e aí a procura não a acha):
 // 1. o start.js avisa (mensagem "start");
-// 2. ao subir, este service worker procura abas paradas em /start e troca ele mesmo.
+// 2. toda aba que termina de carregar /start é trocada (evento do Chrome: acorda este worker);
+// 3. ao subir, este worker procura abas que já estão paradas em /start.
 
 const LOCAL = /^http:\/\/127\.0\.0\.1:\d+$/;
 
@@ -21,13 +23,25 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg?.type === 'start' && sender.tab?.id) toControl(sender.tab.id, msg.search, msg.server);
 });
 
-async function adoptStartTabs() {
-  const tabs = await chrome.tabs.query({ url: 'http://127.0.0.1/start*' }).catch(() => []);
-  for (const t of tabs) {
-    if (!t.id || !t.url) continue;
-    const u = new URL(t.url);
-    toControl(t.id, u.search, u.origin);
+/** Aba em /start da ponte local: troca pela página de controle. */
+function adoptIfStart(tab) {
+  if (!tab?.id || !tab.url) return;
+  let u;
+  try {
+    u = new URL(tab.url);
+  } catch {
+    return;
   }
+  if (u.pathname === '/start' && LOCAL.test(u.origin)) toControl(tab.id, u.search, u.origin);
+}
+
+chrome.tabs.onUpdated.addListener((_id, change, tab) => {
+  if (change.status === 'complete' || change.url) adoptIfStart(tab);
+});
+
+async function adoptStartTabs() {
+  const tabs = await chrome.tabs.query({}).catch(() => []);
+  for (const t of tabs) adoptIfStart(t);
 }
 
 chrome.runtime.onStartup.addListener(adoptStartTabs);
