@@ -83,7 +83,7 @@ describe('rotina pelo admin', () => {
   it('o guardado vale no lugar do .env; mudar guarda, limpa lojas inválidas e reinicia', () => {
     const saved: unknown[] = [];
     useRoutineStorage({ enabled: false, stores: ['s2'] }, (s) => saved.push(s));
-    expect(routineSettings()).toEqual({ enabled: false, stores: ['s2'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' } }); // sem modos guardados: o padrão (lentas do .env)
+    expect(routineSettings()).toEqual({ enabled: false, stores: ['s2'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' } }); // sem modos guardados: o padrão (ROUTINE_SLOW_STORES do .env começa no lento)
     expect(routineInfo()).toMatchObject({ enabled: false, nextTickAt: null, busy: false });
 
     setRoutineSettings({ enabled: true, stores: ['s3', 's1', 'x9' as 's1'] });
@@ -105,13 +105,13 @@ describe('rotina pelo admin', () => {
     expect(saved.at(-1)?.modes.s3).toBe('normal');
     setRoutineSettings({ enabled: false, stores: [], modes: { s1: 'turbo' as 'slow' } });
     expect(routineSettings().modes.s1).toBe('normal');
-    expect(routineInfo().minutes).toEqual({ normal: 5, reduced: 5, slow: 10 });
+    expect(routineInfo().seconds).toEqual({ normal: 15, reduced: 20, slow: 60 });
     stopRoutine();
   });
 
-  it('intervalo dos modos reduzido e lento: os minutos mais até 20%', () => {
-    expect(modeDelay(5, 0)).toBe(300_000);
-    expect(modeDelay(10, 1)).toBe(720_000);
+  it('intervalo dos modos: os segundos mais até 20%', () => {
+    expect(modeDelay(15, 0)).toBe(15_000);
+    expect(modeDelay(60, 1)).toBe(72_000);
   });
 
   it('loja em pausa na sua vez: não consulta e confere de novo em 1 min', async () => {
@@ -122,7 +122,7 @@ describe('rotina pelo admin', () => {
     pauseStore('s2', 15);
     setRoutineSettings({ enabled: true, stores: ['s2'], modes: { s2: 'reduced' } });
     const first = routineNextAt('s2')!;
-    expect(first - Date.now()).toBeGreaterThan(20_000); // primeira vez 30 s depois de ligar
+    expect(first - Date.now()).toBeGreaterThan(5_000); // primeira vez 10 s depois de ligar
     expect(routineNextAt('s1')).toBeNull(); // fora da rotina
     await tick(first);
     const next = routineNextAt('s2')! - Date.now();
@@ -130,7 +130,7 @@ describe('rotina pelo admin', () => {
     expect(next).toBeLessThanOrEqual(60_000);
     // No painel, a próxima consulta não vem antes do fim da pausa.
     const s2 = storesState(db).find((s) => s.id === 's2')!;
-    expect(s2).toMatchObject({ mode: 'reduced', inRoutine: true, busy: false });
+    expect(s2).toMatchObject({ mode: 'reduced', inRoutine: true, busy: false, queue: { running: false, priority: 0, routine: 0 } });
     expect(Date.parse(s2.nextAt!)).toBeGreaterThan(Date.now() + 14 * 60_000);
     setRoutineSettings({ enabled: false, stores: [] });
     stopRoutine();

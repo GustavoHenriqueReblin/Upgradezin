@@ -1,4 +1,4 @@
-import type { BlockReason, StoreId } from '@upgradezin/shared';
+import type { BlockReason, RoutineMode, StoreId } from '@upgradezin/shared';
 import { config } from './config.ts';
 
 export const sleep = (ms: number, signal?: AbortSignal) =>
@@ -54,10 +54,13 @@ export function useBackoffStorage(saved: [StoreId, Backoff][], save: (store: Sto
 export function backoffInfo(store: StoreId) {
   const s = state.get(store);
   if (!s || s.until < Date.now()) return null;
+  // BACKOFF_ENABLED=false: só a pausa manual do admin vale (as automáticas, inclusive as já guardadas, não).
+  if (!config.BACKOFF_ENABLED && s.reason !== 'paused') return null;
   return s;
 }
 
 export function registerBlock(store: StoreId, reason: BlockReason) {
+  if (!config.BACKOFF_ENABLED) return;
   const prev = state.get(store);
   const step = prev ? Math.min(prev.step + 1, STEPS_MIN.length - 1) : 0;
   const b = { until: Date.now() + STEPS_MIN[step]! * 60_000, step, reason };
@@ -139,44 +142,105 @@ export function pagesUsed(store: StoreId): number {
 }
 
 /**
- * Lojas lentas (ROUTINE_SLOW_STORES, as de navegador): aceitam a primeira página e bloqueiam
- * a seguinte quando ela vem segundos depois (nos logs: 7–26 s depois de uma coleta boa). Entre
- * duas consultas a elas, venham da rotina ou da busca do site, passa no mínimo SLOW_MIN_GAP_S.
+ * Modo de cada loja (admin, aba Coleta): o ritmo da rotina e o intervalo mínimo entre consultas.
+ *   normal:   rotina a cada ROUTINE_NORMAL_GAP_S; a busca do site vai na hora (sem intervalo).
+ *   reduced:  rotina a cada ROUTINE_REDUCED_GAP_S; entre duas consultas, venham da rotina ou da busca, passa esse tempo.
+ *   slow:     rotina a cada ROUTINE_SLOW_GAP_S; idem.
+ * Sem modo escolhido: lento para ROUTINE_SLOW_STORES, normal para as outras.
  * A última consulta fica no banco: reiniciar o servidor não libera uma rajada.
  */
-export const isSlowStore = (store: StoreId) => config.ROUTINE_SLOW_STORES.includes(store);
-const slowLast = new Map<StoreId, number>();
-let persistSlow: ((store: StoreId, at: number) => void) | undefined;
-export function useSlowStorage(saved: [StoreId, number][], save: (store: StoreId, at: number) => void) {
-  for (const [store, at] of saved) slowLast.set(store, at);
-  persistSlow = save;
+export const defaultMode = (store: StoreId): RoutineMode => (config.ROUTINE_SLOW_STORES.includes(store) ? 'slow' : 'normal');
+
+/** Segundos entre duas vezes da rotina em cada modo. */
+export const modeGapS = (mode: RoutineMode): number =>
+  ({ normal: config.ROUTINE_NORMAL_GAP_S, reduced: config.ROUTINE_REDUCED_GAP_S, slow: config.ROUTINE_SLOW_GAP_S })[mode];
+
+const modes = new Map<StoreId, RoutineMode>();
+/** Modos escolhidos no admin (a rotina chama ao subir e a cada mudança). */
+export function setStoreModes(m: Partial<Record<StoreId, RoutineMode>>) {
+  for (const [store, mode] of Object.entries(m)) if (mode) modes.set(store as StoreId, mode);
 }
-/** Quando a loja lenta pode receber a próxima consulta (ms); 0 para as outras. */
-export const slowReadyAt = (store: StoreId) => (isSlowStore(store) ? (slowLast.get(store) ?? 0) + config.SLOW_MIN_GAP_S * 1000 : 0);
+export const storeMode = (store: StoreId): RoutineMode => modes.get(store) ?? defaultMode(store);
+
+/** Intervalo mínimo entre duas consultas à loja (ms): 0 no normal, o do modo no reduzido e no lento. */
+export const minGapMs = (store: StoreId): number => {
+  const mode = storeMode(store);
+  return mode === 'normal' ? 0 : modeGapS(mode) * 1000;
+};
+
+const lastQuery = new Map<StoreId, number>();
+let persistLast: ((store: StoreId, at: number) => void) | undefined;
+/** Última consulta a cada loja, guardada fora da memória (meta "slowlast:<loja>", nome antigo da chave). */
+export function useLastQueryStorage(saved: [StoreId, number][], save: (store: StoreId, at: number) => void) {
+  for (const [store, at] of saved) lastQuery.set(store, at);
+  persistLast = save;
+}
+/** Quando a loja pode receber a próxima consulta (ms): fim da última mais o intervalo do modo. */
+export const readyAt = (store: StoreId) => (lastQuery.get(store) ?? 0) + minGapMs(store);
 
 /**
  * Uma consulta por vez em cada loja, venha da busca do site ou da rotina, com intervalo
- * aleatório desde o fim da anterior (nas lojas lentas, também SLOW_MIN_GAP_S). A fila é por loja: lojas diferentes seguem em paralelo.
+ * aleatório desde o fim da anterior (no reduzido e no lento, também o intervalo do modo). A fila é por loja: lojas diferentes seguem em paralelo.
+ *
+ * Prioridade: quem busca no site passa na frente das consultas da rotina que estão esperando
+ * (entre as prioritárias, ordem de chegada). A consulta que já está em andamento termina antes.
  */
-const queues = new Map<StoreId, Promise<void>>();
+interface Waiter {
+  priority: boolean;
+  go: () => void;
+}
+const running = new Set<StoreId>();
+const waiters = new Map<StoreId, Waiter[]>();
 const lastDone = new Map<StoreId, number>();
 
-export async function withStore<T>(store: StoreId, signal: AbortSignal, fn: () => Promise<T>): Promise<T> {
-  const prev = queues.get(store) ?? Promise.resolve();
-  let release!: () => void;
-  const mine = new Promise<void>((r) => (release = r));
-  queues.set(store, prev.then(() => mine));
-  try {
-    // Esperando a vez; cancelar libera na hora (sem segurar a fila de quem vem depois).
-    await new Promise<void>((resolve, reject) => {
-      const onAbort = () => reject(signal.reason);
-      if (signal.aborted) return onAbort();
-      signal.addEventListener('abort', onAbort, { once: true });
-      void prev.then(() => {
+/** Espera a vez na loja. Cancelar tira da fila na hora (sem segurar quem vem depois). */
+function acquire(store: StoreId, priority: boolean, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  if (!running.has(store)) {
+    running.add(store);
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve, reject) => {
+    const list = waiters.get(store) ?? [];
+    const onAbort = () => {
+      const i = list.indexOf(w);
+      if (i >= 0) list.splice(i, 1);
+      reject(signal.reason);
+    };
+    const w: Waiter = {
+      priority,
+      go: () => {
         signal.removeEventListener('abort', onAbort);
         resolve();
-      });
-    });
+      },
+    };
+    const firstRoutine = priority ? list.findIndex((x) => !x.priority) : -1;
+    if (firstRoutine === -1) list.push(w);
+    else list.splice(firstRoutine, 0, w);
+    waiters.set(store, list);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/** Passa a vez para o próximo da fila (a loja continua ocupada) ou libera a loja. */
+function release(store: StoreId) {
+  const next = waiters.get(store)?.shift();
+  if (next) next.go();
+  else running.delete(store);
+}
+
+/**
+ * Fila da loja agora: se há consulta em andamento (de qualquer origem) e quantas esperam a vez,
+ * separando as prioritárias (busca do site, admin, ficha técnica) das da rotina.
+ */
+export const queuedAt = (store: StoreId): { running: boolean; priority: number; routine: number } => {
+  const list = waiters.get(store) ?? [];
+  return { running: running.has(store), priority: list.filter((w) => w.priority).length, routine: list.filter((w) => !w.priority).length };
+};
+
+export async function withStore<T>(store: StoreId, signal: AbortSignal, fn: () => Promise<T>, opts: { priority?: boolean } = {}): Promise<T> {
+  await acquire(store, opts.priority ?? false, signal);
+  try {
     // Na fila atrás de uma consulta que bloqueou: não vai à loja (antes ia, e o 2º bloqueio
     // seguido subia a pausa de 15 min para 1 h).
     const paused = () => {
@@ -184,19 +248,19 @@ export async function withStore<T>(store: StoreId, signal: AbortSignal, fn: () =
       if (bo) throw new BlockedError(store, bo.reason, 'loja em pausa', true);
     };
     paused();
-    const wait = Math.max((lastDone.get(store) ?? 0) + jitter(), slowReadyAt(store)) - Date.now();
+    // Intervalo do modo (reduzido e lento; no normal, zero) e o intervalo aleatório entre páginas.
+    const wait = Math.max((lastDone.get(store) ?? 0) + jitter(), readyAt(store)) - Date.now();
     if (wait > 0) await sleep(wait, signal);
     paused();
     try {
       return await fn();
     } finally {
-      lastDone.set(store, Date.now());
-      if (isSlowStore(store)) {
-        slowLast.set(store, Date.now());
-        persistSlow?.(store, Date.now());
-      }
+      const now = Date.now();
+      lastDone.set(store, now);
+      lastQuery.set(store, now);
+      persistLast?.(store, now);
     }
   } finally {
-    release();
+    release(store);
   }
 }

@@ -7,18 +7,19 @@
     "dev": "tsx watch --clear-screen=false src/index.ts",
     "start": "tsx src/index.ts",
     "scan": "tsx src/cli/scan.ts",
+    "routine-test": "tsx src/cli/routine-test.ts",
+    "chrome-setup": "tsx src/cli/chrome-setup.ts",
     "typecheck": "tsc -p ."
   },
   "dependencies": {
     "@fastify/static": "^10.1.11",
     "@upgradezin/shared": "workspace:*",
     "fastify": "^5.12.8",
-    "playwright": "1.57.0",
+    "linkedom": "^0.18.15",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",
-    "linkedom": "^0.18.15",
     "tsx": "^4.23.15"
   }
 }

@@ -199,31 +199,16 @@ export interface DueTerm extends SearchTerm {
 }
 
 /**
- * Termos que a rotina deve coletar numa loja, na ordem: nunca coletados primeiro; em cada
- * grupo, os que alguém pesquisou antes dos outros; depois, os mais antigos. Fica de fora o que foi coletado depois de `okBefore`
- * ou tentado (e falhou) depois de `tryBefore` e o texto livre que ninguém pesquisa desde `textSince`.
- * Termo que a loja acabou de redirecionar não espera `tryBefore`: a próxima vez já abre o destino direto.
- */
-export function dueTerms(db: Db, store: StoreId, okBefore: string, tryBefore: string, limit: number, textSince = ''): DueTerm[] {
-  return db
-    .prepare(`
-      SELECT st.id, st.category, st.term FROM search_terms st
-      LEFT JOIN term_runs tr ON tr.term_id = st.id AND tr.store = ?
-      WHERE st.origin != 'sweep' AND (st.origin != 'text' OR st.last_requested_at >= ?)
-        AND (tr.last_ok_at IS NULL OR tr.last_ok_at < ?) AND (tr.last_try_at IS NULL OR tr.last_try_at < ? OR tr.status = 'redirect')
-      ORDER BY tr.last_ok_at IS NOT NULL, st.origin != 'seed' DESC, tr.last_ok_at, st.last_requested_at DESC, st.id
-      LIMIT ?`)
-    .all(store, textSince, okBefore, tryBefore, limit) as unknown as DueTerm[];
-}
-
-/**
- * Ordem para as lojas lentas (S2/S3), que recebem poucos termos por dia: espalha a coleta pelas
- * categorias em vez de ir termo a termo. Primeiro o que alguém pesquisou e não foi coletado
- * depois disso, o pedido mais recente antes; depois a categoria há mais tempo sem coleta nessa loja (nunca coletada antes);
+ * Termos que a rotina deve coletar numa loja, espalhando a coleta pelas categorias em vez de ir
+ * termo a termo. Primeiro o que alguém pesquisou e não foi coletado depois disso, o pedido mais
+ * recente antes; depois a categoria há mais tempo sem coleta nessa loja (nunca coletada antes);
  * dentro dela, o termo nunca coletado, depois o mais antigo. Como a busca junta os anúncios
  * pelas specs, uma coleta já serve a todos os termos da categoria que batem com ela.
+ * Fica de fora o que foi coletado depois de `okBefore` ou tentado (e falhou) depois de
+ * `tryBefore` e o texto livre que ninguém pesquisa desde `textSince`. Termo que a loja acabou de
+ * redirecionar não espera `tryBefore`: a próxima vez já abre o destino direto.
  */
-export function dueTermsSpread(db: Db, store: StoreId, okBefore: string, tryBefore: string, limit: number, textSince = ''): DueTerm[] {
+export function dueTerms(db: Db, store: StoreId, okBefore: string, tryBefore: string, limit: number, textSince = ''): DueTerm[] {
   return db
     .prepare(`
       WITH cat AS (

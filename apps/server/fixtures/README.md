@@ -1,6 +1,6 @@
 # Fixtures das lojas
 
-Recortes **anonimizados** de páginas reais de busca, usados pelos testes dos parsers (`src/adapters/*.test.ts`). Nenhum teste acessa as lojas.
+Recortes **anonimizados** de páginas reais de busca, usados pelos testes dos parsers (`src/adapters/*.test.ts`) e pelo teste das três lojas pelo mesmo caminho (`src/adapters/load.test.ts`, que troca o Chrome por estas páginas com `usePageLoader`). Nenhum teste acessa as lojas.
 
 | Arquivo | Origem | O que cobre |
 |---|---|---|
@@ -30,6 +30,6 @@ Recortes **anonimizados** de páginas reais de busca, usados pelos testes dos pa
 
 ## Quando uma loja muda o layout
 
-1. Salve a página de busca no navegador (Ctrl+S, "somente HTML"), ou rode com `DEBUG_DUMPS=true` para guardar a página que falhou em `data/debug/`.
+1. Rode com `DEBUG_DUMPS=true` para guardar em `data/debug/` a página que falhou, exatamente como a extensão a leu no Chrome da loja (o DOM depois de carregar), ou salve a página de busca no navegador (Ctrl+S, "somente HTML").
 2. Recorte alguns itens com os campos usados, anonimize (domínio, nome da loja, códigos de campanha) e substitua o arquivo aqui.
 3. Ajuste o parser até os testes passarem; acrescente um teste para o caso novo.

@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Upgradezin Leitor",
+  "version": "1.0.0",
+  "description": "Abre as buscas das lojas em abas, lê o HTML e devolve ao Upgradezin local (127.0.0.1). Sem porta de depuração.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAi96lIHSCMSfdG37vB7YELaDa5VVOuOc9vJmruuuUnEJZg75T1Sdkiv0Xos61j1aj3WwlME2AcOLcts8uzn67Rx9nVzd8j23S76rzVnDCXDbcASTySPrOHQNmoGuHKRtJtM6gDafaThp/UDq0i2IjwNZcjdXCft9p74xgztcuLOB6ZXFe/h8RksO3GLI/jUbzwd3z5J3nA2xKKJe+jr0aXBlHDGniR2miEhW3UHBsrabJ4phVHlc2REU+KYjFhqZP/bbrdAHTEZPftgf91dpR/d4lhy3GSh9juIFot64lghenllAeKIN1tuOvnzE7y1dqGGQLhCxjQXesqrxSlusiaQIDAQAB",
+  "permissions": [
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "sw.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://127.0.0.1/start*"
+      ],
+      "js": [
+        "start.js"
+      ],
+      "run_at": "document_start"
+    }
+  ]
+}

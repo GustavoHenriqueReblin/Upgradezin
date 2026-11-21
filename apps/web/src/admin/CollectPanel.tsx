@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { CATEGORY_DEFS, ENABLED_CATEGORIES, ROUTINE_MODES, type AdminStoreState, type CategoryId, type RoutineInfo, type RoutineMode, type StoreAttempt, type StoreId } from '@upgradezin/shared';
 import { Pause, Play, Search } from 'lucide-react';
 import { AdminError, adminApi } from './api.ts';
-import { attemptLabel, countdown, formatWhen, MODE_LABEL, modeHint, pauseLabel, routineStores } from './format.ts';
+import { attemptLabel, countdown, formatWhen, MODE_LABEL, modeHint, pauseLabel, queueLabel, routineStores } from './format.ts';
 import { Switch } from './Switch.tsx';
 
 const PAUSES = [
@@ -34,7 +34,8 @@ export function CollectPanel({ onUnauthorized }: { onUnauthorized: () => void })
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 10_000);
+    // A cada 5 s: a fila e a contagem mudam a cada consulta (a rotina vai de 15 s em 15 s no modo normal).
+    const t = setInterval(load, 5_000);
     return () => clearInterval(t);
   }, [load]);
 
@@ -74,7 +75,7 @@ export function CollectPanel({ onUnauthorized }: { onUnauthorized: () => void })
               <li key={s.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2">
                 <span className="min-w-0">
                   <span className="font-medium">{s.name}</span>
-                  <span className="ml-2 text-xs text-zinc-500">{modeHint(mode, routine.minutes)}</span>
+                  <span className="ml-2 text-xs text-zinc-500">{modeHint(mode, routine.seconds)}</span>
                 </span>
                 <span className="flex items-center gap-4">
                   <span role="radiogroup" aria-label={`Modo da rotina na ${s.name}`} className="flex rounded-lg border border-zinc-300 p-0.5 text-xs dark:border-zinc-700">
@@ -146,7 +147,14 @@ function StoreCard({ s, act }: { s: AdminStoreState; act: (fn: () => Promise<unk
           {s.pagesUsed} de {s.pagesPerHour} <span className="text-zinc-500">(rotina até {s.routinePagesPerHour})</span>
         </Row>
         <Row k="Rotina">{s.inRoutine ? `sim, modo ${MODE_LABEL[s.mode].toLowerCase()}` : 'não'}</Row>
-        {s.busy ? <Row k="Próxima consulta em">consultando agora</Row> : s.nextAt && <Row k="Próxima consulta em"><Countdown at={s.nextAt} /></Row>}
+        <Row k="Fila">
+          <span className="inline-flex items-center gap-1.5">
+            {s.queue.running && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" aria-hidden />}
+            {s.queue.running ? 'consultando agora; ' : ''}
+            {queueLabel(s.queue)}
+          </span>
+        </Row>
+        {s.queue.running || s.busy ? null : s.nextAt && <Row k="Próxima consulta em"><Countdown at={s.nextAt} /></Row>}
         <Row k="Última coleta boa">{s.lastOk ? <AttemptLine a={s.lastOk} /> : '—'}</Row>
         <Row k="Último bloqueio">{s.lastBlock ? <AttemptLine a={s.lastBlock} /> : '—'}</Row>
         <Row k="Últimas 24 h">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countdown, modeHint, matchesNever, neverCollectedIn, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground } from './format.ts';
+import { countdown, modeHint, queueLabel, matchesNever, neverCollectedIn, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground } from './format.ts';
 
 describe('formatação do admin', () => {
   it('duração', () => {
@@ -86,10 +86,18 @@ describe('rotina: contagem e modos', () => {
     expect(countdown(at, at - 3_725_000)).toBe('01:02:05 (22:32)');
     expect(countdown(new Date(at).toISOString(), at + 5000)).toBe('00:00:00 (22:32)'); // passou: zero
   });
-  it('texto de cada modo com os minutos do servidor', () => {
-    const m = { normal: 5, reduced: 5, slow: 10 };
-    expect(modeHint('reduced', m)).toBe('1 termo a cada 5 min');
-    expect(modeHint('slow', m)).toBe('1 termo a cada 10 min');
-    expect(modeHint('normal', m)).toContain('a cada 5 min');
+  it('fila da loja em texto', () => {
+    expect(queueLabel({ priority: 0, routine: 0 })).toBe('vazia');
+    expect(queueLabel({ priority: 1, routine: 0 })).toBe('1 busca do site esperando');
+    expect(queueLabel({ priority: 2, routine: 3 })).toBe('2 buscas do site e 3 da rotina esperando');
+    expect(queueLabel({ priority: 0, routine: 1 })).toBe('1 da rotina esperando');
+  });
+
+  it('texto de cada modo com os segundos do servidor', () => {
+    const s = { normal: 15, reduced: 20, slow: 60 };
+    expect(modeHint('normal', s)).toBe('1 termo a cada 15 s; busca do site na hora');
+    expect(modeHint('reduced', s)).toBe('1 termo a cada 20 s; busca do site respeita o intervalo');
+    expect(modeHint('slow', s)).toBe('1 termo a cada 1 min; busca do site respeita o intervalo');
+    expect(modeHint('slow', { ...s, slow: 90 })).toContain('1 min 30 s');
   });
 });

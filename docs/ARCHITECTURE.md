@@ -62,16 +62,18 @@ Princípios:
  │  filtros e   │                      │        │                                  │
  │  agrupamento │                      │        ▼                                  │
  │  no cliente  │                      │  search.ts ◄── SQLite ◄── routine.ts      │
- └──────────────┘                      │        │ (falta/força)    (a cada 5 min)  │
+ └──────────────┘                      │        │ (sempre, prioritária) (15 s–1 min)│
                                        │        ▼                                  │
                                        │  collect.ts: fila por loja → grava no DB  │
                                        │        │  lojas em paralelo               │
-                                       │   ┌────┼──────────────┬───────────────┐   │
-                                       │   ▼    ▼              ▼               │   │
-                                       │  s1      s2          s3               │   │
-                                       │ (fetch)(aba)        (aba)             │   │
-                                       │   │        └──── browser.ts ──────────┘   │
-                                       │   ▼        Chrome anônimo, fecha ao fim   │
+                                       │   ┌────┴──────────┬───────────────┐       │
+                                       │   ▼               ▼               ▼       │
+                                       │  s1              s2              s3       │
+                                       │   └───────────────┼───────────────┘       │
+                                       │        browser.ts: loadPage(loja, url)    │
+                                       │        Chrome comum por loja + extensão   │
+                                       │        (aba nova por página, fecha a aba) │
+                                       │                   ▼                       │
                                        │ normalize (packages/shared)               │
                                        └───────────────────────────────────────────┘
 ```
@@ -79,12 +81,12 @@ Princípios:
 Fluxo de uma busca:
 
 1. O usuário escolhe a categoria e **monta a busca** antes de qualquer requisição (ex. potências 750 W e 850 W; plataforma AM4 e chipset B550). Cada escolha vira um termo (`750W`, `850W`, `B550`). Nunca se busca a categoria inteira: a API recusa busca sem termo.
-2. A UI abre `GET /api/search/stream?category=psu&terms=750W,850W` (SSE). Para cada loja, `search.ts` lê do banco o resultado de cada termo (a última coleta completa) e responde na hora, com "atualizado há X". **Toda busca atualiza por trás** (*stale-while-revalidate*): mostra o banco na hora e consulta a loja para todo termo coletado há mais de `REVALIDATE_MIN` (10 min) naquela loja; o resultado troca quando a consulta chega. Nas lojas lentas, 1 termo por busca (o há mais tempo sem coleta) e só se o intervalo mínimo passou ([§4.3](#43-política-de-coleta)). `force=1` (a tela não tem esse botão; fica para a API e o `pnpm scan`) usa o mesmo piso. **Sair da página não interrompe:** a tela para de receber, mas a consulta que já saiu termina e grava no banco (só o desligamento do servidor a interrompe); em loja lenta, uma busca não enfileira outra consulta enquanto a anterior não terminou. A consulta segue as regras de sempre (lojas em paralelo; em cada loja, um termo por vez, com intervalo e limite por hora) e grava no banco. Ao resultado de cada termo a busca junta os anúncios da loja que o banco já tem de outras coletas e batem com o termo pelas specs ([§8.2](#82-preços-e-rotina-de-coleta)).
+2. A UI abre `GET /api/search/stream?category=psu&terms=750W,850W` (SSE). Para cada loja, `search.ts` lê do banco o resultado de cada termo (a última coleta completa) e responde na hora, com "atualizado há X". **Toda busca atualiza por trás** (*stale-while-revalidate*): mostra o banco na hora e consulta a loja para todo termo coletado há mais de `REVALIDATE_MIN` (10 min) naquela loja; o resultado troca quando a consulta chega. Todos os termos vão a cada loja, um por vez (o há mais tempo sem coleta primeiro), **na frente da rotina** na fila da loja; no modo normal vão na hora, no reduzido e no lento esperam o intervalo do modo ([§4.3](#43-política-de-coleta)). `force=1` (a tela não tem esse botão; fica para a API e o `pnpm scan`) usa o mesmo piso. **Sair da página não interrompe:** a tela para de receber, mas a consulta que já saiu termina e grava no banco (só o desligamento do servidor a interrompe). A consulta segue as regras de sempre (lojas em paralelo; em cada loja, um termo por vez, com limite por hora) e grava no banco. Ao resultado de cada termo a busca junta os anúncios da loja que o banco já tem de outras coletas e batem com o termo pelas specs ([§8.2](#82-preços-e-rotina-de-coleta)).
 3. Cada adapter devolve `Offer[]` já normalizadas (specs extraídas, chave de modelo). O servidor emite `status` a cada página.
 4. Cada página lida já é enviada (`offers` com `partial: true`), e a UI mostra resultados enquanto as lojas ainda paginam. Ao fim de cada loja, a lista final substitui os parciais.
 5. A UI agrupa e filtra **no cliente**: mudar filtro não refaz a busca. Refazer só quando muda o termo.
 6. Em paralelo, a **rotina** ([§8.2](#82-preços-e-rotina-de-coleta)) mantém o banco atualizado sozinha: os termos do formulário e, nas lojas configuradas, a varredura de cada categoria inteira. Coletas do mesmo termo na mesma loja (duas buscas, ou busca e rotina) compartilham a mesma execução.
-7. Quando a última busca ou rodada da rotina termina, ou é cancelada, o Chrome fecha (abas, cookies e cache da sessão anônima são descartados).
+7. O Chrome de cada loja fica aberto entre as consultas (cada consulta abre e fecha só a própria aba); fecha quando o servidor para.
 
 ## 4. Coleta
 
@@ -92,40 +94,43 @@ Fluxo de uma busca:
 
 As lojas bloqueiam ou desafiam faixas de IP de datacenter. A coleta roda num host próprio, em conexão residencial, com navegador real. É uma restrição de arquitetura, não detalhe de deploy.
 
-### 4.2 Estratégia por camadas
+### 4.2 Um caminho até a loja, leitura por camadas
 
-Para cada loja, a fonte mais leve e estruturada que funcionar:
+Todas as lojas chegam à página do mesmo jeito: `loadPage(loja, url)` (`browser.ts`) abre a página numa aba nova do Chrome da loja, espera carregar (e, se pedido, um seletor aparecer), devolve o HTML, o endereço final e o título, e fecha a aba. Até nov/2026 a S1 era lida por HTTP direto e S2/S3 pelo Playwright; ver [ADR-004](#adr-004-navegador-padrão-e-pausa-no-bloqueio).
 
-1. **HTTP simples + dados embutidos** (`__NEXT_DATA__`, JSON-LD): sem navegador, ~1–2 s por página.
-2. **Navegador real + dados embutidos** (payload RSC do Next.js, atributos `data-*`): quando há proteção anti-bot.
-3. **Seletores CSS** sobre o DOM renderizado.
-4. **Regex** em texto visível, só para campos isolados.
+No HTML lido, cada adapter usa a fonte mais estruturada que houver:
+
+1. **Dados embutidos** (`__NEXT_DATA__` na S1, payload RSC do Next.js na S2, atributos `data-*` na S3).
+2. **Seletores CSS** sobre o DOM (linkedom, no servidor).
+3. **Regex** em texto visível, só para campos isolados (ex. o texto do cupom na página do produto da S1).
 
 ### 4.3 Política de coleta
 
 Volume parecido com o de uma pessoa consultando à mão. Inegociável:
 
 - **Em cada loja, uma requisição por vez:** um termo por vez, uma página por vez, com intervalo aleatório entre páginas (`PAGE_DELAY_MIN_MS`–`PAGE_DELAY_MAX_MS`, padrão 5–12 s). Busca do site e rotina entram na **mesma fila por loja** (`withStore` em `pace.ts`), com o mesmo intervalo entre uma consulta e a próxima.
-- **Lojas em paralelo:** cada loja tem a própria fila; uma loja lenta ou bloqueada não atrasa as outras. No navegador, uma janela anônima por loja (contexto próprio, cookies isolados), cada uma em primeiro plano na própria janela escondida.
+- **Lojas em paralelo:** cada loja tem a própria fila e o próprio Chrome; uma loja lenta ou bloqueada não atrasa as outras. Na fila de cada loja, a busca do site passa na frente da rotina (a consulta em andamento termina antes).
 - **Limite de páginas por loja por hora** (`MAX_PAGES_PER_HOUR`, padrão 30, janela deslizante). Estourou: a loja é pulada até liberar, a UI mostra quando libera e as outras lojas seguem. A rotina só usa até `ROUTINE_PAGES_PER_HOUR` (padrão 12) desse total, contando as páginas da busca do site; o resto fica para quem busca.
 - **Limite de páginas por busca** (`MAX_PAGES_*`) e parada antecipada quando a relevância acaba.
 - **Banco em vez de repetir consulta:** o site lê do SQLite; a loja só é consultada pela rotina (termo desatualizado, varredura de categoria) ou quando falta resultado / o usuário pede. Coletas idênticas simultâneas são deduplicadas.
-- **Navegador:** o Google Chrome instalado, aberto pelo Playwright (ou o Chromium do Playwright); o HTTP direto se identifica como `Upgradezin/0.1`.
-- **Bloqueio = parar:** 403/429, CAPTCHA, página de desafio ou de "manutenção" colocam a loja em **backoff exponencial** (15 min → 1 h → 6 h → 24 h). A pausa fica no banco (`meta`, chave `backoff:<loja>`): reiniciar o servidor não a zera. Consulta que estava na fila atrás da que bloqueou não vai à loja (não conta como bloqueio novo nem sobe a escada). A UI mostra o status, oferece "Ver na <loja>", e a busca segue com as outras lojas.
-- **Lojas lentas (S2, S3), intervalo mínimo:** nos logs (nov/2026), as duas aceitam a 1ª página e bloqueiam a seguinte quando ela vem segundos depois (7–26 s depois de uma coleta boa); com 5 min de intervalo, não. Entre duas consultas a uma loja lenta passa no mínimo `SLOW_MIN_GAP_S` (3 min), venham da rotina ou da busca do site; a última consulta fica no banco (`meta`, `slowlast:<loja>`), então reiniciar o servidor não libera uma rajada. A busca do site não dispara uma página por termo nelas: vai à loja com 1 termo (o há mais tempo sem coleta, ou nunca coletado), só se o intervalo já passou e se não há outra consulta da busca em andamento; os outros termos vão para a frente da fila da rotina. Na rotina, a ordem das lojas lentas espalha a coleta pelas categorias (`dueTermsSpread`): o pesquisado e ainda não coletado, depois a categoria há mais tempo sem coleta naquela loja, e dentro dela o termo nunca coletado. Medido no servidor (nov/2026): a ordem antiga, termo a termo, deixou a S2 com 26 dos 117 termos (nenhum de processador Intel, gabinete ou cooler) e a S3 com 39.
+- **Navegador:** todas as lojas pelo mesmo caminho (`browser.ts`, `loadPage`): um Google Chrome comum por loja, sem porta de depuração e sem Playwright, com perfil fixo em `data/chrome/<loja>`. A extensão em `apps/server/extension` abre cada página numa aba, lê o HTML e fecha a aba; o app conversa com ela por uma porta local (`EXT_PORT`, só 127.0.0.1, com token por execução). Ver [ADR-004](#adr-004-navegador-padrão-e-pausa-no-bloqueio).
+- **Bloqueio = parar:** página de desafio ("Confirme que é humano"), de "manutenção" ou sem os dados de produto esperados colocam a loja em **backoff exponencial** (15 min → 1 h → 6 h → 24 h; `BACKOFF_ENABLED=false` desliga, e o bloqueio só fica no registro). O código HTTP não é visto (a extensão lê a página como o navegador mostra), então o bloqueio é reconhecido pelo título e pelo conteúdo. A pausa fica no banco (`meta`, chave `backoff:<loja>`): reiniciar o servidor não a zera. Consulta que estava na fila atrás da que bloqueou não vai à loja (não conta como bloqueio novo nem sobe a escada). A UI mostra o status, oferece "Ver na <loja>", e a busca segue com as outras lojas.
+- **Intervalo por modo:** cada loja tem um modo (admin): normal (rotina a cada `ROUTINE_NORMAL_GAP_S`, 15 s; a busca do site vai na hora), reduzido (`ROUTINE_REDUCED_GAP_S`, 20 s) ou lento (`ROUTINE_SLOW_GAP_S`, 60 s). No reduzido e no lento, entre duas consultas à loja, venham da rotina ou da busca, passa no mínimo o intervalo do modo. A última consulta fica no banco (`meta` `slowlast:<loja>`): reiniciar não libera uma rajada.
 
 ### 4.4 Proteção anti-bot
 
 | Situação | Comportamento |
 |---|---|
+| **Google Chrome comum, sem porta de depuração, lido pela extensão do projeto** (o que o app usa hoje, nas três lojas) | Para a loja é um Chrome comum com uma extensão: `navigator.webdriver` falso, sem `--enable-automation`, sem emulação de tela, idioma ou fuso. Medido em nov/2026 com a rotina de verdade (`pnpm routine-test`): 13 de 14 consultas boas nas lojas com anti-robô (a outra foi um redirecionamento para a categoria, não bloqueio), contra bloqueio na 2ª consulta pelo Playwright. |
+| Chrome conectado pela porta de depuração (`--remote-debugging-port`, com ou sem Playwright) | O próprio Chrome passa a se declarar automatizado (`navigator.webdriver = true`); as lojas bloqueiam da 2ª página em diante. Não usar. |
 | Chromium headless | Barrado pela proteção anti-bot de S2 e S3. Não usar. |
-| Google Chrome instalado, aberto pelo Playwright em **sessão anônima** (`channel: chrome`, contexto novo, nada salvo em disco), com janela | Sem nenhuma modificação: o navegador continua se identificando como automatizado. Testado: a S3 responde normalmente; a S2 responde a primeira página e limita a frequência logo depois (página de "manutenção"). Medido em nov/2026: não é limite por IP nem por frequência. Na mesma rede, a 2ª página da mesma sessão levou 403 "Site em Manutenção" 45 s depois da 1ª, e uma sessão nova respondeu normal logo em seguida (e o Chrome comum da pessoa navegava na loja ao mesmo tempo). A detecção da página marca a sessão automatizada (`navigator.webdriver`) e daí em diante tudo dela é recusado. Hoje a S2 rende 1 página por consulta, por isso as buscas específicas ("Buscar nas lojas" do filtro de texto) valem mais nela. |
+| (histórico) Google Chrome instalado, aberto pelo Playwright em **sessão anônima** (`channel: chrome`, contexto novo, nada salvo em disco), com janela | Sem nenhuma modificação: o navegador continua se identificando como automatizado. Testado: a S3 responde normalmente; a S2 responde a primeira página e limita a frequência logo depois (página de "manutenção"). Medido em nov/2026: não é limite por IP nem por frequência. Na mesma rede, a 2ª página da mesma sessão levou 403 "Site em Manutenção" 45 s depois da 1ª, e uma sessão nova respondeu normal logo em seguida (e o Chrome comum da pessoa navegava na loja ao mesmo tempo). A detecção da página marca a sessão automatizada (`navigator.webdriver`) e daí em diante tudo dela é recusado. Hoje a S2 rende 1 página por consulta, por isso as buscas específicas ("Buscar nas lojas" do filtro de texto) valem mais nela. |
 | Desafio interativo ("Confirme que é humano") ou página de bloqueio disfarçada (S2 responde 403 com "Site em Manutenção" só para o navegador automatizado) | A loja entra em backoff e a UI mostra "não deu para consultar agora" com um botão **"Ver na <loja>"**, que abre a mesma busca no site da loja, no navegador do próprio usuário. Opcional para quem opera o servidor: `MANUAL_CHALLENGE_WAIT_S` > 0 faz a busca esperar alguém resolver na janela do Chrome **da máquina do servidor** (padrão 0; o usuário final nunca vê essa janela). |
 | Headless (`HeadlessChrome` no user-agent) | Barrado. Trocar o user-agent seria falsificar: não usar. |
 | Janela fora da área visível (`--window-position=-32000,-32000`, padrão via `BROWSER_HIDE_WINDOW`) | Para o site é o mesmo Chrome com janela; o usuário não vê. Duas flags de desempenho (`CalculateNativeWinOcclusion` desligado, `--disable-backgrounding-occluded-windows`) evitam que o Chrome desacelere a janela escondida. Testado na S3: normal. |
-| Interceptar rede (`page.route`) ou minimizar a janela | Quebra o desafio. Não usar. |
+| Interceptar rede ou minimizar a janela | Quebra o desafio. Não usar. |
 
-Num servidor Linux sem tela, o Chrome roda sob `xvfb-run`. Para o modo assistido nesse cenário, é preciso acesso à tela virtual (VNC). Ver [§16](#16-questões-em-aberto).
+Num servidor Linux sem tela, o Chrome roda sob `xvfb-run`. Lá não dá para clicar na instalação da extensão: com o Chromium (`CHROME_PATH`), ela carrega sozinha pelo `--load-extension` que o app sempre passa (o Chrome comum ignora essa flag desde a versão 137). Para o modo assistido nesse cenário, é preciso acesso à tela virtual (VNC). Ver [§16](#16-questões-em-aberto).
 
 ### 4.5 Contrato do adapter
 
@@ -135,24 +140,34 @@ interface StoreAdapter {
   search(ctx: SearchContext): Promise<Offer[]>;
   // Opcional (hoje só a S1): uma página da categoria inteira, para a varredura da rotina.
   sweepPage?(ctx: { category; url; page; signal }): Promise<{ offers: Offer[]; totalPages: number }>;
+  // Opcional (hoje só a S1): HTML da ficha técnica da página do produto.
+  productSheet?(sku: string, signal: AbortSignal): Promise<string | null>;
 }
 
 interface SearchContext {
   category: CategoryId;
   q: string;                     // um termo da busca ("750W", "B550")
-  signal: AbortSignal;           // cancelado se o cliente fecha a conexão
+  path?: string;                 // destino para onde a busca da loja já redirecionou o termo
+  signal: AbortSignal;           // cancelado se o servidor desliga
   onPage?(info: { page; total?; found; offers }): void;  // progresso + ofertas da página
   onNeedsHuman?(): void;         // loja pediu verificação (só com MANUAL_CHALLENGE_WAIT_S > 0)
 }
+
+// browser.ts: o único caminho até as lojas.
+loadPage(store, url, { signal?, onNeedsHuman?, waitFor?, recheck?, recheckMs? }): Promise<{ html; url; title }>
 ```
 
-Adapters não conhecem cache nem HTTP do servidor; chamam `takePage` antes de cada página (limite por hora) e `gotoChecked` para navegar (detecção de bloqueio). Cada adapter expõe também funções puras de parsing (`parseS1Html`, `couponFromS1ProductHtml`, `parseS2Rsc`, `readS3Cards`, `mapS3Card`…), testadas com páginas reais recortadas ([§12](#12-testes)). `readS3Cards` roda dentro da página (via `$$eval`) e, nos testes, sobre um DOM em Node.
+Adapters não conhecem cache, fila nem navegador: montam a URL, chamam `takePage` antes de cada página (limite por hora) e `loadPage` para ler (abre a aba, detecta desafio e "manutenção", devolve o HTML e o endereço final, fecha a aba). O redirecionamento para a página da categoria é reconhecido pelo endereço final (S1 reabre o destino com a paginação; S2 lança `SearchRedirectError`). Cada adapter expõe funções puras de parsing (`parseS1Html`, `couponFromS1ProductHtml`, `parseS2Rsc`, `parseS3Cards`, `mapS3Card`…), testadas com páginas reais recortadas, e nos testes `usePageLoader` troca o Chrome por fixtures ([§12](#12-testes)).
 
 ### 4.6 Falhas e depuração
 
 - Com `DEBUG_DUMPS=1`, página sem itens esperados ou bloqueada gera HTML + screenshot em `data/debug/` (fora do git).
 - `pnpm scan <termo>[,<termo>…] [--category=<categoria>] [--stores=s1,s2] [--json] [--top=N]` roda a busca pelo terminal (sempre consulta as lojas e grava no banco, como `force=1`).
 - `pnpm scan --sweep [--category=<categoria>] [--stores=s1]` lê a primeira página de cada caminho de varredura (configuração da loja no admin, aba Lojas), sem gravar, para conferir.
+- `pnpm routine-test [--stores=s2,s3] [--categories=gpu,ssd] [--keep-open]` roda a rotina de verdade (um termo por categoria em cada loja, pelo mesmo `collectTerm`) e salva um relatório por loja e categoria em `data/debug/`.
+- `pnpm chrome-setup [--stores=…]` abre o Chrome de cada loja na página de extensões para instalar a extensão uma vez e confere se ela conectou.
+- `BROWSER_HIDE_WINDOW=false` mostra as janelas; `BROWSER_STEP_MS=1000` espera 1 s a cada passo (abrir aba, abrir página, ler, fechar) e escreve o passo no terminal.
+- `pnpm dev`, `pnpm scan`, `pnpm routine-test` e `pnpm chrome-setup` usam a mesma porta local da extensão (`EXT_PORT`): um de cada vez.
 
 ### 4.7 Lojas por ID
 
@@ -178,7 +193,7 @@ Registro da investigação de cada loja. Só abordagem técnica.
 
 | | S1 | S2 | S3 |
 |---|---|---|---|
-| Acesso | HTTP simples (user-agent `Upgradezin/0.1`) | Navegador (Cloudflare) | Navegador (Cloudflare) |
+| Acesso | Chrome + extensão (como todas) | Chrome + extensão (Cloudflare) | Chrome + extensão (Cloudflare) |
 | Onde estão os dados | `__NEXT_DATA__` → `props.pageProps.data.catalogServer` | payload RSC (`self.__next_f`) → `{"products":{"items":[…]}}` | atributos `data-tss-*` + DOM do card |
 | Itens por página | até 120 (`page_size`; pedir mais devolve 120), 1 página por termo | 36 | até 300, página única |
 | Preço à vista | `offer.priceWithDiscount` (oferta temporária, só enquanto `offer.endsAt` não passou e `offer.quantityAvailable` > 0; o card mostra prazo e estoque da oferta) ou `priceWithDiscount` | `<prefixo>_prices.avista` | `data-tss-price` |
@@ -187,7 +202,7 @@ Registro da investigação de cada loja. Só abordagem técnica.
 | Identificadores | código interno; part number no fim do título | `sku` (part number), `codigo_barra` (EAN) | id interno |
 | Vendedor | `sellerName`, `flags.isMarketplace` | próprio | próprio |
 | Facetas nativas | `meta.filters` (marca, 80 Plus, cabeamento, preço) | `aggregations` | sidebar de filtros (marca, estoque) |
-| Particularidades | Termo que coincide com categoria redireciona (308) e perde os parâmetros: o adapter segue o redirect à mão e reaplica a paginação. | Busca ampla (traz PCs montados); filtra pela categoria da loja (`url_path`, configurado em `STORE_S2_CATEGORIES`) e para quando a página tem menos de 20% de itens da categoria. Os dados são lidos do HTML (`page.content()`), porque depois da hidratação o Next.js esvazia `self.__next_f`. Limita frequência rápido (página de "manutenção"): **1 página por termo** por padrão. Às vezes responde só a casca da busca, sem o bloco de produtos: tratado como bloqueio (não como "0 resultados"). | Busca devolve até 300 itens numa página só; a categoria é filtrada pelo título e o filtro de potência na UI deixa só as escolhidas. |
+| Particularidades | Termo que coincide com categoria redireciona e perde os parâmetros: o adapter vê pelo endereço final da aba e reabre o destino com a paginação. | Busca ampla (traz PCs montados); filtra pela categoria da loja (`url_path`, configurado em `STORE_S2_CATEGORIES`) e para quando a página tem menos de 20% de itens da categoria. Os dados são lidos do HTML da aba (o DOM serializado), porque depois da hidratação o Next.js esvazia `self.__next_f`. Com o navegador automatizado, limitava na 2ª consulta (página de "manutenção"); com a extensão, não. **1 página por termo** por padrão (`MAX_PAGES_S2`). Às vezes responde só a casca da busca, sem o bloco de produtos: tratado como bloqueio (não como "0 resultados"). | Busca devolve até 300 itens numa página só; a categoria é filtrada pelo título e o filtro de potência na UI deixa só as escolhidas. |
 | Tempo medido | ~1,5 s por página | ~4 s por página | ~4 s |
 
 ## 6. Normalização e agrupamento
@@ -317,11 +332,11 @@ A migração 5 tira o catálogo importado (tabelas `parts` e `part_codes`, colun
 
 **Termos:** `allSearchTerms()` (`packages/shared/src/terms.ts`) lista tudo o que o formulário de busca pode gerar (potências de fonte, plataformas e chipsets, linhas de processador, fabricantes de chip de vídeo, tipo × capacidade de memória: ≈110 termos); um teste garante que o `searchPlan` do site só gera termos dessa lista. Termos novos pesquisados no site também entram.
 
-**Rotina** (`prices/routine.ts`, sobe com o servidor): nas lojas ligadas nela, um switch por loja no admin (aba Coleta), valendo na hora e guardado no banco (`meta`, chave `routine`); com nenhuma loja ligada, não roda. Até alguém mexer no admin, valem `ROUTINE_ENABLED` e `ROUTINE_STORES` do `.env` (padrão: ligada, as três). Acorda a cada `ROUTINE_TICK_MIN` (5 min) e, em cada loja em paralelo, coleta até `ROUTINE_BATCH` (4) termos devidos, na ordem: nunca coletados; os que alguém pesquisou; os mais antigos. Um termo é devido quando a última coleta completa passou de `ROUTINE_REFRESH_H` (12 h); se falhou, só é tentado de novo depois de `ROUTINE_RETRY_MIN` (60 min). Para quando a loja chega a `ROUTINE_PAGES_PER_HOUR` páginas na última hora (contando as da busca do site), entra em pausa por bloqueio ou atinge o limite por hora. Com os padrões, uma volta completa pelos termos leva algumas horas em cada loja.
+**Rotina** (`prices/routine.ts`, sobe com o servidor): nas lojas ligadas nela, um switch por loja no admin (aba Coleta), valendo na hora e guardado no banco (`meta`, chave `routine`); com nenhuma loja ligada, não roda. Até alguém mexer no admin, valem `ROUTINE_ENABLED` e `ROUTINE_STORES` do `.env` (padrão: ligada, as três). Cada loja tem a sua agenda (modos no parágrafo abaixo) e, a cada vez, coleta **uma coisa**: uma página da varredura (só no modo normal) ou um termo devido, com as categorias espalhadas e, em cada uma, na ordem: nunca coletados; os que alguém pesquisou; os mais antigos. Um termo é devido quando a última coleta completa passou de `ROUTINE_REFRESH_H` (12 h); se falhou, só é tentado de novo depois de `ROUTINE_RETRY_MIN` (60 min). Para quando a loja chega a `ROUTINE_PAGES_PER_HOUR` páginas na última hora (contando as da busca do site), entra em pausa por bloqueio ou atinge o limite por hora. Com os padrões (um termo a cada 15 s a 1 min), uma volta completa pelos ~120 termos leva de meia hora a duas horas em cada loja. Na fila de cada loja, a busca do site passa na frente da rotina.
 
-**Varredura de categoria** (`prices/sweep.ts`; lojas com caminhos de varredura na configuração (admin, aba Lojas; antes `STORE_Sx_SWEEP`) e adapter com `sweepPage`, hoje só a S1; [ADR-008](#adr-008-varredura-de-categoria-para-o-histórico)): os termos só trazem a primeira página de cada busca, então produto fora do topo de algum termo ficava sem histórico. A varredura lê a **página de cada categoria** da loja (a mesma que a busca abre quando o termo bate com a categoria), página por página, e grava cada uma como uma coleta comum, ligada a um termo especial da categoria (`origin = 'sweep'`, termo `*`), fora da fila de termos e que a busca não aceita. Os anúncios que ela traz entram na busca do site pelas specs, como os de qualquer coleta (parágrafo acima). Vem antes dos termos em cada rodada, com orçamento próprio: até `ROUTINE_SWEEP_PAGES_PER_HOUR` (6) páginas por hora, dentro de `ROUTINE_PAGES_PER_HOUR`; o resto fica para os termos. Retoma de onde parou (estado em `meta`, `sweep:<loja>:<categoria>`: próxima página, fim da última volta, última falha), na ordem: volta em andamento, categoria nunca varrida, volta mais antiga. Uma categoria recomeça quando a última volta passou de `ROUTINE_SWEEP_REFRESH_H` (24 h); vai até a última página da loja ou `ROUTINE_SWEEP_MAX_PAGES` (25). Erro numa página faz a categoria esperar `ROUTINE_RETRY_MIN` e retomar da mesma página; bloqueio pausa a loja como sempre. Na S1 (nov/2026), uma volta completa nas 8 categorias tem 75 páginas de 120 itens: ≈13 h no orçamento padrão. `pnpm scan --sweep` lê a primeira página de cada caminho, sem gravar, para conferir a configuração. Lojas em modo lento não varrem.
+**Varredura de categoria** (`prices/sweep.ts`; lojas com caminhos de varredura na configuração (admin, aba Lojas; antes `STORE_Sx_SWEEP`) e adapter com `sweepPage`, hoje só a S1; [ADR-008](#adr-008-varredura-de-categoria-para-o-histórico)): os termos só trazem a primeira página de cada busca, então produto fora do topo de algum termo ficava sem histórico. A varredura lê a **página de cada categoria** da loja (a mesma que a busca abre quando o termo bate com a categoria), página por página, e grava cada uma como uma coleta comum, ligada a um termo especial da categoria (`origin = 'sweep'`, termo `*`), fora da fila de termos e que a busca não aceita. Os anúncios que ela traz entram na busca do site pelas specs, como os de qualquer coleta (parágrafo acima). No modo normal, a cada vez da rotina a varredura vai primeiro, se houver página na hora e orçamento próprio: até `ROUTINE_SWEEP_PAGES_PER_HOUR` (6) páginas por hora, dentro de `ROUTINE_PAGES_PER_HOUR`; o resto fica para os termos. Retoma de onde parou (estado em `meta`, `sweep:<loja>:<categoria>`: próxima página, fim da última volta, última falha), na ordem: volta em andamento, categoria nunca varrida, volta mais antiga. Uma categoria recomeça quando a última volta passou de `ROUTINE_SWEEP_REFRESH_H` (24 h); vai até a última página da loja ou `ROUTINE_SWEEP_MAX_PAGES` (25). Erro numa página faz a categoria esperar `ROUTINE_RETRY_MIN` e retomar da mesma página; bloqueio pausa a loja como sempre. Na S1 (nov/2026), uma volta completa nas 8 categorias tem 75 páginas de 120 itens: ≈13 h no orçamento padrão. `pnpm scan --sweep` lê a primeira página de cada caminho, sem gravar, para conferir a configuração. Lojas nos modos reduzido e lento não varrem.
 
-**Modos por loja** (admin, aba Coleta; guardados com a rotina). Cada loja tem a sua agenda, conferida a cada 30 s. **Normal:** uma rodada a cada `ROUTINE_TICK_MIN` (5 min), com a varredura (se configurada) e até `ROUTINE_BATCH` termos, recoletando depois de `ROUTINE_REFRESH_H`. **Reduzido** e **lento:** um termo por vez, espalhado pelas categorias, a cada `ROUTINE_REDUCED_GAP_MIN` (5 min) ou `ROUTINE_SLOW_GAP_MIN` (10 min) mais até 20% aleatório, recoletando depois de `ROUTINE_SLOW_REFRESH_H` (24 h). Até alguém escolher no admin, as lojas de `ROUTINE_SLOW_STORES` (s2 e s3, as com navegador) ficam no lento e as outras no normal. Esses modos existem porque as lojas com navegador, coletando vários termos seguidos, bloquearam em minutos (ver revisões do [ADR-006](#adr-006-preços-no-banco-coletados-por-rotina)); a primeira versão usava 15 min, lento demais para manter a cobertura. Vale também o intervalo mínimo de 3 min entre quaisquer duas consultas às lojas lentas ([§4.3](#43-política-de-coleta)). **Termo redirecionado:** na S2, um termo igual ao nome de uma categoria ("Water Cooler", "Gabinete", "placa de video") é levado para a página da categoria. A resposta da própria busca já traz a instrução do Next.js (`NEXT_REDIRECT;replace;/hardware/…;307;`), que o navegador às vezes segue e às vezes não; chegando pelo redirecionamento, vem a página de "manutenção", mas a mesma página aberta direto traz a lista normalmente. O adapter lê a instrução (e, por garantia, confere o endereço final) antes de chamar de bloqueio: redirecionamento não pausa a loja, e o destino fica guardado no termo (`term_runs.redirect_path`, migração 9). A rotina pega o termo de novo sem esperar o intervalo de falha, e dali em diante a coleta desse termo nessa loja abre o destino direto, no lugar da busca. O painel de cada loja mostra a contagem até a próxima consulta (vez da rotina, nunca antes do fim da pausa nem do intervalo mínimo). **Bloqueio nunca tira a loja da rotina para sempre:** a pausa sobe a cada bloqueio seguido (15 min, 1 h, 6 h, 24 h, e fica em 24 h) e, terminada, a rotina tenta de novo; uma coleta boa zera a escada. Sem isso, um bloqueio de um dia viraria um buraco permanente no histórico.
+**Modos por loja** (admin, aba Coleta; guardados com a rotina). Cada loja tem a sua agenda, conferida a cada 2 s. Em todos os modos, cada vez da rotina é uma coisa só: uma página da varredura (se configurada, na hora e com orçamento `ROUTINE_SWEEP_PAGES_PER_HOUR`) ou um termo, com as categorias espalhadas (`dueTerms`), recoletando depois de `ROUTINE_REFRESH_H`. A próxima vez é marcada para o intervalo do modo (+ até 20%) depois que a coleta termina: **normal** `ROUTINE_NORMAL_GAP_S` (15 s), **reduzido** `ROUTINE_REDUCED_GAP_S` (20 s), **lento** `ROUTINE_SLOW_GAP_S` (60 s). No reduzido e no lento o intervalo vale também para a busca do site. Sem modo escolhido, as lojas de `ROUTINE_SLOW_STORES` começam no lento.
 
 **Histórico:** `GET /api/prices/history?items=s1:123,s2:abc` devolve os pontos de `price_points` dos anúncios de um produto (até 12) e quando cada um apareceu por último. Toda lista completa que a busca envia leva em cada oferta o resumo `history` (`withHistoryStats`): menor preço à vista com cupom, com estoque, nos últimos 30 dias (contando o preço que já valia quando a janela começou e o atual) e desde quando o anúncio é acompanhado.
 
@@ -354,8 +369,8 @@ Parâmetros validados com zod. Em produção, o Fastify serve o build do front n
 - **Cache na página (memória, sem backend):** cada categoria guarda resultados, filtros, ordenação e a tela em que estava. Trocar de categoria ou ir ao início e voltar restaura tudo sem nova busca. Categoria aberta e filtros (com a ordenação) de cada categoria ficam também no `localStorage` (`uiState.ts`): reabrir o app volta na mesma categoria, com os mesmos filtros, e refaz a busca se havia resultado na tela (vem do banco, na hora). Os resultados em si não são guardados no navegador.
 - **Ordenação:** menor/maior preço à vista e maior desconto (contra o preço "de" da loja, já com cupom; sem desconto vai para o fim) em todas as categorias. Fonte: melhor eficiência, preço por watt, maior potência. Processador: mais núcleos. Placa de vídeo: mais memória de vídeo. Memória: menor preço por GB, maior frequência. Uma ordenação só aparece quando muda algo (ex. por potência, só com mais de uma potência no resultado).
 - **Textos:** rótulos (botões, títulos de seção, opções de filtro e ordenação, categorias) em Title Case com conectores curtos em minúsculo ("Só em Estoque", "Menor Preço à Vista"); frases e status em caixa normal. Todo elemento clicável com cursor de mão.
-- **Busca local nos resultados:** caixa de texto acima dos cards que filtra o que já foi carregado (todas as palavras no título, sem diferenciar acento), sem consultar as lojas. Sugestões clicáveis com os nomes de linha mais comuns no resultado ("Windforce", "Fury Beast"): só a parte do título antes da primeira vírgula, sem números, specs com filtro próprio, marcas e palavras presentes em quase todos (80%+). Com um texto que vale como termo (3 a 60 caracteres, letras, números e `- + . /`), aparece "Não achou? Buscar “texto” nas lojas": repete a busca com os termos do formulário mais o texto, que vai às lojas como termo próprio (`text=1`), e o filtro de texto continua aplicado. Nas lojas lentas, que aceitam 1 página por consulta, o termo nunca coletado vai primeiro, e a página já traz o produto procurado.
-- **Novidade sozinha:** desde o começo da busca, a tela fica escutando `GET /api/watch` (loja ainda na fila ou ao vivo nesta busca é ignorada: a lista dela vem da própria busca). Começar junto, e não no fim, importa para a loja lenta que a busca deixa para a rotina: a rotina pode coletar enquanto outra loja ainda está ao vivo, e essa coleta se perdia. Quando chega coleta nova de uma loja (ex. a loja que estava em pausa voltou e coletou), a lista dela troca sozinha e aparece um aviso discreto no canto ("Pichau: preços atualizados agora", some em 6 s). Os cards já mostrados ficam no lugar (só preço e lojas mudam; produto novo entra no fim); mudar ordenação, filtros ou buscar de novo volta à ordem normal. Nova busca, "Parar", trocar de categoria ou sair da tela param de escutar.
+- **Busca local nos resultados:** caixa de texto acima dos cards que filtra o que já foi carregado (todas as palavras no título, sem diferenciar acento), sem consultar as lojas. Sugestões clicáveis com os nomes de linha mais comuns no resultado ("Windforce", "Fury Beast"): só a parte do título antes da primeira vírgula, sem números, specs com filtro próprio, marcas e palavras presentes em quase todos (80%+). Com um texto que vale como termo (3 a 60 caracteres, letras, números e `- + . /`), aparece "Não achou? Buscar “texto” nas lojas": repete a busca com os termos do formulário mais o texto, que vai às lojas como termo próprio (`text=1`), e o filtro de texto continua aplicado. Os termos vão às lojas do mais antigo (ou nunca coletado) para o mais novo; na S2, que rende 1 página por consulta, a página já traz o produto procurado.
+- **Novidade sozinha:** desde o começo da busca, a tela fica escutando `GET /api/watch` (loja ainda na fila ou ao vivo nesta busca é ignorada: a lista dela vem da própria busca). Começar junto, e não no fim, importa para a loja que ainda espera a vez (ou que está em pausa): a rotina pode coletar nela enquanto outra loja ainda está ao vivo, e essa coleta se perdia. Quando chega coleta nova de uma loja (ex. a loja que estava em pausa voltou e coletou), a lista dela troca sozinha e aparece um aviso discreto no canto ("Pichau: preços atualizados agora", some em 6 s). Os cards já mostrados ficam no lugar (só preço e lojas mudam; produto novo entra no fim); mudar ordenação, filtros ou buscar de novo volta à ordem normal. Nova busca, "Parar", trocar de categoria ou sair da tela param de escutar.
 - **Nunca texto técnico na tela:** o servidor envia códigos (`state`, `reason`), a UI escolhe a frase.
 - Resultados parciais com cards de carregamento enquanto as lojas respondem. Aviso quando os filtros escondem todas as ofertas, com atalho para limpar.
 - Painel de filtros (lateral; gaveta no celular).
@@ -371,7 +386,7 @@ Parâmetros validados com zod. Em produção, o Fastify serve o build do front n
   - **Importar Meu PC** ([§17.2](#172-importar-setup-atual-cpu-z)): passo a passo para gerar o relatório no CPU-Z, arquivo arrastado ou escolhido, prévia do que foi lido (peças, discos, monitor) e "Usar na Montagem". As peças entram com o selo "Atual" e "Você já tem" no lugar do preço e ficam fora do total ("Nenhuma Peça Nova Ainda" enquanto não houver o que comprar).
   - **Já Tenho:** chave em toda peça escolhida numa loja (ex. a fonte, que o CPU-Z não mostra). Ligada, a peça vira "Atual": sai do total e conta como parte do PC. A fonte "Já Tenho" entra na análise de gargalo.
 - **Identificar Gargalo** ([§17.3](#173-identificar-gargalo-e-sugerir-upgrades)): entrada na tela inicial. Sem PC importado, explica e abre a importação; com PC, mostra no topo "Esquecer Meu PC" (apaga o perfil do navegador), "Trocar Relatório" e "Levar para a Montagem"; depois o veredito com o medidor de equilíbrio, as peças lidas (a fonte com "Informar"/"Alterar", que abre a prévia da importação) e "O Que Fazer" (cada sugestão com o selo Upgrade, Grátis, Atenção ou Observação e, quando é peça, o botão que abre a busca filtrada).
-  - **Compartilhar** grava uma cópia da montagem no servidor e copia o link curto (`/m/<id>`); o botão vira "Link Copiado". Clicar de novo sem mudar a montagem copia o mesmo link. Quem abre vê a montagem só para leitura (preços atualizados pelo banco, compatibilidade e totais) e pode "Usar Esta Montagem" (troca a própria, com confirmação se já houver peças) ou ir para a própria. O link usa o endereço da página: compartilhado pelo `pnpm share`, funciona fora de casa; aberto em `localhost`, só na mesma máquina.
+  - **Compartilhar** grava uma cópia da montagem no servidor e copia o link curto (`/m/<id>`); o botão vira "Link Copiado". Clicar de novo sem mudar a montagem copia o mesmo link. Quem abre vê a montagem só para leitura (preços atualizados pelo banco, compatibilidade e totais) e pode "Usar Esta Montagem" (troca a própria, com confirmação se já houver peças) ou ir para a própria. O link usa o endereço da página: aberto pelo link do servidor (túnel), funciona fora de casa; aberto em `localhost`, só na mesma máquina.
 
 ### 9.3 Admin (`/admin`)
 
@@ -384,16 +399,16 @@ Tela de quem opera o servidor, em pacote separado do app (carregado só em `/adm
 | `GET` | `/api/admin/me` | `{ user }` com sessão; 401 sem. |
 | `GET` | `/api/admin/stores` | As três lojas, com a configuração de cada uma (`AdminStoreConfig`: `configured`, `enabled`, nome, site, busca, caminhos, cores, data da alteração). |
 | `PUT` | `/api/admin/stores/:id` | Salva a loja (`AdminStoreInput`, cores como texto `"#a,#b"`) e devolve como ficou; vale na hora. Erro de validação: 400 com `errors` (uma frase por campo). |
-| `GET` | `/api/admin/stores/state` | Painel das lojas (`AdminStoreState`): pausa (motivo, até quando, degrau), páginas na última hora e limites, se está na rotina, próxima consulta possível (lojas lentas), última coleta boa, último bloqueio e consultas das últimas 24 h por resultado. |
+| `GET` | `/api/admin/stores/state` | Painel das lojas (`AdminStoreState`): pausa (motivo, até quando, degrau), páginas na última hora e limites, se está na rotina, modo, **fila** (consulta em andamento e quantas esperam: buscas do site e "coletar agora", que passam na frente, e as da rotina; `queuedAt` em `pace.ts`), próxima consulta possível (vez da rotina, fim da pausa e, no reduzido e no lento, intervalo do modo), última coleta boa, último bloqueio e consultas das últimas 24 h por resultado. |
 | `POST` | `/api/admin/stores/:id/unpause` | Tira a pausa da loja na hora (sem reiniciar). |
 | `POST` | `/api/admin/stores/:id/pause` | `{ minutes }` (5 min a 7 dias): pausa manual (motivo `paused`). Não sobe a escada de pausas. |
-| `POST` | `/api/admin/stores/:id/collect` | `{ category, term }`: "coletar agora", na fila da loja e com as regras de sempre (intervalo, intervalo mínimo das lentas, limite por hora); termo do formulário ou texto livre (`isTextTerm`). Loja em pausa: 409. Responde na hora (`startsAt`); o resultado vai para o registro de consultas. |
+| `POST` | `/api/admin/stores/:id/collect` | `{ category, term }`: "coletar agora", na fila da loja e com as regras de sempre (prioridade sobre a rotina, intervalo do modo da loja, limite por hora); termo do formulário ou texto livre (`isTextTerm`). Loja em pausa: 409. Responde na hora (`startsAt`); o resultado vai para o registro de consultas. |
 | `GET`/`PUT` | `/api/admin/routine` | Rotina: ligada e em quais lojas (`RoutineInfo`, com última e próxima rodada). Mudar vale na hora (desligar interrompe a rodada em andamento) e fica guardado (`meta`, chave `routine`); sem nada guardado, valem `ROUTINE_ENABLED`/`ROUTINE_STORES` do `.env`. |
 | `GET` | `/api/admin/attempts` | Registro de consultas, mais recentes primeiro; filtros `store`, `status`, `origin`, `before` (id, para paginar), `limit` (até 500). |
 | `GET` | `/api/admin/attempts/timeline?hours=48` | Consultas por hora de cada loja (ok, bloqueio, outro), até 720 h. |
 | `GET` | `/api/admin/coverage` | Cobertura por loja e categoria: anúncios, vistos em 24 h e 7 dias, termos com coleta boa de quantos, última coleta boa. |
 | `GET` | `/api/admin/terms` | Termos (sem a varredura) com a última coleta em cada loja; filtros `category`, `origin` (`seed`, `user`, `text`), `q` (texto, `%` e `_` literais). |
-| `POST` | `/api/admin/terms/:id/prioritize` | Conta o termo como pedido agora: as lojas lentas pegam primeiro. |
+| `POST` | `/api/admin/terms/:id/prioritize` | Conta o termo como pedido agora: a rotina pega primeiro. |
 | `DELETE` | `/api/admin/terms/:id` | Apaga termo pesquisado (`user`, `text`) com suas coletas; termo do formulário (`seed`): 409, a rotina o recriaria. |
 | `GET` | `/api/admin/activity` | Buscas recentes do site (em memória, até 500; sem IP: `person` é um hash do IP com um valor aleatório que muda a cada subida), pessoas desde o reinício, buscas e telas abertas agora e quantas pessoas estão em cada limite. |
 | `GET` | `/api/admin/live` | SSE: as últimas 50 consultas e cada nova conforme acontece (evento `attempt`). |
@@ -405,7 +420,7 @@ Tela de quem opera o servidor, em pacote separado do app (carregado só em `/adm
 
 - **Sessão:** token aleatório (32 bytes) em memória, `ADMIN_SESSION_H` (12 h); reiniciar o servidor desloga. Cookie `uz_admin`: `HttpOnly`, `Secure`, `SameSite=Strict`, só em `/api/admin`. Senha comparada em tempo constante.
 - **Requisição forjada de outro site:** além do `SameSite=Strict`, toda chamada que muda algo exige o cabeçalho `X-Admin: 1` (403 sem ele): um site de fora só consegue mandá-lo com a pré-checagem de CORS, que o servidor não libera.
-- **Abas:** Servidor, Coleta (rotina com um switch e um modo por loja, painel de cada loja com a contagem até a próxima consulta, e ações), Consultas (linha do tempo de 48 h e registro com filtros), Cobertura, Termos (com filtro de nunca coletados em nenhuma loja ou em alguma), Ao vivo, Atividade, Lojas (configuração) e Backups (com o merge).
+- **Abas:** Servidor, Coleta (rotina com um switch e um modo por loja, painel de cada loja com a fila (consultando agora e quantas buscas do site e da rotina esperam), a contagem até a próxima consulta e ações; atualiza a cada 5 s), Consultas (linha do tempo de 48 h e registro com filtros), Cobertura, Termos (com filtro de nunca coletados em nenhuma loja ou em alguma), Ao vivo, Atividade, Lojas (configuração) e Backups (com o merge).
 - **Registro de consultas** (`store_attempts`, `prices/attempts.ts`): cada consulta que vai à loja (termo, página de varredura, ficha técnica) grava loja, fim, tipo, origem (`search`, `routine`, `admin`), categoria, termo ou página, resultado (`ok`, `partial`, `blocked`, `limit`, `error`), ofertas, motivo e mensagem do bloqueio e duração; a que nem saiu (loja em pausa, cancelada) não entra. Guardado por 90 dias. Falha ao gravar o registro nunca derruba a coleta.
 - Respostas com `Cache-Control: no-store`. Código em `apps/server/src/admin/` (rotas montadas como plugin, testadas com `inject`) e `apps/web/src/admin/`.
 
@@ -421,7 +436,7 @@ Tela de quem opera o servidor, em pacote separado do app (carregado só em `/adm
   - Link de montagem: a mesma montagem reaproveita o link (hash do conteúdo); links novos, `SHARE_PER_HOUR` (20) por pessoa. Corpo até 256 KB.
   - Cabeçalhos: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` e, na página, CSP só com recursos do próprio servidor (imagens de qualquer `https:`, as fotos vêm das lojas).
 - Fixtures de teste são recortes mínimos de páginas públicas de busca: poucos itens, só os campos lidos, sem scripts, cookies, tokens ou metadados de sessão.
-- Servidor escuta em `127.0.0.1` por padrão, sem abrir portas. Acesso de fora pelo link temporário do `cloudflared` (`pnpm share` ou o serviço do túnel no servidor) ou por VPN mesh.
+- Servidor escuta em `127.0.0.1` por padrão, sem abrir portas. Acesso de fora pelo link temporário do `cloudflared` (serviço do túnel no servidor) ou por VPN mesh.
 - Admin: login fixo do `.env`, sessão em cookie protegido, limite de tentativas e cabeçalho obrigatório contra requisição forjada ([§9.3](#93-admin-admin)).
 - Contas de usuário: pendente (necessária antes de expor para outros usuários).
 
@@ -432,7 +447,7 @@ Tela de quem opera o servidor, em pacote separado do app (carregado só em `/adm
 | Linguagem | TypeScript ponta a ponta, executado direto com `tsx` (sem build no servidor) |
 | Runtime | Node 22.13+ (`node:sqlite` embutido) |
 | Servidor | Fastify 5, zod 4 |
-| Navegador | Playwright abrindo o Google Chrome instalado em sessão anônima |
+| Navegador | Google Chrome comum, um por loja, lido pela extensão do projeto (sem porta de depuração) |
 | Front | React 19, Vite, Tailwind 4 |
 | Testes | Vitest |
 | Monorepo | pnpm workspaces |
@@ -440,21 +455,24 @@ Tela de quem opera o servidor, em pacote separado do app (carregado só em `/adm
 ```
 apps/
   server/src/
-    adapters/        s1.ts, s2.ts, s3.ts, types.ts (+ *.test.ts com fixtures)
+    adapters/        s1.ts, s2.ts, s3.ts, types.ts (+ *.test.ts com fixtures; load.test.ts: as três pelo loadPage)
     stores.ts        configuração das lojas: no banco (admin), copiada do .env na primeira vez; validação do que o admin salva
     admin/           admin: login e sessão (auth.ts), rotas (routes.ts), status, painel e ações das lojas (actions.ts),
                      cobertura, termos e linha do tempo (data.ts), atividade sem IP (activity.ts), backups e merge (backup.ts)
-    cli/scan.ts      busca pelo terminal
+    cli/             scan.ts (busca pelo terminal), routine-test.ts (rotina de verdade nas lojas, com relatório),
+                     chrome-setup.ts (instala a extensão no Chrome de cada loja)
     db/              SQLite (node:sqlite): migrações, meta, instância do servidor
     prices/          prices.ts (termos, coletas, anúncios, histórico, resumo de 30 dias, anúncios que batem com o termo),
                      collect.ts (consulta um termo ou uma página de categoria e grava), routine.ts (rotina de coleta),
                      sweep.ts (estado e ordem da varredura de categoria), attempts.ts (registro de cada consulta às lojas)
     builds/          montagens compartilhadas por link (validação, código curto, preço atualizado ao abrir)
-    browser.ts       Chrome com janela escondida, uma janela anônima por loja, detecção de bloqueio
+    browser.ts       loadPage: o único caminho até as lojas (aba nova no Chrome da loja, lê, fecha), detecção de bloqueio
+    browser-ext.ts   Chrome por loja (perfil em data/chrome/<loja>) e a ponte local com a extensão (EXT_PORT, token)
     pace.ts          fila por loja (withStore), intervalos, limite por hora, backoff guardado no banco
     search.ts        busca do site: lê o banco (termos + anúncios que batem pelas specs), consulta a loja só quando falta, está velho ou pedem
     config.ts        variáveis de ambiente (zod)
     index.ts         Fastify + SSE, rotas da API, sobe a rotina
+  server/extension/  extensão do Chrome (MV3): aba de controle, abre as páginas e lê o HTML
   server/fixtures/   páginas reais recortadas das 3 lojas (ver README da pasta)
   web/src/
     components/      CategoryPicker, SearchSetup, FilterPanel, LocalSearch, ProductCard, PriceHistory,
@@ -497,15 +515,16 @@ data/                banco SQLite (upgradezin.db) e debug (gitignored)
 | Normalização | `packages/shared/src/*.test.ts` | specs e filtro de categoria de fonte, placa-mãe, processador, placa de vídeo e memória (com títulos reais), preço BRL, marca, chaves de modelo, agrupamento (EAN, part number, ambíguo), cupons |
 | Banco | `apps/server/src/db/db.test.ts` | migração idempotente; a saída do catálogo (migração 5) mantém anúncios, histórico, termos e pausas |
 | Compatibilidade | `packages/shared/src/compat.test.ts` | montagens válidas e inválidas a partir de títulos reais (encaixe, chipset × geração, DDR4/DDR5, slots com ATX = 4, fonte, vídeo, cooler), selos por peça, troca de placa-mãe revalidando tudo, tabelas de plataforma; TDP de referência por modelo, cooler fraco para o processador da loja (o do CPU-Z vale mais), radiador de 120 mm, placa de entrada com processador forte, H610 travando a memória |
+| Lojas pelo mesmo caminho | `apps/server/src/adapters/load.test.ts` | as três lojas pelo `loadPage` (Chrome trocado por fixtures com `usePageLoader`): a URL pedida, o que foi lido, redirecionamento para a categoria (S1 reabre com paginação; S2 vira `SearchRedirectError`, também quando o destino parece bloqueio), página sem dados como bloqueio, releitura da S2, espera pelos cards na S3, ficha técnica da S1 |
 | Parsers das lojas | `apps/server/src/adapters/{s1,s2,s3}.test.ts` | leitura de cada página real recortada: preços, parcelamento, estoque, EAN/part number, cupom, marketplace/open box, itens fora da categoria; na S1, oferta temporária (prazo e estoque), estoque fora de oferta e cupom (soma com a oferta, não vale para vendedor parceiro); na S3, "OPEN BOX" no título |
 | Lojas | `apps/server/src/stores.test.ts`, `stores-db.test.ts` | do `.env`: cor com ou sem `#`, valor inválido ignorado, degradê; no banco: cópia do `.env` só na primeira vez, validação de cada campo do admin, salvar valendo na hora, loja desligada fora das buscas |
-| Admin | `apps/server/src/admin/{admin,ops,data,backup}.test.ts`, `apps/web/src/admin/format.test.ts` | login, força bruta, cookie, cabeçalho `X-Admin`, sessão e cada rota (montadas com `inject`); pausa manual e tirar pausa sem subir a escada; resultado de cada consulta; registro, filtros e linha do tempo; rotina guardada e reiniciada; modo por loja (só o enviado muda, inválido volta ao padrão), loja em pausa na sua vez sem consultar; coletar agora recusando loja em pausa e termo inválido; cobertura; termos (filtro, `%` literal, apagar só pesquisados, prioridade); atividade sem IP; backup que abre como banco; nome com caminho recusado; merge com dois bancos reais (oferta mais recente, histórico das duas, sem duplicar, outra migração recusada); textos da tela |
+| Admin | `apps/server/src/admin/{admin,ops,data,backup}.test.ts`, `apps/web/src/admin/format.test.ts` | login, força bruta, cookie, cabeçalho `X-Admin`, sessão e cada rota (montadas com `inject`); pausa manual e tirar pausa sem subir a escada; resultado de cada consulta; registro, filtros e linha do tempo; rotina guardada e reiniciada; modo por loja (só o enviado muda, inválido volta ao padrão), loja em pausa na sua vez sem consultar; painel com o modo e a fila da loja; fila em texto ("2 buscas do site e 1 da rotina esperando"); coletar agora recusando loja em pausa e termo inválido; cobertura; termos (filtro, `%` literal, apagar só pesquisados, prioridade); atividade sem IP; backup que abre como banco; nome com caminho recusado; merge com dois bancos reais (oferta mais recente, histórico das duas, sem duplicar, outra migração recusada); textos da tela |
 | Preços no banco | `apps/server/src/prices/prices.test.ts` | termos sem duplicar, resultado da última coleta completa, coleta incompleta, histórico só quando muda, ordem da rotina, fila por loja, pausa guardada, menor preço em 30 dias, anúncio de outra coleta que bate com o termo ("AM4" achando o que veio de "Ryzen 7"; velho demais fica de fora) |
 | Ficha técnica e checagem física | `packages/shared/src/specsheet.test.ts`, `compat.test.ts`, `apps/web/src/build.test.ts`, `apps/server/src/prices/sweep.test.ts` | leitura de fichas reais (comprimento da placa com a medida na linha seguinte, gabinete com GPU/cooler máximos e radiadores sem confundir com ventoinhas, cooler sem altura, conector 6/8 × 16 pinos, part number); placa que não cabe, justa, cabe; cooler alto; radiador não aceito; quando a montagem pede a ficha, peça trocada no meio, falha passageira sem marcar; ficha guardada e velha demais |
-| Cupom, part number, lojas lentas | `packages/shared/src/coupon.test.ts`, `mpn.test.ts`, `apps/server/src/pace.test.ts` | condições do cupom (limitado, mínimo, validade com e sem ano, PIX) e o cupom só valendo quando atinge o mínimo e não venceu; part number no fim do título das três lojas (e o que não é código), mesmo código juntando lojas e variante separada; consulta na fila atrás de bloqueio sem ir à loja, intervalo mínimo da loja lenta guardado |
+| Cupom, part number, fila e modos | `packages/shared/src/coupon.test.ts`, `mpn.test.ts`, `apps/server/src/pace.test.ts` | condições do cupom (limitado, mínimo, validade com e sem ano, PIX) e o cupom só valendo quando atinge o mínimo e não venceu; part number no fim do título das três lojas (e o que não é código), mesmo código juntando lojas e variante separada; consulta na fila atrás de bloqueio sem ir à loja; intervalo de cada modo (normal na hora, reduzido 20 s, lento 60 s) guardado; busca do site passando na frente da rotina na fila; fila visível (em andamento, prioritárias e da rotina); cancelar quem espera sem travar a fila |
 | Marcas | `apps/server/src/prices/prices.test.ts`, `apps/web/src/brands.test.ts` | marcas da categoria vistas no período (sem repetir, sem "Outros"/"Genérica"); sugestões da fonte do "Meu PC" juntando as do banco com as comuns, na grafia da busca |
 | Termo × anúncio | `packages/shared/src/terms.test.ts` | `termMatches` em cada tipo de termo (encaixe, linha, potência, chipset, memória, SSD, cooler, gabinete, fabricante do chip). Conferido também contra os ≈8 mil anúncios do banco (nov/2026): todo tipo de termo acha anúncios; os que não acham nada (chipsets antigos, Core 3/5/7, 48/96 GB) também não têm nada à venda |
-| Varredura de categoria | `apps/server/src/prices/sweep.test.ts` | volta página por página, teto de páginas, ordem entre categorias, falha retomando da mesma página, histórico gravado, termo da varredura fora da fila, `STORE_S1_SWEEP` só com caminho do próprio site, página da categoria na S1 com paginação |
+| Varredura de categoria | `apps/server/src/prices/sweep.test.ts` | volta página por página, teto de páginas, ordem entre categorias, falha retomando da mesma página, histórico gravado, termo da varredura fora da fila, `STORE_S1_SWEEP` só com caminho do próprio site, página da categoria na S1 com paginação (pelo `loadPage` com fixture) |
 | Montagem por link | `apps/server/src/builds/builds.test.ts` | código curto, validação (vazia, link que não é https, quantidade), salvar/abrir com o preço mais recente do banco |
 | Segurança | `apps/server/src/security.test.ts` | limite por janela, abertos ao mesmo tempo, IP real só com conexão local, termos aceitos, mesma montagem reaproveitando o link |
 | Três lojas juntas | `apps/server/src/adapters/cross-store.test.ts` | invariantes de toda oferta (preço, link, chave) e o mesmo modelo de lojas diferentes virando um produto |
@@ -525,19 +544,21 @@ Desenvolvimento:
 ```bash
 pnpm install
 pnpm dev          # servidor :8787 + web :5173 (proxy /api)
+pnpm chrome-setup # uma vez: instala a extensão no Chrome de cada loja
 pnpm scan 750w    # busca pelo terminal
 pnpm scan --sweep # confere os caminhos de varredura (1ª página, sem gravar)
+pnpm routine-test # rotina de verdade nas lojas, com relatório em data/debug/
 pnpm test
 ```
 
-Requisitos: Node 22.13+, pnpm e Google Chrome instalado.
+Requisitos: Node 22.13+, pnpm e Google Chrome instalado (com a extensão do projeto em cada perfil de loja; com Chromium, ela carrega sozinha).
 
 Versões: `version` nos `package.json` (a da raiz vale para o app), histórico no `CHANGELOG.md`, tag `vX.Y.Z` no git. `pnpm release X.Y.Z` (`scripts/release.mjs`) atualiza todos os pacotes e abre a seção da versão no CHANGELOG.
 
 Servidor sem tela (em uso: notebook com Ubuntu; scripts e passo a passo em `deploy/`, fora do git):
 
 - Node 22 e pnpm só do usuário (`~/.local/opt/node`), código clonado em `~/Upgradezin`, `.env` e `data/` na pasta.
-- Google Chrome instalado, rodando sob `xvfb-run` (headless é barrado).
+- Google Chrome (ou Chromium, que carrega a extensão sozinho) rodando sob `xvfb-run`; com o Chrome comum, instalar a extensão uma vez por loja no perfil `data/chrome/<loja>`.
 - `pnpm build` e `pnpm start` (Fastify serve o front) num serviço do systemd (`upgradezin.service`, `Nice=10`, até 2 GB); logs no journald.
 - Link público temporário por um segundo serviço com `cloudflared` (`trycloudflare.com`); `deploy/update.sh` atualiza pelo GitHub e reinicia.
 - Backup diário do banco (`VACUUM INTO`, 7 dias no servidor, cópia puxada para o PC). Backups do admin (manuais e os de antes do merge) ficam na mesma pasta e não são apagados sozinhos.
@@ -575,7 +596,7 @@ Variáveis em `.env.example`.
 
 Na ordem em que devem entrar; login por último.
 
-1. **Cobertura de S2 e S3:** feito até agora (nov/2026): intervalo mínimo de 3 min, busca do site sem rajada, fila sem ir à loja em pausa, modo lento de 15 min, resultado completado pelo banco ([§4.3](#43-política-de-coleta)). Falta: amostras (memória em S2 e S3, placa de vídeo em S2), caminhos de categoria (`STORE_S2_CATEGORIES` só tem fonte, placa-mãe e processador; S3 nenhum), medir nos logs se 3 min bastam, e varredura de categoria nelas se aceitarem (ver [§16](#16-questões-em-aberto)).
+1. **Cobertura de S2 e S3:** o bloqueio foi resolvido em nov/2026 com o Chrome comum e a extensão ([ADR-004](#adr-004-navegador-padrão-e-pausa-no-bloqueio)); as três lojas estão na rotina por igual ([§4.3](#43-política-de-coleta)). Falta: levar ao servidor (Chromium, que carrega a extensão sozinho), amostras (memória em S2 e S3, placa de vídeo em S2), caminhos de categoria (`STORE_S2_CATEGORIES` só tem fonte, placa-mãe e processador; S3 nenhum), acompanhar nos logs se o modo normal (15 s) segue sem bloqueio, e varredura de categoria nelas (ver [§16](#16-questões-em-aberto)).
 2. **Consumo da RX 9050** na tabela `GPU_POWER` (sem valor oficial conferido; até lá a fonte fica "não deu para estimar" com ela).
 3. **Condições do cupom:** feito para a S1 ([§6.3](#63-cupons)). Falta S2 e S3, que só dão a % no anúncio (a página de cupons da S3 lista código e condições; avaliar ler uma vez por dia).
 4. **Frete:** depois do login, com o CEP que a pessoa informar.
@@ -599,7 +620,7 @@ Na ordem em que devem entrar; login por último.
 - **Contexto:** a busca é anônima e só quer o preço atual. Um histórico gravado a partir das buscas fica cheio de buracos (só registra o que alguém procurou) e não sustenta selos confiáveis.
 - **Decisão:** nenhum dado de negócio em disco. Cache só em memória. O navegador roda em sessão anônima, sem perfil salvo. A primeira versão gravava histórico em `data/history.json`; foi removida.
 - **Consequência:** se surgir necessidade real (monitores, selo "menor preço em N dias", detecção de "de" inflado), a persistência volta com propósito definido. Preferência por JSON em disco; se o volume pedir, o `node:sqlite` embutido no Node (sem dependência nem serviço).
-- **Atualização (nov/2026):** o catálogo de peças passou a ficar em SQLite ([ADR-005](#adr-005-catálogo-de-peças-em-sqlite-importado-uma-vez-do-opendb)), e depois os preços ([ADR-006](#adr-006-preços-no-banco-coletados-por-rotina)). O histórico agora sai de uma rotina que cobre todos os termos do formulário, não só o que alguém procurou: o motivo original para não gravar deixou de valer.
+- **Atualização (nov/2026):** o catálogo de peças passou a ficar em SQLite ([ADR-005](#adr-005-catálogo-de-peças-em-sqlite-importado-uma-vez-do-opendb)), e depois os preços ([ADR-006](#adr-006-preços-no-banco-coletados-por-rotina)). O histórico agora sai de uma rotina que cobre todos os termos do formulário, não só o que alguém procurou: o motivo original para não gravar deixou de valer. O navegador também deixou de ser uma sessão anônima: cada loja tem um perfil de Chrome fixo em `data/chrome/<loja>` (onde fica a extensão; [ADR-004](#adr-004-navegador-padrão-e-pausa-no-bloqueio)), sem dado de usuário do site.
 
 ### ADR-003: Sem marketplaces abertos
 
@@ -612,6 +633,7 @@ Na ordem em que devem entrar; login por último.
 - **Decisão:** o Google Chrome instalado, aberto pelo Playwright. Bloqueio pausa a loja (backoff), a UI mostra o status com o link da mesma busca no site da loja, e a busca segue nas outras.
 - **Revisão:** começou com o Chromium do Playwright; passou a usar o **Google Chrome instalado** (`channel: chrome`), aberto em sessão anônima, com a janela fora da área visível e fechado ao fim de cada busca. Continua sem nenhuma modificação: o Chrome segue se identificando como automatizado. Interceptar rede e minimizar a janela foram descartados porque quebravam a página de verificação.
 - **Consequência:** a cobertura de S2 e S3 depende de as lojas aceitarem esse volume baixo. S1 responde a HTTP simples e funciona de ponta a ponta; S3 funciona com o Chrome instalado; S2 limita depois da primeira página.
+- **Revisão (nov/2026):** o que as lojas detectavam era o navegador controlado: com o Playwright e com qualquer conexão pela porta de depuração, o próprio Chrome se declara automatizado (`navigator.webdriver`), e as duas lojas bloqueavam da 2ª página em diante. Um Chrome comum, sem porta de depuração, não bloqueou nem abrindo uma página por segundo. Agora **todas as lojas** (S1 inclusive, antes por HTTP) são lidas pela extensão do projeto num Chrome comum por loja: um só caminho (`loadPage`), sem Playwright. Nos testes, `usePageLoader` troca o Chrome por fixtures.
 
 ### ADR-005: Catálogo de peças em SQLite, importado uma vez do OpenDB
 
@@ -629,6 +651,7 @@ Na ordem em que devem entrar; login por último.
 - **Revisão (nov/2026, servidor):** nova tentativa com s2 e s3 na rotina, agora pelo Chrome do servidor: s3 pediu verificação depois de um termo, duas vezes seguidas (logo após a pausa), e s2 bloqueou já na primeira consulta. A rotina continua só em s1.
 - **Revisão (nov/2026, modo lento):** tirar a loja da rotina deixava o histórico dela parado de vez. s2 e s3 voltaram em modo lento (um termo a cada 30–45 min), e o bloqueio só pausa, com retomada automática. No servidor, `ROUTINE_STORES` voltou às três lojas.
 - **Revisão (nov/2026, resultado por specs):** o resultado de uma loja era só o do termo pesquisado; com s2 e s3 bloqueadas, um termo que elas nunca coletaram ("AM4") escondia anúncios que o banco já tinha delas (vindos de "Ryzen 7"). A busca passou a juntar os anúncios da loja que batem com o termo pelas specs, de qualquer coleta ([§8.2](#82-preços-e-rotina-de-coleta)).
+- **Revisão (nov/2026, extensão):** com as lojas lidas pelo Chrome comum com a extensão ([ADR-004](#adr-004-navegador-padrão-e-pausa-no-bloqueio)), as três voltaram à rotina por igual. Cada loja coleta uma coisa por vez (um termo, ou uma página da varredura no modo normal), a cada 15 s (normal), 20 s (reduzido) ou 60 s (lento); na fila da loja, a busca do site passa na frente.
 
 ### ADR-008: Varredura de categoria para o histórico
 
@@ -648,12 +671,12 @@ Na ordem em que devem entrar; login por último.
   1. Facetas nativas das lojas (S1 `meta.filters`, S2 `aggregations` e campos como `socket`, `formato_placa`, `tipo_de_memoria`): sempre atualizadas, sem manutenção. **Recomendado como base.**
   2. Página do produto (ficha técnica) só para os itens que passarem nos filtros principais: mais requisições.
   3. Base externa de specs: avaliar disponibilidade, atualização e termos de uso. Agregadores sem API pública e com termos que proíbem coleta ficam fora.
-- [ ] **Cobertura confiável de S2 e S3.** Opções: (1) feeds de produto de programas de afiliados (XML/CSV com preço e estoque, atualizados periodicamente, não ao vivo); (2) pedir às lojas acesso ou liberação para uso não comercial; (3) aceitar a cobertura parcial (atual).
+- [x] **Cobertura confiável de S2 e S3.** Resolvido em nov/2026: o bloqueio vinha do navegador controlado (Playwright, porta de depuração). Com o Chrome comum e a extensão, as duas respondem como a S1 ([ADR-004](#adr-004-navegador-padrão-e-pausa-no-bloqueio)). Falta acompanhar por mais tempo, no servidor também.
 - [ ] **Profundidade por termo:** `MAX_PAGES_*` atuais (S1 1×120, S2 1×36, S3 1×300) bastam? Na S2, a 1ª página já traz os itens mais relevantes, e páginas seguintes disparam o limite da loja. Na S1, a varredura de categoria ([ADR-008](#adr-008-varredura-de-categoria-para-o-histórico)) cobre o que passa da 1ª página.
 - [ ] **Amostras que faltam:** memória RAM em S2 e S3 e placa de vídeo em S2 (a loja limitou o acesso na coleta). Sem elas, essas combinações filtram só pelo título (sem caminho de categoria no `.env`) e não têm fixture. Coletar uma página de cada, com calma, quando houver oportunidade.
 - [x] **Condições de cupom:** lidas do texto da S1 (limitado, mínimo, validade, PIX) e aplicadas no preço ([§6.3](#63-cupons)). S2 e S3 seguem só com a %.
 - [ ] **Frete:** ignorar (atual) ou estimar por CEP?
-- [ ] **Ritmo próprio da S2.** Medido em nov/2026: a S2 marca a sessão automatizada na 1ª página e, depois de alguns bloqueios, recusa também sessões novas do mesmo endereço por um tempo; com 20–25 min entre consultas, às vezes passa e às vezes não. Já dá para escolher o modo da rotina por loja (normal, reduzido, lento; [§8.2](#82-preços-e-rotina-de-coleta)), mas o intervalo mínimo (3 min) e a 1ª pausa (15 min) ainda valem igual para S2 e S3. Com o registro de consultas do admin (aba Consultas), decidir com dados um intervalo e uma pausa só da S2.
+- [ ] **Ritmo por loja.** Com a extensão (nov/2026), S2 e S3 não bloquearam com um termo a cada 6–8 s. Os modos são por loja e em segundos (normal 15 s, reduzido 20 s, lento 60 s; [§8.2](#82-preços-e-rotina-de-coleta)). Acompanhar no registro de consultas (admin, aba Consultas), também no servidor; se alguma loja voltar a bloquear, baixar o modo dela. Ideia: o modo descer sozinho a cada bloqueio e subir depois de uma sequência de consultas boas.
 - [x] **Licença** do repositório: proprietária, todos os direitos reservados (`LICENSE`, `"license": "UNLICENSED"`). Sem licença o padrão já seria esse, mas o aviso explícito deixa claro; impedir de fato a cópia só com o repositório privado.
 
 ## 17. Ideias futuras

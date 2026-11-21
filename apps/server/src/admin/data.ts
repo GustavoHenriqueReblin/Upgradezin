@@ -94,7 +94,7 @@ export function deleteTerm(db: Db, id: number): 'deleted' | 'not-found' | 'seed'
   return 'deleted';
 }
 
-/** Dá prioridade ao termo na rotina: conta como pedido agora (as lojas lentas pegam primeiro). */
+/** Dá prioridade ao termo na rotina: conta como pedido agora (a rotina pega primeiro). */
 export function prioritizeTerm(db: Db, id: number, now = new Date().toISOString()): boolean {
   return db.prepare(`UPDATE search_terms SET last_requested_at = ? WHERE id = ? AND origin != 'sweep'`).run(now, id).changes > 0;
 }

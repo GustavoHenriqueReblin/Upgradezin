@@ -75,8 +75,9 @@ export interface StoreAttempt {
 }
 
 /**
- * Ritmo da rotina numa loja. normal: varredura das categorias e alguns termos a cada rodada;
- * reduced: um termo a cada ROUTINE_REDUCED_GAP_MIN; slow: um termo a cada ROUTINE_SLOW_GAP_MIN.
+ * Ritmo de uma loja. A rotina coleta uma coisa (um termo ou uma página da varredura) a cada
+ * ROUTINE_NORMAL_GAP_S / ROUTINE_REDUCED_GAP_S / ROUTINE_SLOW_GAP_S. normal: a busca do site vai
+ * na hora; reduced e slow: a busca do site também respeita o intervalo do modo.
  */
 export const ROUTINE_MODES = ['normal', 'reduced', 'slow'] as const;
 export type RoutineMode = (typeof ROUTINE_MODES)[number];
@@ -102,8 +103,8 @@ export interface RoutineInfo extends RoutineSettings {
   lastTickAt: string | null;
   /** A próxima vez que alguma loja da rotina consulta. */
   nextTickAt: string | null;
-  /** Minutos entre rodadas de cada modo (normal: a rodada; reduzido e lento: entre um termo e outro). */
-  minutes: Record<RoutineMode, number>;
+  /** Segundos entre uma coleta da rotina e a próxima, em cada modo. */
+  seconds: Record<RoutineMode, number>;
 }
 
 /** Situação de uma loja agora, para o painel do admin. */
@@ -117,8 +118,11 @@ export interface AdminStoreState {
   mode: RoutineMode;
   /** Coletando para a rotina agora. */
   busy: boolean;
-  /** Loja lenta (intervalo mínimo entre consultas). */
-  slow: boolean;
+  /**
+   * Fila da loja agora: consulta em andamento (rotina, busca do site ou admin) e quantas esperam
+   * a vez. `priority`: busca do site, "coletar agora" e ficha técnica (passam na frente); `routine`: rotina.
+   */
+  queue: { running: boolean; priority: number; routine: number };
   /** Pausa valendo agora (bloqueio ou manual, reason "paused"). step -1: pausa manual sem bloqueio antes. */
   pause: { until: string; step: number; reason: BlockReason } | null;
   /** Páginas pedidas na última hora e os limites. */

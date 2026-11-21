@@ -9,6 +9,7 @@
  *                                             1ª página de cada categoria, sem gravar
  */
 import { effectiveCash, ENABLED_CATEGORIES, groupOffers, type CategoryId, type Offer, type StoreId } from '@upgradezin/shared';
+import { closeBrowser } from '../browser.ts';
 import { previewSweep } from '../prices/collect.ts';
 import { runSearch } from '../search.ts';
 import { getDb } from '../db/instance.ts';
@@ -31,7 +32,8 @@ const terms = args
   .map((t) => t.trim())
   .filter(Boolean);
 const category = (flags.category ?? 'psu') as CategoryId;
-const stores = ((flags.stores?.split(',') ?? [...ACTIVE_STORES]) as StoreId[]).filter((id) => ACTIVE_STORES.includes(id));
+// Vírgula ou espaço: o PowerShell transforma "--stores=s2,s3" em "--stores=s2 s3".
+const stores = ((flags.stores?.split(/[\s,]+/).filter(Boolean) ?? [...ACTIVE_STORES]) as StoreId[]).filter((id) => ACTIVE_STORES.includes(id));
 
 if (flags.sweep) {
   const ac = new AbortController();
@@ -50,6 +52,7 @@ if (flags.sweep) {
       }
     }
   }
+  await closeBrowser();
   process.exit(0);
 }
 
@@ -62,7 +65,7 @@ const all: Offer[] = [];
 const ac = new AbortController();
 process.on('SIGINT', () => ac.abort());
 
-// runSearch fecha o Chrome ao terminar.
+// O Chrome de cada loja fica aberto entre consultas: fecha no fim (senão o processo não termina).
 await runSearch(
   { category, terms, stores },
   {
@@ -106,3 +109,6 @@ if (flags.json) {
     console.log(`${brl(effectiveCash(g.best)).padStart(12)}  ${g.title.slice(0, 70)}\n${''.padStart(14)}${spec}\n${''.padStart(14)}${lojas}\n`);
   }
 }
+
+await closeBrowser();
+process.exit(0);

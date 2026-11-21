@@ -16,7 +16,7 @@ import { browserOpen, closeBrowser } from './browser.ts';
 import { BUILD_ID, findSharedBuild, getSharedBuild, saveSharedBuild, SharedBuildSchema } from './builds/builds.ts';
 import { config } from './config.ts';
 import { deleteMeta, getMeta, metaByPrefix, setMeta } from './db/db.ts';
-import { clearBackoff, pauseStore, useBackoffStorage, useSlowStorage, type Backoff } from './pace.ts';
+import { clearBackoff, pauseStore, useBackoffStorage, useLastQueryStorage, type Backoff } from './pace.ts';
 import { closeDb, getDb } from './db/instance.ts';
 import { activeSessions, canReadSheet, sheetOf } from './prices/collect.ts';
 import { listingBrands, listingsHistory } from './prices/prices.ts';
@@ -72,9 +72,9 @@ const SearchQuery = z.object({
   const db = getDb();
   const saved = metaByPrefix(db, 'backoff:').map(([k, v]) => [k.slice('backoff:'.length), JSON.parse(v)] as [(typeof STORES)[number], Backoff]);
   useBackoffStorage(saved, (store, b) => (b ? setMeta(db, `backoff:${store}`, JSON.stringify(b)) : deleteMeta(db, `backoff:${store}`)));
-  // Última consulta a cada loja lenta (meta "slowlast:<loja>"): o intervalo mínimo vale também depois de reiniciar.
+  // Última consulta a cada loja (meta "slowlast:<loja>"): o intervalo do modo vale também depois de reiniciar.
   const last = metaByPrefix(db, 'slowlast:').map(([k, v]) => [k.slice('slowlast:'.length), Number(v)] as [(typeof STORES)[number], number]);
-  useSlowStorage(last, (store, at) => setMeta(db, `slowlast:${store}`, String(at)));
+  useLastQueryStorage(last, (store, at) => setMeta(db, `slowlast:${store}`, String(at)));
   // Rotina: ligada, lojas e modos, do admin (meta "routine"); sem nada guardado, vale o .env.
   const routine = getMeta(db, 'routine');
   useRoutineStorage(routine ? JSON.parse(routine) : null, (s) => setMeta(db, 'routine', JSON.stringify(s)));

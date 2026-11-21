@@ -11,6 +11,7 @@ import {
   type CategoryId,
   type Offer,
 } from '@upgradezin/shared';
+import { loadPage, saveDebugHtml } from '../browser.ts';
 import { config } from '../config.ts';
 import { BlockedError, jitter, sleep, takePage } from '../pace.ts';
 import { searchUrl, storeConfig } from '../stores.ts';
@@ -18,14 +19,11 @@ import type { StoreAdapter } from './types.ts';
 
 /**
  * Loja S1: páginas Next.js com o catálogo em __NEXT_DATA__ (props.pageProps.data,
- * uma string JSON). Responde a HTTP simples, sem navegador.
+ * uma string JSON), lidas no Chrome da loja como as outras (loadPage).
  */
 
 /** Máximo que a loja entrega por página (pedir mais devolve 120). */
 const PAGE_SIZE = 120;
-
-/** User-agent honesto: identifica o app, não finge ser navegador. */
-const UA = 'Upgradezin/0.1 (consulta de preco pessoal)';
 
 interface S1Product {
   code: number;
@@ -107,30 +105,40 @@ export function mapS1Product(p: S1Product, collectedAt: string, category: Catego
   };
 }
 
+/** Endereço da listagem com paginação, tamanho de página e ordem. */
+function s1ListUrl(base: string, page: number): string {
+  const url = new URL(base);
+  url.searchParams.set('page_number', String(page));
+  url.searchParams.set('page_size', String(PAGE_SIZE));
+  url.searchParams.set('sort', 'most_searched');
+  return url.toString();
+}
+
 /**
- * Termos que batem com uma categoria (ex. "fonte-750w") redirecionam (308) para
- * a página da categoria e perdem os parâmetros. Seguimos o redirect à mão e
- * reaplicamos paginação.
+ * Uma página da listagem (busca ou categoria), lida no Chrome da loja.
+ * Termos que batem com uma categoria (ex. "fonte-750w") redirecionam para a página da
+ * categoria e perdem os parâmetros: abre de novo o destino com a paginação.
+ * Página sem os dados do catálogo não é "0 resultados": a loja limitou o acesso.
  */
-async function fetchPage(base: string, page: number, signal: AbortSignal): Promise<Response> {
-  const headers = { 'User-Agent': UA, 'Accept-Language': 'pt-BR,pt;q=0.9', Accept: 'text/html' };
-  let url = new URL(base);
-  for (let hop = 0; hop < 3; hop++) {
-    url.searchParams.set('page_number', String(page));
-    url.searchParams.set('page_size', String(PAGE_SIZE));
-    url.searchParams.set('sort', 'most_searched');
-    const res = await fetch(url, { signal, headers, redirect: 'manual' });
-    if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
-      url = new URL(res.headers.get('location')!, url);
+async function listPage(base: string, page: number, signal: AbortSignal): Promise<S1Catalog> {
+  let url = s1ListUrl(base, page);
+  for (let hop = 0; hop < 2; hop++) {
+    const loaded = await loadPage('s1', url, { signal });
+    const to = new URL(loaded.url);
+    if (to.pathname !== new URL(url).pathname && !to.searchParams.has('page_number')) {
+      url = s1ListUrl(`${to.origin}${to.pathname}`, page);
       continue;
     }
-    if (res.status === 403 || res.status === 429)
-      throw new BlockedError('s1', res.status === 429 ? 'too-many-requests' : 'denied', `HTTP ${res.status}`);
-    if (!res.ok) throw new Error(`S1: HTTP ${res.status}`);
-    return res;
+    if (!/<script id="__NEXT_DATA__"/.test(loaded.html)) {
+      await saveDebugHtml('s1', loaded.html, 'no-data');
+      throw new BlockedError('s1', 'unavailable', 'Página sem dados de produto');
+    }
+    return parseS1Html(loaded.html);
   }
-  throw new Error('S1: redirects demais');
+  throw new Error('S1: redirecionamentos demais');
 }
+
+const productUrl = (sku: string) => `${storeConfig('s1').url}/produto/${encodeURIComponent(sku)}`;
 
 /** HTML da ficha técnica na página do produto, ou null se a página não tem. */
 export function s1SheetFromHtml(html: string): string | null {
@@ -173,11 +181,8 @@ async function resolveCoupons(offers: Offer[], signal: AbortSignal) {
         // Logo depois da busca, como quem abre um produto da lista: pausa curta, uma página por cupom.
         await sleep(jitter(2000, 4000), signal);
         takePage('s1');
-        const res = await fetch(`${storeConfig('s1').url}/produto/${list[0]!.storeSku}`, {
-          signal,
-          headers: { 'User-Agent': UA, 'Accept-Language': 'pt-BR,pt;q=0.9' },
-        });
-        hit = { at: Date.now(), value: couponFromS1ProductHtml(res.ok ? await res.text() : '', code) };
+        const { html } = await loadPage('s1', productUrl(list[0]!.storeSku), { signal });
+        hit = { at: Date.now(), value: couponFromS1ProductHtml(html, code) };
         couponCache.set(code, hit);
       } catch (err) {
         if (signal.aborted) throw err;
@@ -197,8 +202,7 @@ export const s1: StoreAdapter = {
     for (let page = 1; page <= Math.min(total, config.MAX_PAGES_S1); page++) {
       if (page > 1) await sleep(jitter(), signal);
       takePage('s1');
-      const res = await fetchPage(base, page, signal);
-      const cat = parseS1Html(await res.text());
+      const cat = await listPage(base, page, signal);
       total = cat.meta.totalPagesCount || 1;
       const now = new Date().toISOString();
       const seen = new Set(offers.map((o) => o.storeSku));
@@ -215,20 +219,12 @@ export const s1: StoreAdapter = {
   /** Ficha técnica da página do produto (product.technicalInformation.text no __NEXT_DATA__). */
   async productSheet(sku, signal) {
     takePage('s1');
-    const res = await fetch(`${storeConfig('s1').url}/produto/${encodeURIComponent(sku)}`, {
-      signal,
-      headers: { 'User-Agent': UA, 'Accept-Language': 'pt-BR,pt;q=0.9', Accept: 'text/html' },
-    });
-    if (res.status === 403 || res.status === 429)
-      throw new BlockedError('s1', res.status === 429 ? 'too-many-requests' : 'denied', `HTTP ${res.status}`);
-    if (!res.ok) return null;
-    return s1SheetFromHtml(await res.text());
+    return s1SheetFromHtml((await loadPage('s1', productUrl(sku), { signal })).html);
   },
   /** Página da categoria (mesmo formato da busca: a busca que bate com uma categoria redireciona para ela). */
   async sweepPage({ category, url, page, signal }) {
     takePage('s1');
-    const res = await fetchPage(url, page, signal);
-    const cat = parseS1Html(await res.text());
+    const cat = await listPage(url, page, signal);
     const now = new Date().toISOString();
     const offers = cat.data.map((p) => mapS1Product(p, now, category)).filter((o): o is Offer => !!o);
     await resolveCoupons(offers, signal);

@@ -102,8 +102,25 @@ export function countdown(target: string | number, now = Date.now()): string {
 
 export const MODE_LABEL: Record<RoutineMode, string> = { normal: 'Normal', reduced: 'Reduzido', slow: 'Lento' };
 
-/** O que o modo faz, com os minutos que o servidor usa. */
-export function modeHint(mode: RoutineMode, minutes: Record<RoutineMode, number>): string {
-  if (mode === 'normal') return `vários termos (e a varredura, se configurada) a cada ${minutes.normal} min`;
-  return `1 termo a cada ${minutes[mode]} min`;
+/** Segundos em texto curto: "15 s", "1 min", "1 min 30 s". */
+export function shortDuration(s: number): string {
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  const r = Math.round(s % 60);
+  return r ? `${m} min ${r} s` : `${m} min`;
+}
+
+/** Fila da loja em texto: "2 buscas do site e 1 da rotina esperando", "vazia". */
+export function queueLabel(q: { priority: number; routine: number }): string {
+  const parts = [
+    q.priority ? `${q.priority} ${q.priority === 1 ? 'busca' : 'buscas'} do site` : '',
+    q.routine ? `${q.routine} da rotina` : '',
+  ].filter(Boolean);
+  return parts.length ? `${parts.join(' e ')} esperando` : 'vazia';
+}
+
+/** O que o modo faz, com os segundos que o servidor usa. */
+export function modeHint(mode: RoutineMode, seconds: Record<RoutineMode, number>): string {
+  const every = `1 termo a cada ${shortDuration(seconds[mode])}`;
+  return mode === 'normal' ? `${every}; busca do site na hora` : `${every}; busca do site respeita o intervalo`;
 }
