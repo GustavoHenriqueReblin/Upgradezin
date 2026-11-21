@@ -83,7 +83,7 @@ function makeApp() {
   const db = openDb(':memory:');
   const dir = mkdtempSync(join(tmpdir(), 'uz-routes-'));
   calls.length = 0;
-  const routine: RoutineInfo = { enabled: false, stores: [], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, busy: false, lastTickAt: null, nextTickAt: null, seconds: { normal: 15, reduced: 20, slow: 60 } };
+  const routine: RoutineInfo = { enabled: false, stores: [], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, busy: false, lastTickAt: null, nextTickAt: null, seconds: { normal: 15, reduced: 20, slow: 60 } };
   registerAdmin(app, {
     auth: new AdminAuth(OPTS),
     status: () => serverStatus(db, { version: '9.9.9', browserOpen: false, activeSessions: 0 }),
@@ -94,7 +94,7 @@ function makeApp() {
       pause: (id, minutes) => void calls.push(['pause', id, minutes]),
       collect: (id, category, term) => (calls.push(['collect', id, category, term]), term === 'pausada' ? { ok: false, error: 'Loja em pausa.' } : { ok: true, startsAt: '2026-11-20T21:00:00.000Z' }),
       routine: () => routine,
-      setRoutine: (s) => (calls.push(['routine', s]), { ...routine, ...s, modes: { ...routine.modes, ...s.modes } }),
+      setRoutine: (s) => (calls.push(['routine', s]), { ...routine, ...s, modes: { ...routine.modes, ...s.modes }, live: { ...routine.live, ...s.live }, seconds: { ...routine.seconds, ...s.seconds } }),
     },
     data: {
       coverage: () => coverage(db),
@@ -245,6 +245,12 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     expect(mode.json()).toMatchObject({ modes: { s1: 'normal', s2: 'reduced', s3: 'slow' } });
     const badMode = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s2'], modes: { s2: 'turbo' } } });
     expect(badMode.statusCode).toBe(400);
+    const live = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s2'], live: { s3: false }, seconds: { normal: 300 } } });
+    expect(live.json()).toMatchObject({ live: { s1: true, s3: false }, seconds: { normal: 300, reduced: 20 } });
+    for (const payload of [{ seconds: { normal: 2 } }, { seconds: { normal: 1.5 } }, { live: { s3: 'sim' } }]) {
+      const res = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s2'], ...payload } });
+      expect(res.statusCode).toBe(400);
+    }
   });
 
   it('painel das lojas responde com sessão', async () => {

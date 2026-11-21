@@ -1,7 +1,7 @@
-import { allSearchTerms, ENABLED_CATEGORIES, ROUTINE_MODES, STORES, type CategoryId, type RoutineInfo, type RoutineInput, type RoutineMode, type RoutineSettings, type StoreId } from '@upgradezin/shared';
+import { allSearchTerms, ENABLED_CATEGORIES, MODE_SECONDS_MAX, MODE_SECONDS_MIN, ROUTINE_MODES, STORES, type CategoryId, type RoutineInfo, type RoutineInput, type RoutineMode, type RoutineSettings, type StoreId } from '@upgradezin/shared';
 import { config } from '../config.ts';
 import { getDb } from '../db/instance.ts';
-import { backoffInfo, BlockedError, defaultMode, modeGapS, PageLimitError, pageLimitUntil, pagesUsed, registerSuccess, SearchRedirectError, setStoreModes } from '../pace.ts';
+import { backoffInfo, BlockedError, PageLimitError, pageLimitUntil, pagesUsed, registerSuccess, SearchRedirectError } from '../pace.ts';
 import { ACTIVE_STORES, storeConfig } from '../stores.ts';
 import { canSweep, collectSweepPage, collectTerm, withBrowserSession } from './collect.ts';
 import { dueTerms, ensureTerms } from './prices.ts';
@@ -13,11 +13,11 @@ import { nextSweep } from './sweep.ts';
  * da busca: uma consulta por vez por loja, e loja bloqueada fica parada até o fim da pausa.
  * Na fila da loja, a busca do site passa na frente da rotina.
  *
- * Cada loja tem seu modo (admin) e sua própria agenda: ROUTINE_NORMAL_GAP_S (normal),
- * ROUTINE_REDUCED_GAP_S (reduzido) ou ROUTINE_SLOW_GAP_S (lento), + até 20% aleatório, depois de
- * cada coisa que a rotina faz: uma página da varredura (só no normal, loja com varredura, se
- * estiver na hora e houver orçamento) ou um termo, com as categorias espalhadas (dueTerms).
- * No reduzido e no lento, o intervalo do modo vale também para a busca do site (pace.ts).
+ * Cada loja tem seu modo (admin) e sua própria agenda: os segundos do modo (editáveis no admin;
+ * padrão ROUTINE_NORMAL_GAP_S / _REDUCED_ / _SLOW_), + até 20% aleatório, depois de cada coisa
+ * que a rotina faz: uma página da varredura (só no normal, loja com varredura, se estiver na hora
+ * e houver orçamento) ou um termo, com as categorias espalhadas (dueTerms).
+ * O modo é só da rotina. A busca do site é outra chave por loja (`live`): ligada, vai na hora.
  */
 
 /** Páginas que um termo pode gastar (a S1 abre a página de um produto para ler o cupom). */
@@ -36,47 +36,77 @@ let lastTickAt: number | null = null;
 const nextAt = new Map<StoreId, number>();
 const busy = new Set<StoreId>();
 
-const sanitize = (s: RoutineInput, base?: RoutineSettings['modes']): RoutineSettings => ({
+/** Modo de uma loja sem nada escolhido: lento para ROUTINE_SLOW_STORES, normal para as outras. */
+export const defaultMode = (store: StoreId): RoutineMode => (config.ROUTINE_SLOW_STORES.includes(store) ? 'slow' : 'normal');
+
+const DEFAULT_SECONDS: Record<RoutineMode, number> = {
+  normal: config.ROUTINE_NORMAL_GAP_S,
+  reduced: config.ROUTINE_REDUCED_GAP_S,
+  slow: config.ROUTINE_SLOW_GAP_S,
+};
+
+const validSeconds = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= MODE_SECONDS_MIN && n <= MODE_SECONDS_MAX;
+
+/** Junta o enviado com o que já valia (`base`); o que falta ou é inválido fica como estava (ou o padrão). */
+const sanitize = (s: RoutineInput, base?: RoutineSettings): RoutineSettings => ({
   enabled: !!s.enabled,
   stores: STORES.filter((id) => s.stores.includes(id)),
   modes: Object.fromEntries(
     STORES.map((id) => {
-      const m = s.modes?.[id] ?? base?.[id];
-      return [id, m && ROUTINE_MODES.includes(m) ? m : defaultMode(id)];
+      const m = s.modes?.[id];
+      return [id, m && ROUTINE_MODES.includes(m) ? m : (base?.modes[id] ?? defaultMode(id))];
     }),
   ) as RoutineSettings['modes'],
+  live: Object.fromEntries(
+    STORES.map((id) => {
+      const v = s.live?.[id];
+      return [id, typeof v === 'boolean' ? v : (base?.live[id] ?? true)];
+    }),
+  ) as RoutineSettings['live'],
+  seconds: Object.fromEntries(
+    ROUTINE_MODES.map((m) => {
+      const v = s.seconds?.[m];
+      return [m, validSeconds(v) ? v : (base?.seconds[m] ?? DEFAULT_SECONDS[m])];
+    }),
+  ) as RoutineSettings['seconds'],
 });
 
-/** Ligada, lojas e modos: do .env até o admin mudar; depois, o que está guardado no banco. */
+/** Ligada, lojas, modos, busca ao vivo e segundos: do .env até o admin mudar; depois, o que está guardado no banco. */
 let settings: RoutineSettings = sanitize({ enabled: config.ROUTINE_ENABLED, stores: config.ROUTINE_STORES as StoreId[] });
 let persistSettings: ((s: RoutineSettings) => void) | undefined;
-setStoreModes(settings.modes);
 
-/** Passa a guardar a configuração da rotina (meta "routine"); `saved` vale no lugar do .env (modo que falta: o padrão da loja). */
+/** Passa a guardar a configuração da rotina (meta "routine"); `saved` vale no lugar do .env (o que falta: o padrão). */
 export function useRoutineStorage(saved: RoutineInput | null, save: (s: RoutineSettings) => void): void {
   if (saved) settings = sanitize(saved);
-  setStoreModes(settings.modes);
   persistSettings = save;
 }
 
-export const routineSettings = (): RoutineSettings => ({ ...settings, stores: [...settings.stores], modes: { ...settings.modes } });
+export const routineSettings = (): RoutineSettings => ({
+  ...settings,
+  stores: [...settings.stores],
+  modes: { ...settings.modes },
+  live: { ...settings.live },
+  seconds: { ...settings.seconds },
+});
 
-/** Muda a rotina pelo admin: guarda e reinicia na hora (desligar interrompe as coletas em andamento). */
+/** A loja é consultada na hora quando alguém pesquisa no site (admin, "Busca ao vivo"). */
+export const isLive = (store: StoreId): boolean => settings.live[store] ?? true;
+
+/**
+ * Muda a rotina pelo admin e guarda. Ligar, desligar ou mudar as lojas reinicia na hora (desligar
+ * interrompe as coletas em andamento); modo, segundos e busca ao vivo valem sem reiniciar (o
+ * intervalo novo conta a partir da próxima coleta de cada loja).
+ */
 export function setRoutineSettings(next: RoutineInput): RoutineSettings {
-  settings = sanitize(next, settings.modes);
-  setStoreModes(settings.modes);
+  const prev = settings;
+  settings = sanitize(next, settings);
   persistSettings?.(settings);
-  stopRoutine();
-  startRoutine();
+  if (prev.enabled !== settings.enabled || prev.stores.join() !== settings.stores.join() || !timer) {
+    stopRoutine();
+    startRoutine();
+  }
   return routineSettings();
 }
-
-/** Segundos de cada modo (para o admin mostrar). */
-const modeSeconds = (): Record<RoutineMode, number> => ({
-  normal: modeGapS('normal'),
-  reduced: modeGapS('reduced'),
-  slow: modeGapS('slow'),
-});
 
 /** Próxima vez da rotina na loja (ms), ou null se a rotina não está rodando nela. */
 export function routineNextAt(store: StoreId): number | null {
@@ -91,7 +121,7 @@ export function routineInfo(): RoutineInfo {
   const next = routineStores()
     .map((s) => routineNextAt(s))
     .filter((t): t is number => t != null);
-  return { ...routineSettings(), busy: busy.size > 0, lastTickAt: iso(lastTickAt), nextTickAt: next.length ? iso(Math.min(...next)) : null, seconds: modeSeconds() };
+  return { ...routineSettings(), busy: busy.size > 0, lastTickAt: iso(lastTickAt), nextTickAt: next.length ? iso(Math.min(...next)) : null };
 }
 
 export function startRoutine(): void {
@@ -173,7 +203,7 @@ async function sweepOne(store: StoreId, signal: AbortSignal): Promise<boolean> {
  * para o intervalo do modo depois que ela terminar.
  */
 async function turn(store: StoreId, signal: AbortSignal): Promise<void> {
-  const gap = modeDelay(modeGapS(settings.modes[store]));
+  const gap = modeDelay(settings.seconds[settings.modes[store]]);
   if (backoffInfo(store) || pageLimitUntil(store) || !hasBudget(store)) {
     nextAt.set(store, Date.now() + IDLE_MS);
     return;

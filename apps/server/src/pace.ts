@@ -1,4 +1,4 @@
-import type { BlockReason, RoutineMode, StoreId } from '@upgradezin/shared';
+import type { BlockReason, StoreId } from '@upgradezin/shared';
 import { config } from './config.ts';
 
 export const sleep = (ms: number, signal?: AbortSignal) =>
@@ -142,45 +142,9 @@ export function pagesUsed(store: StoreId): number {
 }
 
 /**
- * Modo de cada loja (admin, aba Coleta): o ritmo da rotina e o intervalo mínimo entre consultas.
- *   normal:   rotina a cada ROUTINE_NORMAL_GAP_S; a busca do site vai na hora (sem intervalo).
- *   reduced:  rotina a cada ROUTINE_REDUCED_GAP_S; entre duas consultas, venham da rotina ou da busca, passa esse tempo.
- *   slow:     rotina a cada ROUTINE_SLOW_GAP_S; idem.
- * Sem modo escolhido: lento para ROUTINE_SLOW_STORES, normal para as outras.
- * A última consulta fica no banco: reiniciar o servidor não libera uma rajada.
- */
-export const defaultMode = (store: StoreId): RoutineMode => (config.ROUTINE_SLOW_STORES.includes(store) ? 'slow' : 'normal');
-
-/** Segundos entre duas vezes da rotina em cada modo. */
-export const modeGapS = (mode: RoutineMode): number =>
-  ({ normal: config.ROUTINE_NORMAL_GAP_S, reduced: config.ROUTINE_REDUCED_GAP_S, slow: config.ROUTINE_SLOW_GAP_S })[mode];
-
-const modes = new Map<StoreId, RoutineMode>();
-/** Modos escolhidos no admin (a rotina chama ao subir e a cada mudança). */
-export function setStoreModes(m: Partial<Record<StoreId, RoutineMode>>) {
-  for (const [store, mode] of Object.entries(m)) if (mode) modes.set(store as StoreId, mode);
-}
-export const storeMode = (store: StoreId): RoutineMode => modes.get(store) ?? defaultMode(store);
-
-/** Intervalo mínimo entre duas consultas à loja (ms): 0 no normal, o do modo no reduzido e no lento. */
-export const minGapMs = (store: StoreId): number => {
-  const mode = storeMode(store);
-  return mode === 'normal' ? 0 : modeGapS(mode) * 1000;
-};
-
-const lastQuery = new Map<StoreId, number>();
-let persistLast: ((store: StoreId, at: number) => void) | undefined;
-/** Última consulta a cada loja, guardada fora da memória (meta "slowlast:<loja>", nome antigo da chave). */
-export function useLastQueryStorage(saved: [StoreId, number][], save: (store: StoreId, at: number) => void) {
-  for (const [store, at] of saved) lastQuery.set(store, at);
-  persistLast = save;
-}
-/** Quando a loja pode receber a próxima consulta (ms): fim da última mais o intervalo do modo. */
-export const readyAt = (store: StoreId) => (lastQuery.get(store) ?? 0) + minGapMs(store);
-
-/**
  * Uma consulta por vez em cada loja, venha da busca do site ou da rotina, com intervalo
- * aleatório desde o fim da anterior (no reduzido e no lento, também o intervalo do modo). A fila é por loja: lojas diferentes seguem em paralelo.
+ * aleatório desde o fim da anterior. A fila é por loja: lojas diferentes seguem em paralelo.
+ * O ritmo da rotina (modo da loja) fica na própria rotina (prices/routine.ts), não aqui.
  *
  * Prioridade: quem busca no site passa na frente das consultas da rotina que estão esperando
  * (entre as prioritárias, ordem de chegada). A consulta que já está em andamento termina antes.
@@ -248,17 +212,14 @@ export async function withStore<T>(store: StoreId, signal: AbortSignal, fn: () =
       if (bo) throw new BlockedError(store, bo.reason, 'loja em pausa', true);
     };
     paused();
-    // Intervalo do modo (reduzido e lento; no normal, zero) e o intervalo aleatório entre páginas.
-    const wait = Math.max((lastDone.get(store) ?? 0) + jitter(), readyAt(store)) - Date.now();
+    // Intervalo aleatório entre páginas, desde o fim da consulta anterior.
+    const wait = (lastDone.get(store) ?? 0) + jitter() - Date.now();
     if (wait > 0) await sleep(wait, signal);
     paused();
     try {
       return await fn();
     } finally {
-      const now = Date.now();
-      lastDone.set(store, now);
-      lastQuery.set(store, now);
-      persistLast?.(store, now);
+      lastDone.set(store, Date.now());
     }
   } finally {
     release(store);

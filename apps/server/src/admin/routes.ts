@@ -1,4 +1,4 @@
-import { CATEGORIES, STORES, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type AdminTerm, type CategoryId, type CoverageRow, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, ROUTINE_MODES } from '@upgradezin/shared';
+import { CATEGORIES, STORES, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type AdminTerm, type CategoryId, type CoverageRow, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, ROUTINE_MODES, MODE_SECONDS_MIN, MODE_SECONDS_MAX } from '@upgradezin/shared';
 import { createReadStream } from 'node:fs';
 import type { ActivityInfo } from '@upgradezin/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -63,6 +63,8 @@ const Pause = z.object({ minutes: z.number().int().min(5).max(7 * 24 * 60) });
 const Collect = z.object({ category: z.enum(CATEGORIES), term: z.string().max(100) });
 const Routine = z.object({ enabled: z.boolean(), stores: z.array(z.enum(STORES)).max(STORES.length),
   modes: z.partialRecord(z.enum(STORES), z.enum(ROUTINE_MODES)).optional(),
+  live: z.partialRecord(z.enum(STORES), z.boolean()).optional(),
+  seconds: z.partialRecord(z.enum(ROUTINE_MODES), z.number().int().min(MODE_SECONDS_MIN).max(MODE_SECONDS_MAX)).optional(),
 });
 
 const storeParam = (id: string): StoreId | null => ((STORES as readonly string[]).includes(id) ? (id as StoreId) : null);

@@ -121,6 +121,5 @@ export function queueLabel(q: { priority: number; routine: number }): string {
 
 /** O que o modo faz, com os segundos que o servidor usa. */
 export function modeHint(mode: RoutineMode, seconds: Record<RoutineMode, number>): string {
-  const every = `1 termo a cada ${shortDuration(seconds[mode])}`;
-  return mode === 'normal' ? `${every}; busca do site na hora` : `${every}; busca do site respeita o intervalo`;
+  return `rotina: 1 termo a cada ${shortDuration(seconds[mode])}`;
 }

@@ -13,13 +13,13 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { effectiveCash, GPU_ANY_QUERY, isFormTerm, STORES, type CategoryId, type RoutineMode, type StoreId } from '@upgradezin/shared';
+import { effectiveCash, GPU_ANY_QUERY, isFormTerm, STORES, type CategoryId, type StoreId } from '@upgradezin/shared';
 import { browserOpen, closeBrowser } from '../browser.ts';
 import { ExtSetupError } from '../browser-ext.ts';
 import { config } from '../config.ts';
-import { deleteMeta, getMeta, metaByPrefix, setMeta } from '../db/db.ts';
+import { deleteMeta, metaByPrefix, setMeta } from '../db/db.ts';
 import { getDb } from '../db/instance.ts';
-import { type Backoff, backoffInfo, BlockedError, minGapMs, PageLimitError, registerSuccess, SearchRedirectError, setStoreModes, storeMode, useBackoffStorage, useLastQueryStorage } from '../pace.ts';
+import { type Backoff, backoffInfo, BlockedError, PageLimitError, registerSuccess, SearchRedirectError, useBackoffStorage } from '../pace.ts';
 import { collectTerm, withBrowserSession } from '../prices/collect.ts';
 import { ensureTerms } from '../prices/prices.ts';
 import { ACTIVE_STORES, storeConfig, useStoreStorage } from '../stores.ts';
@@ -35,22 +35,13 @@ const TERMS: [CategoryId, string][] = [
   ['cooler', 'Air Cooler'],
 ];
 
-// ----- mesmo preparo do servidor (src/index.ts): lojas, pausas e última consulta, do banco -----
+// ----- mesmo preparo do servidor (src/index.ts): lojas e pausas, do banco -----
 const db = getDb();
 useStoreStorage(db);
 useBackoffStorage(
   metaByPrefix(db, 'backoff:').map(([k, v]) => [k.slice('backoff:'.length), JSON.parse(v)] as [StoreId, Backoff]),
   (store, b) => (b ? setMeta(db, `backoff:${store}`, JSON.stringify(b)) : deleteMeta(db, `backoff:${store}`)),
 );
-useLastQueryStorage(
-  metaByPrefix(db, 'slowlast:').map(([k, v]) => [k.slice('slowlast:'.length), Number(v)] as [StoreId, number]),
-  (store, at) => setMeta(db, `slowlast:${store}`, String(at)),
-);
-// Modos do admin (aba Coleta): decidem o intervalo entre consultas, como no servidor.
-{
-  const saved = getMeta(db, 'routine');
-  if (saved) setStoreModes((JSON.parse(saved) as { modes?: Partial<Record<StoreId, RoutineMode>> }).modes ?? {});
-}
 
 const flags = Object.fromEntries(
   process.argv
@@ -101,7 +92,6 @@ const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', curren
 
 console.log(
   `Teste de rotina: ${stores.join(', ')} × ${terms.length} categorias | ` +
-    `modos: ${stores.map((s) => `${s} ${storeMode(s)} (${minGapMs(s) / 1000}s entre consultas)`).join(', ')} | ` +
     `pausa após bloqueio: ${config.BACKOFF_ENABLED ? 'ligada' : 'desligada'} | passo: ${config.BROWSER_STEP_MS} ms\n`,
 );
 

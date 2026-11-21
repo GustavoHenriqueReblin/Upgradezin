@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { BlockedError, minGapMs, queuedAt, readyAt, registerBlock, registerSuccess, setStoreModes, useLastQueryStorage, withStore } from './pace.ts';
+import { BlockedError, queuedAt, registerBlock, registerSuccess, withStore } from './pace.ts';
 
-/** Pausa por bloqueio e intervalo de cada modo entre consultas à loja. */
-describe('pausa e intervalo do modo', () => {
+/** Pausa por bloqueio. */
+describe('pausa da loja', () => {
   afterEach(() => {
     registerSuccess('s2');
     registerSuccess('s1');
@@ -17,16 +17,6 @@ describe('pausa e intervalo do modo', () => {
     expect(ran).toBe(false);
     expect(err).toBeInstanceOf(BlockedError);
     expect((err as BlockedError).paused).toBe(true);
-  });
-
-  it('intervalo do modo entre consultas vale depois de reiniciar (guardado fora da memória)', () => {
-    const saved: Record<string, number> = {};
-    const last = Date.now() - 30_000;
-    useLastQueryStorage([['s2', last], ['s1', last]], (store, at) => (saved[store] = at));
-    setStoreModes({ s1: 'normal', s2: 'slow', s3: 'reduced' });
-    expect(readyAt('s2')).toBe(last + 60_000); // lento: ROUTINE_SLOW_GAP_S padrão, 60 s
-    expect(readyAt('s1')).toBe(last); // normal: a busca vai na hora
-    expect(minGapMs('s3')).toBe(20_000); // reduzido: 20 s
   });
 });
 
