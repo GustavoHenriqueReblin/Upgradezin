@@ -75,25 +75,36 @@ export interface StoreAttempt {
 }
 
 /**
- * Ritmo de uma loja. A rotina coleta uma coisa (um termo ou uma página da varredura) a cada
- * ROUTINE_NORMAL_GAP_S / ROUTINE_REDUCED_GAP_S / ROUTINE_SLOW_GAP_S. normal: a busca do site vai
- * na hora; reduced e slow: a busca do site também respeita o intervalo do modo.
+ * Ritmo da rotina numa loja: ela coleta uma coisa (um termo ou uma página da varredura) a cada
+ * `seconds[modo]` (editável no admin; padrão ROUTINE_NORMAL_GAP_S / _REDUCED_ / _SLOW_). Só a
+ * rotina: a busca do site vai na hora ou não vai, conforme `live` da loja.
  */
 export const ROUTINE_MODES = ['normal', 'reduced', 'slow'] as const;
 export type RoutineMode = (typeof ROUTINE_MODES)[number];
 
-/** Rotina de coleta: ligada, em quais lojas e o modo de cada uma (do .env na primeira vez; depois, do admin). */
+/** Limites dos segundos de um modo no admin. */
+export const MODE_SECONDS_MIN = 5;
+export const MODE_SECONDS_MAX = 6 * 3600;
+
+/** Rotina de coleta e busca ao vivo (do .env na primeira vez; depois, do admin). */
 export interface RoutineSettings {
   enabled: boolean;
   stores: StoreId[];
+  /** Modo da rotina em cada loja (só o intervalo da rotina). */
   modes: Record<StoreId, RoutineMode>;
+  /** Busca ao vivo: a loja é consultada na hora quando alguém pesquisa no site. Desligada: a busca mostra só o banco. */
+  live: Record<StoreId, boolean>;
+  /** Segundos entre uma coleta da rotina e a próxima, em cada modo. */
+  seconds: Record<RoutineMode, number>;
 }
 
-/** O que o admin manda para mudar a rotina (modos que faltam ficam como estão). */
+/** O que o admin manda para mudar a rotina (o que falta fica como está). */
 export interface RoutineInput {
   enabled: boolean;
   stores: StoreId[];
   modes?: Partial<Record<StoreId, RoutineMode>>;
+  live?: Partial<Record<StoreId, boolean>>;
+  seconds?: Partial<Record<RoutineMode, number>>;
 }
 
 /** Estado da rotina no admin. */
@@ -103,8 +114,6 @@ export interface RoutineInfo extends RoutineSettings {
   lastTickAt: string | null;
   /** A próxima vez que alguma loja da rotina consulta. */
   nextTickAt: string | null;
-  /** Segundos entre uma coleta da rotina e a próxima, em cada modo. */
-  seconds: Record<RoutineMode, number>;
 }
 
 /** Situação de uma loja agora, para o painel do admin. */
@@ -116,6 +125,8 @@ export interface AdminStoreState {
   inRoutine: boolean;
   /** Modo da loja na rotina. */
   mode: RoutineMode;
+  /** Consultada na hora quando alguém pesquisa no site. */
+  live: boolean;
   /** Coletando para a rotina agora. */
   busy: boolean;
   /**

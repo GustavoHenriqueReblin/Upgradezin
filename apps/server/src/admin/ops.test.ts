@@ -4,7 +4,7 @@ import { openDb } from '../db/db.ts';
 import { backoffInfo, BlockedError, clearBackoff, PageLimitError, pauseStore, registerBlock, registerSuccess, useBackoffStorage } from '../pace.ts';
 import { attemptCounts, lastAttempt, listAttempts, onAttempt, recordAttempt, type NewAttempt } from '../prices/attempts.ts';
 import { attemptOutcome } from '../prices/collect.ts';
-import { modeDelay, routineInfo, routineNextAt, routineSettings, setRoutineSettings, stopRoutine, tick, useRoutineStorage } from '../prices/routine.ts';
+import { isLive, modeDelay, routineInfo, routineNextAt, routineSettings, setRoutineSettings, stopRoutine, tick, useRoutineStorage } from '../prices/routine.ts';
 import { useStoreStorage } from '../stores.ts';
 import { collectNow, storesState } from './actions.ts';
 
@@ -83,12 +83,12 @@ describe('rotina pelo admin', () => {
   it('o guardado vale no lugar do .env; mudar guarda, limpa lojas inválidas e reinicia', () => {
     const saved: unknown[] = [];
     useRoutineStorage({ enabled: false, stores: ['s2'] }, (s) => saved.push(s));
-    expect(routineSettings()).toEqual({ enabled: false, stores: ['s2'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' } }); // sem modos guardados: o padrão (ROUTINE_SLOW_STORES do .env começa no lento)
+    expect(routineSettings()).toEqual({ enabled: false, stores: ['s2'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 } }); // sem modos guardados: o padrão (ROUTINE_SLOW_STORES do .env começa no lento)
     expect(routineInfo()).toMatchObject({ enabled: false, nextTickAt: null, busy: false });
 
     setRoutineSettings({ enabled: true, stores: ['s3', 's1', 'x9' as 's1'] });
-    expect(routineSettings()).toEqual({ enabled: true, stores: ['s1', 's3'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' } }); // ordem das lojas, sem a inválida
-    expect(saved.at(-1)).toEqual({ enabled: true, stores: ['s1', 's3'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' } });
+    expect(routineSettings()).toEqual({ enabled: true, stores: ['s1', 's3'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 } }); // ordem das lojas, sem a inválida
+    expect(saved.at(-1)).toEqual({ enabled: true, stores: ['s1', 's3'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 } });
     expect(routineInfo().nextTickAt).not.toBeNull(); // ligada: próxima rodada marcada
 
     setRoutineSettings({ enabled: false, stores: ['s1'] });
@@ -106,6 +106,21 @@ describe('rotina pelo admin', () => {
     setRoutineSettings({ enabled: false, stores: [], modes: { s1: 'turbo' as 'slow' } });
     expect(routineSettings().modes.s1).toBe('normal');
     expect(routineInfo().seconds).toEqual({ normal: 15, reduced: 20, slow: 60 });
+    stopRoutine();
+  });
+
+  it('busca ao vivo e segundos dos modos: independentes do modo, guardados, inválido fica como estava', () => {
+    const saved: RoutineSettings[] = [];
+    useRoutineStorage({ enabled: false, stores: [], live: { s3: false }, seconds: { normal: 300 } }, (s) => saved.push(s));
+    expect(routineSettings().live).toEqual({ s1: true, s2: true, s3: false });
+    expect(isLive('s3')).toBe(false);
+    expect(routineSettings().seconds).toEqual({ normal: 300, reduced: 20, slow: 60 });
+    setRoutineSettings({ enabled: false, stores: [], modes: { s3: 'slow' }, live: { s3: true }, seconds: { slow: 1, reduced: 45 } });
+    expect(isLive('s3')).toBe(true);
+    expect(routineSettings().seconds).toEqual({ normal: 300, reduced: 45, slow: 60 }); // 1 s: abaixo do mínimo, ficou o de antes
+    setRoutineSettings({ enabled: false, stores: [] });
+    expect(routineSettings().live.s3).toBe(true); // não enviado: fica como estava
+    expect(saved.at(-1)?.seconds.reduced).toBe(45);
     stopRoutine();
   });
 
@@ -130,7 +145,7 @@ describe('rotina pelo admin', () => {
     expect(next).toBeLessThanOrEqual(60_000);
     // No painel, a próxima consulta não vem antes do fim da pausa.
     const s2 = storesState(db).find((s) => s.id === 's2')!;
-    expect(s2).toMatchObject({ mode: 'reduced', inRoutine: true, busy: false, queue: { running: false, priority: 0, routine: 0 } });
+    expect(s2).toMatchObject({ mode: 'reduced', live: true, inRoutine: true, busy: false, queue: { running: false, priority: 0, routine: 0 } });
     expect(Date.parse(s2.nextAt!)).toBeGreaterThan(Date.now() + 14 * 60_000);
     setRoutineSettings({ enabled: false, stores: [] });
     stopRoutine();

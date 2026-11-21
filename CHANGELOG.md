@@ -4,6 +4,13 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+### Adicionado
+- Admin, coleta: "Busca ao vivo" por loja. Marcada, a loja é consultada na hora quando alguém pesquisa no site (na frente da rotina); desmarcada, a busca mostra só o que o banco tem dela.
+- Admin, coleta: segundos de cada modo da rotina (normal, reduzido, lento) editáveis no admin, valendo na hora, sem reiniciar. O `.env` (`ROUTINE_*_GAP_S`) fica só como padrão.
+
+### Alterado
+- O modo da loja passa a valer só para a rotina. Antes, no reduzido e no lento, a busca do site também esperava o intervalo do modo; agora isso é a "Busca ao vivo", independente do modo. A chave `slowlast:` do banco deixou de ser usada e é apagada ao subir.
+
 ## [0.3.0] - 2026-11-21
 
 ### Adicionado

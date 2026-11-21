@@ -1,7 +1,7 @@
 import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, type AdminStoreState, type CategoryId, type StoreId } from '@upgradezin/shared';
 import { config } from '../config.ts';
 import type { Db } from '../db/db.ts';
-import { backoffInfo, pagesUsed, queuedAt, readyAt, registerSuccess } from '../pace.ts';
+import { backoffInfo, pagesUsed, queuedAt, registerSuccess } from '../pace.ts';
 import { attemptCounts, lastAttempt } from '../prices/attempts.ts';
 import { collectTerm, withBrowserSession } from '../prices/collect.ts';
 import { ensureTerms, idOf } from '../prices/prices.ts';
@@ -17,24 +17,23 @@ export function storesState(db: Db, now = Date.now()): AdminStoreState[] {
     .map((s) => {
       const id = s.id as StoreId;
       const bo = backoffInfo(id);
-      const ready = readyAt(id);
       const inRoutine = routine.enabled && routine.stores.includes(id) && s.enabled;
-      // Próxima consulta: a vez da rotina, mas nunca antes do fim da pausa nem do intervalo mínimo.
+      // Próxima consulta da rotina, mas nunca antes do fim da pausa.
       const routineAt = inRoutine ? routineNextAt(id) : null;
-      const next = routineAt != null ? Math.max(routineAt, ready, bo?.until ?? 0) : ready;
       return {
         id,
         name: s.name,
         enabled: s.enabled,
         inRoutine,
         mode: routine.modes[id],
+        live: routine.live[id],
         busy: routineBusy(id),
         queue: queuedAt(id),
         pause: bo ? { until: new Date(bo.until).toISOString(), step: bo.step, reason: bo.reason } : null,
         pagesUsed: pagesUsed(id),
         pagesPerHour: config.MAX_PAGES_PER_HOUR,
         routinePagesPerHour: config.ROUTINE_PAGES_PER_HOUR,
-        nextAt: next > now || routineAt != null ? new Date(Math.max(next, now)).toISOString() : null,
+        nextAt: routineAt != null ? new Date(Math.max(routineAt, bo?.until ?? 0, now)).toISOString() : null,
         lastOk: lastAttempt(db, id, ['ok']),
         lastBlock: lastAttempt(db, id, ['blocked']),
         last24h: attemptCounts(db, id, since),
@@ -50,7 +49,7 @@ export type CollectNowResult = { ok: true; startsAt: string } | { ok: false; err
 
 /**
  * "Coletar agora" (admin): consulta um termo numa loja, na fila dela, com as mesmas regras de
- * sempre (intervalo do modo da loja, limite por hora). Loja em pausa recusa:
+ * sempre (fila da loja, na frente da rotina; limite por hora). Loja em pausa recusa:
  * tire a pausa antes. Responde na hora; o resultado aparece no registro de consultas.
  */
 export function collectNow(db: Db, store: StoreId, category: CategoryId, term: string, now = Date.now()): CollectNowResult {
@@ -71,5 +70,5 @@ export function collectNow(db: Db, store: StoreId, category: CategoryId, term: s
     .catch((err) => {
       if (!jobs.signal.aborted) console.warn(`[admin ${store}] ${category} "${t}":`, err instanceof Error ? err.message : err);
     });
-  return { ok: true, startsAt: new Date(Math.max(now, readyAt(store))).toISOString() };
+  return { ok: true, startsAt: new Date(now).toISOString() };
 }

@@ -4,6 +4,7 @@ import { getDb } from './db/instance.ts';
 import { backoffInfo, BlockedError, SearchRedirectError, PageLimitError, pageLimitUntil, registerSuccess } from './pace.ts';
 import { collectTerm, partialOf, withBrowserSession } from './prices/collect.ts';
 import { ensureTerms, idOf, matchingListings, readResult, withHistoryStats, type DueTerm } from './prices/prices.ts';
+import { isLive } from './prices/routine.ts';
 
 export interface SearchHandlers {
   onStatus(e: StoreStatusEvent): void;
@@ -13,9 +14,9 @@ export interface SearchHandlers {
 
 /**
  * Busca do site: responde na hora com o que o banco tem (termos + anúncios que batem pelas
- * specs) e, por trás, consulta as lojas para os termos coletados há mais de REVALIDATE_MIN,
- * na frente da rotina (no reduzido e no lento, respeitando o intervalo do modo). O resultado
- * troca quando a consulta chega, e o que ela trouxer também vai para o banco.
+ * specs) e, por trás, consulta as lojas com busca ao vivo ligada (admin) para os termos coletados
+ * há mais de REVALIDATE_MIN, na frente da rotina. O resultado troca quando a consulta chega, e o
+ * que ela trouxer também vai para o banco. Loja com busca ao vivo desligada: só o banco.
  */
 export async function runSearch(p: SearchParams, handlers: SearchHandlers, signal: AbortSignal, force = false) {
   // A pessoa saiu da página (ou "Parar"): a tela para de receber, mas a consulta que já saiu
@@ -51,7 +52,8 @@ async function runStores(p: SearchParams, h: SearchHandlers, signal: AbortSignal
       // "Atualizar" (force) usa o mesmo piso, para não repetir uma coleta de minutos atrás.
       const revalidateBefore = now - Math.max(config.REVALIDATE_MIN, force ? config.FORCE_MIN_AGE_MIN : 0) * 60_000;
       const atOf = (i: number) => (stored[i]!.at ? Date.parse(stored[i]!.at!) : 0);
-      let need = items.filter((_, i) => atOf(i) < revalidateBefore);
+      // Busca ao vivo desligada na loja (admin): não consulta, mostra só o que o banco tem.
+      let need = isLive(store) ? items.filter((_, i) => atOf(i) < revalidateBefore) : [];
       // Resultado por termo; começa com o do banco e é trocado conforme a consulta ao vivo termina.
       const byTerm = new Map(items.map((t, i) => [t.id, stored[i]!.offers]));
       // Anúncios da loja que o banco já tem de outras coletas (outros termos, varredura) e batem
@@ -64,9 +66,8 @@ async function runStores(p: SearchParams, h: SearchHandlers, signal: AbortSignal
         return ats.length ? ats.sort()[0] : undefined;
       };
 
-      // Todos os termos vão à loja, um por vez, com prioridade sobre a rotina na fila da loja.
-      // O modo da loja decide o intervalo: normal vai na hora; reduzido e lento esperam o
-      // intervalo do modo desde a última consulta (pace.ts, withStore). Termos mais antigos primeiro.
+      // Todos os termos vão à loja, um por vez, com prioridade sobre a rotina na fila da loja
+      // (pace.ts, withStore). Termos mais antigos primeiro.
       need = [...need].sort((a, b) => atOf(items.indexOf(a)) - atOf(items.indexOf(b)));
 
       if (!need.length) {
