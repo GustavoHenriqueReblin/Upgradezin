@@ -195,11 +195,12 @@ async function resolveCoupons(offers: Offer[], signal: AbortSignal) {
 
 export const s1: StoreAdapter = {
   id: 's1',
-  async search({ category, q, signal, onPage }) {
+  async search({ category, q, signal, maxPages, onPage }) {
     const base = searchUrl('s1', category, q);
     const offers: Offer[] = [];
+    const limit = Math.min(config.MAX_PAGES_S1, maxPages ?? Infinity);
     let total = 1;
-    for (let page = 1; page <= Math.min(total, config.MAX_PAGES_S1); page++) {
+    for (let page = 1; page <= Math.min(total, limit); page++) {
       if (page > 1) await sleep(jitter(), signal);
       takePage('s1');
       const cat = await listPage(base, page, signal);
@@ -210,7 +211,7 @@ export const s1: StoreAdapter = {
         .map((p) => mapS1Product(p, now, category))
         .filter((o): o is Offer => !!o && !seen.has(o.storeSku));
       offers.push(...mapped);
-      onPage?.({ page, total: Math.min(total, config.MAX_PAGES_S1), found: offers.length, offers: mapped });
+      onPage?.({ page, total: Math.min(total, limit), found: offers.length, offers: mapped });
       if (mapped.length === 0) break; // relevância acabou
     }
     await resolveCoupons(offers, signal);

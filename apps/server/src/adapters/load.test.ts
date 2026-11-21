@@ -92,6 +92,16 @@ describe('todas as lojas pelo mesmo caminho (loadPage)', () => {
     expect(err).toBeInstanceOf(BlockedError);
   });
 
+  it('S2: até MAX_PAGES_S2 páginas por termo; com maxPages (busca do site), para antes', async () => {
+    const calls = fakeChrome(() => ({ html: fixture('s2-psu.html') }));
+    await s2.search({ category: 'psu', q: '750W', signal: signal() });
+    // A fixture se repete: a 2ª página não traz item novo e a busca para (fim da relevância).
+    expect(calls.map((c) => new URL(c.url).searchParams.get('page'))).toEqual([null, '2']);
+    calls.length = 0;
+    await s2.search({ category: 'psu', q: '750W', signal: signal(), maxPages: 1 });
+    expect(calls).toHaveLength(1);
+  });
+
   it('S2: página da varredura abre a categoria direto, com ?page=N a partir da 2ª', async () => {
     const calls = fakeChrome(() => ({ html: fixture('s2-psu.html') }));
     const first = await s2.sweepPage!({ category: 'psu', url: 'https://www.s2.example/hardware/fonte', page: 1, signal: signal() });

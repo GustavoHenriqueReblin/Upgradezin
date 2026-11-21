@@ -75,6 +75,9 @@ export function collectTerm(store: StoreId, t: DueTerm, signal: AbortSignal, hoo
         // Termo que a busca dessa loja já redirecionou: vai direto ao destino.
         path: redirectPathOf(getDb(), store, t.id) ?? undefined,
         signal,
+        // Busca do site: só as primeiras páginas (a pessoa não espera o intervalo entre páginas);
+        // as seguintes ficam para a rotina e a varredura, e a busca mostra o que o banco já tem.
+        maxPages: base.origin === 'search' ? config.SEARCH_MAX_PAGES : undefined,
         onPage: (info) => {
           pages.push(...info.offers);
           hooks.onPage?.(info);
