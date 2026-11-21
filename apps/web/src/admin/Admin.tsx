@@ -3,7 +3,7 @@ import { Activity, Database, Gauge, History, ListTree, LogOut, Lock, PieChart, R
 import { AdminError, adminApi } from './api.ts';
 import { loginError } from './format.ts';
 import { CollectPanel } from './CollectPanel.tsx';
-import { AttemptsPanel, CoveragePanel, TermsPanel } from './DataPanels.tsx';
+import { AttemptsPanel, CoveragePanel, PerfGapsPanel, TermsPanel } from './DataPanels.tsx';
 import { ActivityPanel, BackupsPanel, LivePanel } from './OpsPanels.tsx';
 import { StatusPanel } from './StatusPanel.tsx';
 import { StoresPanel } from './StoresPanel.tsx';
@@ -93,7 +93,12 @@ export function Admin() {
         {session.state === 'in' && tab === 'status' && <StatusPanel onUnauthorized={toLogin} />}
         {session.state === 'in' && tab === 'collect' && <CollectPanel onUnauthorized={toLogin} />}
         {session.state === 'in' && tab === 'attempts' && <AttemptsPanel onUnauthorized={toLogin} />}
-        {session.state === 'in' && tab === 'coverage' && <CoveragePanel onUnauthorized={toLogin} />}
+        {session.state === 'in' && tab === 'coverage' && (
+          <div className="space-y-4">
+            <CoveragePanel onUnauthorized={toLogin} />
+            <PerfGapsPanel onUnauthorized={toLogin} />
+          </div>
+        )}
         {session.state === 'in' && tab === 'terms' && <TermsPanel onUnauthorized={toLogin} />}
         {session.state === 'in' && tab === 'live' && <LivePanel onUnauthorized={toLogin} />}
         {session.state === 'in' && tab === 'activity' && <ActivityPanel onUnauthorized={toLogin} />}

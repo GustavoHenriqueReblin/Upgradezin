@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { openDb } from '../db/db.ts';
 import { recordAttempt } from '../prices/attempts.ts';
 import { ensureTerms, idOf, saveCollection } from '../prices/prices.ts';
-import { attemptTimeline, coverage, deleteTerm, listTerms, prioritizeTerm } from './data.ts';
+import { attemptTimeline, coverage, deleteTerm, listTerms, perfGaps, prioritizeTerm } from './data.ts';
 
 const offer = (sku: string, store: Offer['store'] = 's2'): Offer =>
   ({ store, storeSku: sku, title: `Placa ${sku}`, url: `https://x.example/${sku}`, priceCash: 1000, inStock: true, specs: {}, modelKey: `m${sku}`, collectedAt: '' }) as Offer;
@@ -18,6 +18,23 @@ describe('cobertura', () => {
     saveCollection(db, { store: 's2', category: 'gpu', termId: idOf(ids, T[1]!), offers: [offer('3')], at: '2026-11-10T19:00:00.000Z', complete: true });
     expect(coverage(db, now)).toEqual([
       { store: 's2', category: 'gpu', listings: 3, seen24h: 2, seen7d: 2, terms: 2, termsOk: 2, lastOkAt: '2026-11-20T19:00:00.000Z' },
+    ]);
+  });
+});
+
+describe('modelos sem índice de desempenho', () => {
+  it('lista os processadores e placas à venda que a tabela não conhece, do mais anunciado ao menos', () => {
+    const db = openDb(':memory:');
+    const ids = ensureTerms(db, [{ category: 'gpu', term: 'AMD Radeon' }], 'seed');
+    const termId = idOf(ids, { category: 'gpu', term: 'AMD Radeon' });
+    const gpu = (sku: string, gpuModel?: string) => ({ ...offer(sku), title: `Placa ${gpuModel ?? 'genérica'}`, specs: gpuModel ? { gpuModel } : {} });
+    const now = Date.parse('2026-11-20T20:00:00.000Z');
+    saveCollection(db, { store: 's2', category: 'gpu', termId, offers: [gpu('1', 'RX 9050'), gpu('2', 'RX 9050'), gpu('3', 'RTX 3060'), gpu('4')], at: '2026-11-20T19:00:00.000Z', complete: true });
+    // Visto há mais de 14 dias: não conta.
+    saveCollection(db, { store: 's2', category: 'gpu', termId, offers: [gpu('5', 'RX 7650 GRE')], at: '2026-10-01T19:00:00.000Z', complete: false });
+    expect(perfGaps(db, now)).toEqual([
+      { category: 'gpu', model: 'RX 9050', listings: 2, example: 'Placa RX 9050', store: 's2' },
+      { category: 'gpu', model: '', listings: 1, example: 'Placa genérica', store: 's2' },
     ]);
   });
 });

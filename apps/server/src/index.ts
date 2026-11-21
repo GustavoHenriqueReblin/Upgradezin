@@ -3,12 +3,12 @@ import { join, resolve } from 'node:path';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { z } from 'zod';
-import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, STORES, type CategoryId, type SpecSheet, type StoreId } from '@upgradezin/shared';
+import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, pickUpgrades, STORES, type CategoryId, type Offer, type SpecSheet, type StoreId } from '@upgradezin/shared';
 import { collectNow, stopAdminJobs, storesState } from './admin/actions.ts';
 import { AdminAuth, MIN_PASSWORD } from './admin/auth.ts';
 import { ActivityLog } from './admin/activity.ts';
 import { Backups, MergeUploads } from './admin/backup.ts';
-import { attemptTimeline, coverage, deleteTerm, listTerms, prioritizeTerm } from './admin/data.ts';
+import { attemptTimeline, coverage, deleteTerm, listTerms, perfGaps, prioritizeTerm } from './admin/data.ts';
 import { listAttempts, onAttempt } from './prices/attempts.ts';
 import { registerAdmin } from './admin/routes.ts';
 import { serverStatus } from './admin/status.ts';
@@ -19,7 +19,7 @@ import { deleteMeta, getMeta, metaByPrefix, setMeta } from './db/db.ts';
 import { clearBackoff, pauseStore, useBackoffStorage, type Backoff } from './pace.ts';
 import { closeDb, getDb } from './db/instance.ts';
 import { activeSessions, canReadSheet, sheetOf } from './prices/collect.ts';
-import { listingBrands, listingsHistory } from './prices/prices.ts';
+import { listingBrands, listingsHistory, recentOffers } from './prices/prices.ts';
 import { getSheet } from './prices/sheets.ts';
 import { routineInfo, setRoutineSettings, startRoutine, stopRoutine, useRoutineStorage } from './prices/routine.ts';
 import { runSearch, stopBackgroundSearches, storedList } from './search.ts';
@@ -103,6 +103,7 @@ if (AdminAuth.isConfigured(config.ADMIN_USER, config.ADMIN_PASSWORD)) {
     },
     data: {
       coverage: () => coverage(getDb()),
+      perfGaps: () => perfGaps(getDb()),
       terms: (f) => listTerms(getDb(), f),
       deleteTerm: (id) => deleteTerm(getDb(), id),
       prioritizeTerm: (id) => prioritizeTerm(getDb(), id),
@@ -186,6 +187,54 @@ app.get('/api/sheets', async (req, reply) => {
     }
   }
   return out;
+});
+
+/**
+ * As melhores ofertas de agora para uma dica de upgrade do "Identificar Gargalo" (picks.ts): só do
+ * banco, sem consultar loja. Ofertas da categoria vistas nas últimas SEARCH_DB_MAX_AGE_H horas,
+ * nas lojas ligadas; lidas de novo no máximo a cada minuto.
+ */
+const ids = z.array(z.string().max(40)).max(80).optional();
+const nums = z.array(z.number()).max(20).optional();
+const PicksBody = z.object({
+  slot: z.enum(['gpu', 'cpu', 'ram', 'psu', 'ssd']),
+  filters: z
+    .object({
+      sockets: ids,
+      cpuLines: ids,
+      gpuMakers: ids,
+      gpuModels: ids,
+      memory: ids,
+      ramCapacity: nums,
+      ramModules: nums,
+      ramSpeed: nums,
+      ssdInterfaces: ids,
+      ssdCapacity: nums,
+    })
+    .strict(),
+  context: z
+    .object({
+      current: z.number().positive().optional(),
+      chipset: z.string().max(20).optional(),
+      maxGpuPower: z.number().positive().optional(),
+      minWatts: z.number().positive().optional(),
+      certified: z.boolean().optional(),
+    })
+    .strict()
+    .optional(),
+});
+const offersCache = new Map<CategoryId, { at: number; value: Offer[] }>();
+app.post('/api/upgrade/picks', { bodyLimit: 16 * 1024 }, async (req, reply) => {
+  const parsed = PicksBody.safeParse(req.body);
+  if (!parsed.success) return reply.code(400).send({ error: z.prettifyError(parsed.error) });
+  const { slot } = parsed.data;
+  let hit = offersCache.get(slot);
+  if (!hit || Date.now() - hit.at > 60_000) {
+    const since = new Date(Date.now() - config.SEARCH_DB_MAX_AGE_H * 3_600_000).toISOString();
+    hit = { at: Date.now(), value: recentOffers(getDb(), slot, since).filter((o) => ACTIVE_STORES.includes(o.store)) };
+    offersCache.set(slot, hit);
+  }
+  return pickUpgrades(parsed.data as Parameters<typeof pickUpgrades>[0], hit.value);
 });
 
 /** Compartilhar a montagem: grava uma cópia e devolve o código do link (/m/<id>). */
