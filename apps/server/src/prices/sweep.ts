@@ -1,5 +1,5 @@
 import type { CategoryId, Offer, StoreId } from '@upgradezin/shared';
-import { getMeta, setMeta, type Db } from '../db/db.ts';
+import { getMeta, metaByPrefix, setMeta, type Db } from '../db/db.ts';
 import { hasListing, markOutOfStock, saveCollection } from './prices.ts';
 
 /**
@@ -48,6 +48,21 @@ export function sweepState(db: Db, store: StoreId, category: CategoryId): SweepS
 }
 
 const saveState = (db: Db, store: StoreId, category: CategoryId, s: SweepState) => setMeta(db, key(store, category), JSON.stringify(s));
+
+/**
+ * Ao subir o servidor: nenhuma varredura completa sobrevive a um reinício, então a volta completa que
+ * ficou no meio volta ao normal (senão a rotina a continuaria, lendo os esgotados). Devolve quantas.
+ */
+export function clearFullSweeps(db: Db): number {
+  let n = 0;
+  for (const [k, v] of metaByPrefix(db, 'sweep:')) {
+    const st = JSON.parse(v) as SweepState;
+    if (!st.full) continue;
+    setMeta(db, k, JSON.stringify({ page: 1, ...(st.doneAt && { doneAt: st.doneAt }) }));
+    n++;
+  }
+  return n;
+}
 
 /** Volta em andamento (já leu alguma página). */
 export const inProgress = (s: SweepState) => (s.path ?? 0) > 0 || s.page > 1;

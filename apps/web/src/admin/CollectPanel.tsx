@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { CATEGORY_DEFS, FULL_SWEEP_SECONDS_MAX, FULL_SWEEP_SECONDS_MIN, MODE_SECONDS_MAX, MODE_SECONDS_MIN, ROUTINE_MODES, type AdminStoreState, type CategoryId, type FullSweepSettings, type RoutineInfo, type RoutineInput, type RoutineMode, type StoreAttempt, type StoreId } from '@upgradezin/shared';
-import { Pause, Play, RefreshCw } from 'lucide-react';
+import { Pause, Play, RefreshCw, Square } from 'lucide-react';
 import { AdminError, adminApi } from './api.ts';
 import { attemptLabel, countdown, formatWhen, MODE_LABEL, modeHint, pauseLabel, queueLabel, routineStores, shortDuration } from './format.ts';
 import { useLiveReload } from './live.ts';
@@ -273,6 +273,15 @@ function FullSweepForm({ s, act }: { s: AdminStoreState; act: (fn: () => Promise
         >
           <RefreshCw className={`h-3.5 w-3.5 ${s.fullSweep ? 'animate-spin' : ''}`} /> {s.fullSweep ? 'Varredura completa rodando' : 'Varredura completa'}
         </Btn>
+        {s.fullSweep && (
+          <Btn
+            subtle
+            title="Interrompe a varredura completa desta loja. A categoria do meio volta ao normal e as rotinas voltam a como estavam."
+            onClick={() => void act(() => adminApi(`/stores/${s.id}/sweep/stop`, { method: 'POST' }), `${s.name}: varredura completa parada. As rotinas voltam a como estavam.`)}
+          >
+            <Square className="h-3.5 w-3.5" /> Parar varredura
+          </Btn>
+        )}
         <label className="flex items-center gap-1.5" title="Intervalo aleatório entre uma página e a próxima, só na varredura completa (as rotinas usam o da loja)">
           uma página a cada
           <input type="number" inputMode="numeric" min={FULL_SWEEP_SECONDS_MIN} max={FULL_SWEEP_SECONDS_MAX} value={minS} onChange={(e) => setMinS(e.target.value)} className={input} aria-label="Intervalo mínimo (s)" />

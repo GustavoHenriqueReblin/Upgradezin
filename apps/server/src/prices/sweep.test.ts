@@ -11,7 +11,7 @@ import { useBackoffStorage } from '../pace.ts';
 import { routineNextAt, setRoutineSettings, stopRoutine, sweepPathCounts, tick, useRoutineStorage } from './routine.ts';
 import { storeConfig, sweepPaths, useStoreStorage } from '../stores.ts';
 import { priceHistory, saveCollection } from './prices.ts';
-import { FULL_SWEEP_MAX_PAGES, nextSweep, recordSweepFailure, recordSweepPage, restartSweep, sweepState, type SweepPageRun } from './sweep.ts';
+import { clearFullSweeps, FULL_SWEEP_MAX_PAGES, nextSweep, recordSweepFailure, recordSweepPage, restartSweep, sweepState, type SweepPageRun } from './sweep.ts';
 
 const offer = (sku: string, priceCash: number, patch: Partial<Offer> = {}): Offer => ({
   store: 's1',
@@ -83,6 +83,18 @@ describe('rotina de preços pelas páginas de categoria', () => {
     // Volta seguinte (rotina): de novo só até acabar o estoque, sem criar anúncio esgotado.
     page(db, 'psu', 1, 3, [offer('a', 400)], T0 + 25 * H);
     expect(page(db, 'psu', 2, 3, [offer('outro-esgotado', 700, { inStock: false })], T0 + 25 * H + 1, { inStock: 0 })).toMatchObject({ saved: 0, roundDone: true });
+  });
+
+  it('ao subir o servidor, a volta completa que ficou no meio volta ao normal (a rotina não a continua)', () => {
+    const db = openDb(':memory:');
+    page(db, 'cpu', 1, 1, [offer('a', 400)], T0); // cpu: volta normal completa
+    restartSweep(db, 's1', 'psu', { full: true });
+    page(db, 'psu', 1, 5, [offer('b', 500)], T0 + 1);
+    expect(sweepState(db, 's1', 'psu')).toMatchObject({ full: true, page: 2 });
+    expect(clearFullSweeps(db)).toBe(1);
+    expect(sweepState(db, 's1', 'psu')).toEqual({ page: 1 });
+    expect(sweepState(db, 's1', 'cpu')).toEqual({ page: 1, doneAt: iso(T0) });
+    expect(clearFullSweeps(db)).toBe(0);
   });
 
   it('volta completa: teto de páginas próprio, maior que o da rotina', () => {

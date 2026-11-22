@@ -6,7 +6,7 @@ import { attemptCounts, lastAttempt, listAttempts, onAttempt, pageAttempts, reco
 import { attemptOutcome } from '../prices/collect.ts';
 import { isLive, modeDelay, routineInfo, routineNextAt, routineSettings, setRoutineSettings, stopRoutine, tick, useRoutineStorage } from '../prices/routine.ts';
 import { useStoreStorage } from '../stores.ts';
-import { fullSweep, fullSweepAll, fullSweepOf, fullSweepSettings, readSheetNow, resumeRoutines, saveFullSweepSettings, storesState } from './actions.ts';
+import { fullSweep, fullSweepAll, fullSweepOf, fullSweepSettings, readSheetNow, resumeRoutines, saveFullSweepSettings, stopFullSweep, storesState } from './actions.ts';
 import { setSheetRoutine, sheetRoutineSettings, stopSheetRoutine, useSheetRoutineStorage } from '../prices/sheet-routine.ts';
 import { getMeta, setMeta } from '../db/db.ts';
 import { usePageLoader } from '../browser.ts';
@@ -246,6 +246,42 @@ describe('varredura completa e painel das lojas', () => {
       expect(fullSweep(db, 's1')).toMatchObject({ ok: false, error: expect.stringContaining('Nenhuma categoria marcada') });
     } finally {
       usePageLoader(null);
+      db.prepare("DELETE FROM meta WHERE key LIKE 'full-sweep:%'").run();
+    }
+  });
+
+  it('parar: interrompe a varredura, a categoria do meio volta ao normal e as rotinas voltam a como estavam', async () => {
+    const db = getDb();
+    useStoreStorage(db);
+    useBackoffStorage([], () => {});
+    useRoutineStorage(null, () => {});
+    useSheetRoutineStorage(null, () => {});
+    setRoutineSettings({ enabled: true, stores: ['s3'] });
+    setSheetRoutine({ enabled: false, stores: ['s3'] });
+    saveFullSweepSettings(db, 's1', { minS: 0, maxS: 0, categories: ['cpu', 'psu'] });
+    let pages = 0;
+    usePageLoader(async (_store, url) => {
+      pages++;
+      await new Promise((r) => setTimeout(r, 30)); // página lenta: dá tempo de parar no meio
+      return { html: fixture('s1-cpu.html'), url, title: '' };
+    });
+    try {
+      expect(stopFullSweep('s1')).toBe(false); // nada rodando
+      expect(fullSweep(db, 's1')).toMatchObject({ ok: true });
+      for (let i = 0; i < 200 && pages < 2; i++) await new Promise((r) => setTimeout(r, 5));
+      expect(stopFullSweep('s1')).toBe(true);
+      for (let i = 0; i < 300 && fullSweepOf('s1'); i++) await new Promise((r) => setTimeout(r, 10));
+      expect(fullSweepOf('s1')).toBeNull();
+      expect(pages).toBeLessThan(6); // não terminou nem a primeira categoria
+      expect(sweepState(db, 's1', 'cpu').full).toBeUndefined(); // a rotina não continua a volta completa
+      expect(sweepState(db, 's1', 'cpu')).toMatchObject({ page: 1 });
+      expect(routineSettings().enabled).toBe(true);
+      expect(sheetRoutineSettings().enabled).toBe(false);
+      expect(getMeta(db, 'sweep-paused')).toBeUndefined();
+    } finally {
+      usePageLoader(null);
+      setRoutineSettings({ enabled: false, stores: [] });
+      stopRoutine();
       db.prepare("DELETE FROM meta WHERE key LIKE 'full-sweep:%'").run();
     }
   });

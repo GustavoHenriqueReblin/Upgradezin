@@ -25,6 +25,8 @@ export interface AdminDeps {
     pause: (id: StoreId, minutes: number) => void;
     /** "Varredura completa": pausa as rotinas e lê as categorias marcadas da loja até o fim (esgotados também). */
     sweep: (id: StoreId) => CollectNowResult;
+    /** "Parar varredura": interrompe a varredura completa da loja; false se nada rodava. */
+    stopSweep: (id: StoreId) => boolean;
     /** Guarda a configuração da varredura completa da loja (intervalo e categorias; vale também para a da madrugada). */
     saveSweep: (id: StoreId, s: FullSweepSettings) => FullSweepSettings;
     routine: () => RoutineInfo;
@@ -194,6 +196,13 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
         if (!body.success) return reply.code(400).send({ error: 'invalid', errors: ['Pausa: de 5 minutos a 7 dias.'] });
         deps.ops.pause(id, body.data.minutes);
         req.log.info({ store: id, minutes: body.data.minutes }, 'admin: loja pausada');
+        return { ok: true };
+      });
+      admin.post<{ Params: { id: string } }>('/stores/:id/sweep/stop', async (req, reply) => {
+        const id = storeParam(req.params.id);
+        if (!id) return reply.code(404).send({ error: 'not-found' });
+        if (!deps.ops.stopSweep(id)) return reply.code(409).send({ error: 'rejected', errors: ['Nenhuma varredura completa rodando nesta loja.'] });
+        req.log.info({ store: id }, 'admin: varredura completa parada');
         return { ok: true };
       });
       // Configuração da varredura completa (intervalo e categorias), guardada para o botão e a madrugada.

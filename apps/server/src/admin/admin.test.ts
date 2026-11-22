@@ -102,6 +102,7 @@ function makeApp() {
       unpause: (id) => (calls.push(['unpause', id]), true),
       pause: (id, minutes) => void calls.push(['pause', id, minutes]),
       saveSweep: (id, settings) => (calls.push(['saveSweep', id, settings]), settings),
+      stopSweep: (id) => (calls.push(['stopSweep', id]), id === 's1'),
       sweep: (id) => (calls.push(['sweep', id]), id === 's3' ? { ok: false as const, error: 'Loja em pausa.' } : { ok: true as const, startsAt: '2026-11-20T21:00:00.000Z' }),
       routine: () => routine,
       setRoutine: (s) => (calls.push(['routine', s]), { ...routine, ...s, modes: { ...routine.modes, ...s.modes }, live: { ...routine.live, ...s.live }, seconds: { ...routine.seconds, ...s.seconds } }),
@@ -262,6 +263,15 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
       expect((await post('/api/admin/stores/s2/sweep', bad)).statusCode).toBe(400);
     expect(calls.length).toBe(before);
     expect((await post('/api/admin/stores/s1/collect', { category: 'gpu', term: 'RTX 3050' })).statusCode).toBe(404); // rota antiga saiu
+  });
+
+  it('parar varredura: ok quando rodava; 409 quando nada rodava; loja desconhecida, 404', async () => {
+    const { post } = await setup();
+    expect((await post('/api/admin/stores/s1/sweep/stop')).json()).toEqual({ ok: true });
+    const no = await post('/api/admin/stores/s2/sweep/stop');
+    expect(no.statusCode).toBe(409);
+    expect(no.json().errors[0]).toContain('Nenhuma varredura');
+    expect((await post('/api/admin/stores/s9/sweep/stop')).statusCode).toBe(404);
   });
 
   it('configuração da varredura completa: guarda sem começar (vale para a madrugada); inválida, 400', async () => {

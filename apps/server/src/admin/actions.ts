@@ -106,6 +106,21 @@ export function saveFullSweepSettings(db: Db, store: StoreId, input: FullSweepSe
   return fullSweepSettings(db, store);
 }
 
+/** Para a varredura completa em andamento (botão do admin). */
+const stoppers = new Map<StoreId, AbortController>();
+
+/**
+ * "Parar varredura" (admin): interrompe a varredura completa da loja. A página em leitura termina ou
+ * é abandonada; a categoria interrompida volta ao normal e as rotinas voltam a como estavam (se for
+ * a última varredura rodando). false: nada rodando nesta loja.
+ */
+export function stopFullSweep(store: StoreId): boolean {
+  const stop = stoppers.get(store);
+  if (!stop) return false;
+  stop.abort();
+  return true;
+}
+
 /** Varredura completa da loja agora (para o painel das lojas). */
 export const fullSweepOf = (store: StoreId) => fullSweeps.get(store) ?? null;
 
@@ -133,35 +148,47 @@ export function fullSweep(db: Db, store: StoreId, now = Date.now()): CollectNowR
   const bo = backoffInfo(store);
   if (bo) return { ok: false, error: `Loja em pausa até ${new Date(bo.until).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. Tire a pausa antes.` };
   pauseRoutines(db);
+  // Parar pelo admin (stopFullSweep) ou o servidor desligando (jobs).
+  const stop = new AbortController();
+  stoppers.set(store, stop);
+  const signal = AbortSignal.any([jobs.signal, stop.signal]);
   fullSweeps.set(store, { category: categories[0]!, index: 0, total: categories.length });
+  let current: CategoryId | null = null;
   void withBrowserSession(async () => {
     for (const [index, category] of categories.entries()) {
-      if (jobs.signal.aborted) break;
+      if (signal.aborted) break;
       fullSweeps.set(store, { category, index, total: categories.length });
       restartSweep(db, store, category, { full: true });
+      current = category;
       try {
-        for (let n = 0; n < FULL_SWEEP_CATEGORY_MAX_PAGES && !jobs.signal.aborted; n++) {
+        for (let n = 0; n < FULL_SWEEP_CATEGORY_MAX_PAGES && !signal.aborted; n++) {
           // O intervalo entre páginas (o da varredura, configurado no admin) é aplicado na fila da loja.
           const s = sweepState(db, store, category);
-          const r = await collectSweepPage(store, category, s.path ?? 0, s.page, jobs.signal, { origin: 'admin', delayMs });
+          const r = await collectSweepPage(store, category, s.path ?? 0, s.page, signal, { origin: 'admin', delayMs });
           registerSuccess(store);
           if (r.roundDone) {
+            current = null;
             console.info(`[admin ${store}] varredura completa, ${category}: volta completa${r.outOfStock ? `, ${r.outOfStock} sem estoque agora` : ''}`);
             break;
           }
         }
       } catch (err) {
-        // Bloqueio ou limite da hora: para a loja inteira; erro numa categoria: segue para a próxima.
-        if (jobs.signal.aborted || err instanceof BlockedError || err instanceof PageLimitError) throw err;
+        // Parada, bloqueio ou limite da hora: para a loja inteira; erro numa categoria: segue para a próxima.
+        if (signal.aborted || err instanceof BlockedError || err instanceof PageLimitError) throw err;
         console.warn(`[admin ${store}] varredura completa, ${category}:`, err instanceof Error ? err.message : err);
       }
     }
   })
     .catch((err) => {
-      if (!jobs.signal.aborted) console.warn(`[admin ${store}] varredura completa parou:`, err instanceof Error ? err.message : err);
+      if (stop.signal.aborted) console.info(`[admin ${store}] varredura completa parada pelo admin`);
+      else if (!jobs.signal.aborted) console.warn(`[admin ${store}] varredura completa parou:`, err instanceof Error ? err.message : err);
     })
     .finally(() => {
       fullSweeps.delete(store);
+      stoppers.delete(store);
+      // Categoria interrompida no meio: volta ao normal (senão a rotina continuaria a volta completa,
+      // lendo os esgotados); recomeça do começo na próxima vez.
+      if (current) restartSweep(db, store, current);
       // Servidor desligando: a marca fica no banco e as rotinas voltam ao subir (resumeRoutines no index).
       if (!fullSweeps.size && !jobs.signal.aborted) resumeRoutines(db);
     });

@@ -4,7 +4,8 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { z } from 'zod';
 import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, pickUpgrades, STORES, type CategoryId, type Offer, type SheetRoutineStatus, type StoreId } from '@upgradezin/shared';
-import { fullSweep, fullSweepAll, readSheetNow, resumeRoutines, saveFullSweepSettings, stopAdminJobs, storesState } from './admin/actions.ts';
+import { fullSweep, fullSweepAll, readSheetNow, resumeRoutines, saveFullSweepSettings, stopAdminJobs, stopFullSweep, storesState } from './admin/actions.ts';
+import { clearFullSweeps } from './prices/sweep.ts';
 import { nightlySchedule, startNightlySweep, stopNightlySweep } from './admin/nightly.ts';
 import { listProducts } from './admin/products.ts';
 import { listSheetProducts, sheetPageText, sheetStoreStatus } from './admin/sheets.ts';
@@ -128,6 +129,7 @@ if (AdminAuth.isConfigured(config.ADMIN_USER, config.ADMIN_PASSWORD)) {
       pause: (id, minutes) => void pauseStore(id, minutes),
       sweep: (id) => fullSweep(getDb(), id),
       saveSweep: (id, settings) => saveFullSweepSettings(getDb(), id, settings),
+      stopSweep: stopFullSweep,
       routine: () => ({ ...routineInfo(), nightly: { ...nightlySchedule(), lastAt: getMeta(getDb(), 'nightly-sweep') ?? null } }),
       setRoutine: (s) => (setRoutineSettings(s), routineInfo()),
     },
@@ -406,6 +408,8 @@ await app.listen({ port: config.PORT, host: config.HOST });
 app.log.info(`Upgradezin v${VERSION}`);
 // Varredura completa interrompida por um reinício: as rotinas voltam a como estavam antes dela.
 {
+  const left = clearFullSweeps(getDb());
+  if (left) app.log.info(`Varredura completa interrompida: ${left} categoria(s) de volta ao normal.`);
   const was = resumeRoutines(getDb());
   if (was) app.log.info(`Varredura completa interrompida: rotinas de volta (preços ${was.routine ? 'ligada' : 'desligada'}, fichas ${was.sheets ? 'ligada' : 'desligada'}).`);
 }
