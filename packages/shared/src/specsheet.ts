@@ -39,8 +39,9 @@ const num = (s: string) => Number(s.replace(',', '.'));
  * de outras unidades ("pesando apenas 430g", "8 GB", "185 W"), que não são medidas.
  */
 function lengthsMm(line: string): number[] {
-  const clean = line.replace(/\d+(?:[.,]\d+)?\s*(?:kg|g|gb|mb|w|mhz|ghz|bits?|v|rpm|dba?|cfm)\b/g, ' ');
-  const unit = /\d\s*cm\b/.test(clean) && !/\d\s*mm\b/.test(clean) ? 10 : 1;
+  // "W = 114" é largura (L/W/H), não potência: a unidade seguida de "=" fica.
+  const clean = line.replace(/\d+(?:[.,]\d+)?\s*(?:kg|g|gb|mb|w|mhz|ghz|bits?|v|rpm|dba?|cfm)\b(?!\s*=)/g, ' ');
+  const unit = /\d\s*(cm|centimetros?)\b/.test(clean) && !/\d\s*(mm|milimetros?)\b/.test(clean) ? 10 : 1;
   return [...clean.matchAll(/(\d{2,3}(?:[.,]\d+)?)/g)].map((m) => Math.round(num(m[1]!) * unit));
 }
 
@@ -75,7 +76,8 @@ export function parseSpecSheet(category: CategoryId, html: string): SpecSheet {
       // "Dimensões: 269 x 131 x 40 mm", "Comprimento: 304 mm", na Gigabyte "Tamanho do cartão: C=215 L=122 A=40 mm",
       // em inglês "Board size: 331.9 x 127.1 x 60 mm" (o "Box size" é da caixa: ruído).
       if (/\bbox\b/.test(l)) continue;
-      if (/dimens|comprimento|tamanho d[oa] (cartao|placa)|card size|board size/.test(l)) {
+      // Também "Tamanho: L = 152 W = 114 H = 36 mm" (a palavra sozinha, no começo da linha; não "tamanho da memória").
+      if (/dimens|comprimento|tamanho d[oa] (cartao|placa)|card size|board size|^-?\s*tamanho\s*:/.test(l)) {
         // "Dimensões:" sozinho na linha e as medidas na seguinte ("- 269,2 x 131,8 x 40,3 mm").
         const values = /\d/.test(l) ? l : `${l} ${lines[i + 1] ?? ''}`;
         let mm = lengthsMm(values).filter((n) => n >= 100 && n <= 450);

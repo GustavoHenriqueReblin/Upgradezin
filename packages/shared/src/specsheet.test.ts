@@ -59,4 +59,12 @@ describe('ficha técnica da página do produto', () => {
     expect(parseSpecSheet('gpu', prose).specs.gpuLength).toBe(200);
     expect(parseSpecSheet('gpu', '<p>Ventilador de 90 mm</p>').specs.gpuLength).toBeUndefined(); // só o ventilador: nada
   });
+
+  it('placa de vídeo: "centímetros" por extenso, "Tamanho:" sozinho e L/W/H ("W =" é largura, não watts)', () => {
+    // Como em anúncios reais (nov/2026).
+    expect(parseSpecSheet('gpu', '<p>Dimensões: 17.4 x 12.1 x 3.9 centímetros</p>').specs.gpuLength).toBe(174);
+    expect(parseSpecSheet('gpu', '<p>Tamanho: L = 152 W = 114 H = 36 mm</p>').specs.gpuLength).toBe(152);
+    expect(parseSpecSheet('gpu', '<p>Tamanho: 233x120x44mm</p>').specs.gpuLength).toBe(233);
+    expect(parseSpecSheet('gpu', '<p>Tamanho da memória: 8 GB</p><p>Consumo: 170 W</p>').specs.gpuLength).toBeUndefined();
+  });
 });
