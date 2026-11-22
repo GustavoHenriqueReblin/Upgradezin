@@ -242,7 +242,7 @@ export function PromoLine({ promo }: { promo: NonNullable<Offer['promo']> }) {
  * "Menor Preço em 30 Dias" quando o preço de agora é o menor que o banco viu nesse período.
  * Só com ao menos 7 dias de acompanhamento (antes disso, qualquer preço seria "o menor").
  */
-function lowBadge(best: Offer, price: number): string | null {
+export function lowBadge(best: Offer, price: number): string | null {
   const h = best.history;
   if (!h || !best.inStock) return null;
   const since = Date.parse(h.since);
