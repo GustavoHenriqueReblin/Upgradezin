@@ -11,7 +11,7 @@ import { dec, firstInt, isNo, numberWith, pick, sheetDoc, thousands, type SheetD
  *
  * READER_VERSION: mudou o leitor ou os campos, sobe o número: o servidor relê as fichas guardadas.
  */
-export const READER_VERSION = 3;
+export const READER_VERSION = 4;
 
 type Reader = (doc: SheetDoc) => SheetValues;
 
@@ -404,38 +404,116 @@ const caseReader: Reader = (doc) => {
     // "GPU: 350 mm" (o rótulo sozinho já é o limite).
     if (g && (limit || /comprimento/.test(l) || /^(gpu|vga|placa de video)\s*:/.test(l)) && !maxGpuMm) maxGpuMm = inRange(mm(g), 150, 600);
     const c = l.match(/(?:cooler|cpu|processador)[^0-9]{0,40}?(\d{2,3}(?:[.,]\d+)?)\s*(mm|cm)\b/);
-    if (c && (limit || /altura/.test(l)) && /cpu|processador|altura/.test(l) && !/radiador|\bliquid[ao]s?\b|water|fan\b|ventoinha/.test(l) && !maxCoolerMm) maxCoolerMm = inRange(mm(c), 50, 200);
+    // "Tamanho máximo do cooler: 157 mm", "Suporte para cooler: até 157 mm" (sem "CPU"; não as ventoinhas "cooler traseiro").
+    const cpuCooler = /cpu|processador|altura/.test(l) || (/(tamanho|altura) maxim\w* d[oe] cooler|suporte (para|a|de) cooler|cooler\s*:?\s*ate\b/.test(l) && !/traseir|frontal|superior|lateral|inferior|\d\s*x/.test(l));
+    if (c && (limit || /altura/.test(l)) && cpuCooler && !/radiador|\bliquid[ao]s?\b|water|fan\b|ventoinha/.test(l) && !maxCoolerMm) maxCoolerMm = inRange(mm(c), 50, 200);
     if (/fonte|psu/.test(l)) maxPsuNote = l;
   }
   void maxPsuNote;
-  const dimV = pick(doc, [/dimens(oes|ao)( do (produto|gabinete))?|tamanho do (gabinete|produto)|medidas/], (v, l) => (/embalagem|caixa/.test(`${l} ${v}`) ? undefined : v));
-  const dims = dimV ? [...dimV.matchAll(/(\d{2,4}(?:[.,]\d+)?)/g)].map((m) => dec(m[1]!)) : [];
-  const cm = dimV ? /\bcm\b/.test(dimV) && !/mm/.test(dimV) : false;
+  // "478 x 230 x 493 mm (Gabinete) / 555 x 293 x 535 mm (Caixa)", "(C) 400 x (L) 200 x (A) 455 mm",
+  // "415*280*377 mm": as três primeiras medidas antes da embalagem. Gabinete tem pelo menos 250 mm num lado.
+  const dimsOf = (v: string): string | undefined => {
+    const part = v.split(/\s\/\s|\(?(?:caixa|embalage[mn])/)[0]!;
+    const n = String.raw`(?:\(?[a-z]\)\s*)?(\d{2,4}(?:[.,]\d+)?)\s*(?:mm|cm)?\s*(?:\(?[a-z]\))?`;
+    const m = part.match(new RegExp(`${n}\\s*[x*]\\s*${n}\\s*[x*]\\s*${n}`));
+    if (!m) return undefined;
+    const k = /\d\s*cm\b/.test(part) && !/mm/.test(part) ? 10 : 1;
+    const nums = [m[1], m[2], m[3]].map((x) => Math.round(dec(x!) * k));
+    return Math.max(...nums) >= 250 && Math.min(...nums) >= 80 && Math.max(...nums) <= 900 ? nums.join(' x ') : undefined;
+  };
+  const notCase = /embalage[mn]|caixa|ventoinha|fan\b|radiador|tela|display|lcd/;
+  const dimFromPairs =
+    pick(doc, [/dimens|tamanho|medidas|\([clpa] x [clpa] x [clpa]\)/], (v, l) => (notCase.test(l) ? undefined : dimsOf(v))) ??
+    doc.pairs.filter((p) => /^dimens|^medidas/.test(p.section) && !notCase.test(`${p.section} ${p.label}`)).map((p) => dimsOf(p.value)).find(Boolean);
+  // Ficha numa linha só: "Dimensões 464 x 303 x 476 mm (DWH)", "dimensions (wxhxd) 220 x 460 x 375 (mm)", "Tamanho 350x270x350mm".
+  const dimFromText = (() => {
+    for (const m of doc.all.matchAll(/(?:dimens\w*|dimensions|tamanho(?: total)?|medidas)(?![^\n]{0,25}(?:embalage[mn]|caixa))[^\n\d]{0,30}([^\n]{0,60})/g)) {
+      const d = dimsOf(m[1]!);
+      if (d) return d;
+    }
+    return undefined;
+  })();
   // Medidas separadas ("Dimensões:" / "Largura: 200 mm" / "Altura: 450 mm" / "Profundidade: 400 mm").
   // Na seção "Dimensões" ou logo depois do rótulo dela (até 5 pares).
   const dimAt = doc.pairs.findIndex((p) => (/^dimens/.test(p.label) || /^dimens/.test(p.section)) && !/ventoinha|fan/.test(p.section));
   const near = dimAt >= 0 ? doc.pairs.slice(dimAt, dimAt + 6) : [];
   const sep = ['altura', 'largura', 'profundidade|comprimento'].map((k) => {
-    const p = near.find((x) => new RegExp(`^(${k})$`).test(x.label));
+    // "Altura", "Comprimento (Profundidade)".
+    const p = near.find((x) => new RegExp(`^(${k})(\\s*\\(.*\\))?$`).test(x.label));
     const n = p ? numberWith(p.value, /mm|cm/) : undefined;
     return n ? Math.round(n * (/\d\s*cm/.test(p!.value) ? 10 : 1)) : undefined;
   });
-  const dimensions =
-    dims.length >= 3 ? dims.slice(0, 3).map((n) => Math.round(n * (cm ? 10 : 1))).join(' x ') : sep.every((n) => n && n >= 100) ? sep.join(' x ') : undefined;
+  const dimensions = dimFromPairs ?? (sep.every((n) => n && n >= 100) ? sep.join(' x ') : undefined) ?? dimFromText;
   // Frente: mesh (entra ar), vidro ou fechada. Do painel frontal ou do material; no texto, só frases sobre a frente.
-  const frontV = pick(doc, [/painel frontal|^frente|^frontal|^material/], (v) => (/mesh|malha|perfurad|vidro|glass|fechad|acrilico|solid|plastico|aco\b/.test(v) ? v : undefined)) ?? '';
-  const frontText = frontV || (doc.all.match(/(?:painel )?front(?:al)?[^\n]{0,30}(?:mesh|malha|perfurad|vidro)|(?:mesh|malha|vidro temperado)[^\n]{0,15}front/)?.[0] ?? '');
+  // "Materiais: Aço, plástico, vidro temperado": o vidro, quando há, costuma ser a lateral e a frente.
+  // Ordem: rótulo da frente, frase sobre a frente ("painel frontal em mesh"), material.
+  const frontText =
+    pick(doc, [/painel frontal|^frente|^frontal|estilo do painel/], (v) => (/mesh|malha|perfurad|vidro|glass|fechad|acrilico|solid|plastico|aco\b/.test(v) ? v : undefined)) ??
+    doc.all.match(/(?:painel )?front(?:al)?[^\n]{0,30}(?:mesh|malha|perfurad|vidro)|(?:mesh|malha|vidro temperado)[^\n]{0,15}front/)?.[0] ??
+    pick(doc, [/^materia(l|is)/], (v) => (/mesh|malha|perfurad|vidro|glass|acrilico|plastico|aco\b/.test(v) ? v : undefined)) ??
+    '';
   const front = /mesh|malha|perfurad/.test(frontText) ? 'Mesh' : /vidro|glass/.test(frontText) ? 'Vidro' : /fechad|acrilico|solid|plastico|aco\b/.test(frontText) ? 'Fechada' : undefined;
   // Ventoinhas que vêm instaladas: soma as linhas ("Top: 2 x 120 mm" / "Rear: 1 x 120 mm"); "Não possui" = 0.
+  // Quantas ventoinhas num trecho: "3 x 120 mm", "120 mm PWM ARGB x3", "1x ventoinha de 120 mm", "1 Fan Traseiro".
+  // Uma posição por trecho; das alternativas ("3 x 120 mm / 2 x 140 mm", "ou") vale a primeira, e a
+  // quantidade entre parênteses ("3x Fans 120mm (3x pré-instalados)") vale mais que a suportada.
+  const fanCount = (v: string): number => {
+    let n = 0;
+    for (const seg0 of v.split(/\s\|\s|;/)) {
+      const marked = seg0.match(/\(\s*(\d{1,2})\s*x?\s*[^)]{0,40}?(?:pre-?instalad|inclus|incluid)/) ?? seg0.match(/\((?:inclus|incluid|pre-?instalad)\w*\s*(\d{1,2})\b/);
+      if (marked) {
+        n += Number(marked[1]);
+        continue;
+      }
+      const seg = seg0.split(/\bou\b|\s\/\s/)[0]!;
+      const lead = [...seg.matchAll(/\b(\d{1,2})\s*x\s*(?=\d{2,3}\s*(?:mm|cm|mil)?)/g)].reduce((s, m) => s + Number(m[1]), 0);
+      const tail = seg.match(/\d{2,3}\s*(?:mm|cm)[^|]*?\bx\s*(\d)\b(?!\s*(?:\d|mm|cm))/);
+      const named = seg.match(/\b(\d{1,2})\s*x?\s*(?:ventoinhas?|fans?|coolers?|ventiladores?)\b/) ?? seg.match(/\b(\d{1,2})\s*x\s+[a-z]/);
+      n += lead || (tail ? Number(tail[1]) : named ? Number(named[1]) : 0);
+    }
+    return n;
+  };
+  const INCLUDED = /ventoinhas? (inclusas?|incluidas?|instaladas?|pre-instaladas?)|fans? (inclusos?|inclusas?|incluidos?|instalados?|pre-instalados?)|ventiladores? (pre-)?instalados?|coolers? inclusos?|ventilacao inclusa|pre-installed/;
+  const POSITION = /^(painel |montagem |parte )?(frente|frontal|front|traseir[ao]|rear|superior|topo|top|teto|base|inferior|bottom|fundo|lateral|side|psu|cobertura|parte)\b/;
+  const countIncluded = (v: string) => (isNo(v) || /nao possui|nao acompanha|sem /.test(v) ? 0 : inRange(fanCount(v) || firstInt(v), 0, 12));
+  // "Ventoinhas inclusas: Frente: 2 x 120 mm" e as outras posições nas linhas seguintes ("Traseira: 1 x 140 mm").
+  const includedBlock = (() => {
+    const i = doc.lines.findIndex((l) => /:/.test(l) && INCLUDED.test(l.split(':')[0]!));
+    if (i < 0) return undefined;
+    const first = doc.lines[i]!.replace(/^[^:]*:\s*/, '');
+    // O total já no rótulo ("Ventoinhas inclusas: 3x Fans ARGB") vale; as linhas seguintes só detalham onde.
+    if (first && !POSITION.test(first) && fanCount(first) > 0) return first;
+    const parts = [first];
+    for (let j = i + 1; j < doc.lines.length && POSITION.test(doc.lines[j]!); j++) parts.push(doc.lines[j]!);
+    return parts.filter(Boolean).join(' | ') || undefined;
+  })();
+  // Linhas que dizem "incluso"/"pré-instalado": as de posição ("Cooler traseiro: 1 x 120mm (INCLUSO)") somam;
+  // as outras repetem a mesma informação em lugares diferentes da página, então vale a maior.
+  const includedLines = (() => {
+    const seen = new Set<string>();
+    let sum = 0;
+    let max = 0;
+    for (const l of doc.lines) {
+      if (!/inclus|incluid|pre-?instalad/.test(l) || /nao (inclu|acompanha)|opcional|parafuso|cabo|suporte (vesa|ajustavel)/.test(l)) continue;
+      const key = l.slice(0, 40);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const n = fanCount(l);
+      if (/^(?:\w+\s){0,2}?(painel |cooler |coolers |fans? |ventoinhas? )?(frente|frontal|frontais|traseir[ao]|superior|topo|top|base|inferior|lateral)/.test(l)) sum += n;
+      else max = Math.max(max, n);
+    }
+    return sum || max || undefined;
+  })();
   const fansIncluded =
-    pick(doc, [/ventoinhas? (inclusas?|instaladas?|pre-instaladas?)|fans? (inclusos?|inclusas?|incluidos?|instalados?)|ventilador(es)? pre-instalados?|coolers? inclusos?|pre-installed/], (v) => {
-      if (isNo(v) || /nao possui|nao acompanha|sem /.test(v)) return 0;
-      const items = [...v.matchAll(/(\d+)\s*x/g)].reduce((s, m) => s + Number(m[1]), 0);
-      return inRange(items || firstInt(v), 0, 12);
-    }) ??
-    // "Inclui 3 ventoinhas … pré-instaladas", "(com 3 fans ARGB)".
-    inRange(Number(doc.all.match(/inclui\s*(\d{1,2})\s*(?:ventoinhas|fans|coolers)|(\d{1,2})\s*(?:ventoinhas|fans|coolers)[^\n]{0,30}pre-?instalad|\bcom\s*(\d{1,2})\s*(?:fans|ventoinhas)\b/)?.slice(1).find(Boolean)), 1, 12) ??
-    (/(nao acompanha|sem) (fans|ventoinhas|coolers)|nao possui (fans|ventoinhas)|(fans|ventoinhas)[^\n]{0,20}nao (inclu|acompanha)/.test(doc.all) ? 0 : undefined);
+    (includedBlock !== undefined ? countIncluded(includedBlock) : undefined) ??
+    pick(doc, [INCLUDED], countIncluded) ??
+    inRange(includedLines, 1, 12) ??
+    // Item do conteúdo da embalagem, numa linha só: "4 x Ventoinhas".
+    inRange(Number(doc.lines.map((l) => l.match(/^(\d{1,2})\s*x\s*(?:ventoinhas?|fans?|ventiladores?)(?:\s+[a-z]+){0,3}$/)?.[1]).find(Boolean)), 1, 12) ??
+    // "Fans não inclusos", "Acompanha cooler: não" (antes das frases soltas: "suporte para 6 fans (fans não inclusos)").
+    (/(nao acompanha|sem) (fans|ventoinhas|coolers)|nao possui (fans|ventoinhas)|(fans|ventoinhas)[^\n]{0,20}nao (inclu|acompanha)|acompanha (cooler|fan|ventoinha)s?\s*:?\s*nao/.test(doc.all) ? 0 : undefined) ??
+    // "Inclui 3 ventoinhas … pré-instaladas", "(com 3 fans ARGB)", "3 coolers inclusos".
+    inRange(Number(doc.all.match(/inclui\s*(\d{1,2})\s*(?:ventoinhas|fans|coolers)|(\d{1,2})\s*(?:ventoinhas|fans|coolers)[^\n]{0,30}(?:pre-?instalad|(?<!nao )inclus)|\bcom\s*(\d{1,2})\s*(?:fans|ventoinhas)\b/)?.slice(1).find(Boolean)), 1, 12);
   const fansMaxList = doc.lines.filter((l) => /suporte (a|de|para) (ventoinhas?|fans?|coolers?)|ventoinhas? suportadas?|fans? suportados?|max(imo)? de ventoinhas/.test(l));
   const fansMax = inRange(fansMaxList.map((l) => [...l.matchAll(/(\d+)\s*x/g)].reduce((s, m) => s + Number(m[1]), 0)).find((n) => n > 0), 1, 20);
   const radiators = new Set<number>();
@@ -494,15 +572,35 @@ const cooler: Reader = (doc) => {
   let radiatorMm: number | undefined;
   if (water) {
     const named = doc.all.match(/radiador[^\n\d]{0,30}(120|140|240|280|360|420)\s*m/) ?? doc.all.match(/\b(120|140|240|280|360|420)\s*mm\b(?!\s*x)/);
-    const isDims = (v: string) => /\d{3}(?:[.,]\d+)?\s*(?:\(c\)\s*)?x\s*\d{2,3}/.test(v);
-    // As medidas do radiador: no rótulo ou na seção dele, ou as primeiras medidas logo depois de ele aparecer.
+    // "396 x 120 x 27", "277.5mm x 119.2mm x 27mm", "(C) 277 x (L) 119,6 x (A) 27 mm", "143 x 315 x 30 mm".
+    const DIMS = /(\d{2,3})(?:[.,]\d+)?\s*(?:mm)?\s*(?:\([a-z]\))?\s*x\s*(?:\([a-z]\)\s*)?(\d{2,3})(?:[.,]\d+)?/;
+    // Comprimento e largura, em qualquer ordem: a maior medida e a seguinte.
+    const lenWid = (v: string): [number, number] | undefined => {
+      const m = v.match(DIMS);
+      if (!m) return undefined;
+      const [a, b] = [Number(m[1]), Number(m[2])];
+      return a >= b ? [a, b] : [b, a];
+    };
+    // Formato de radiador: comprido, largo como uma ventoinha (115-145). Sem a palavra "radiador", 150+ (não um de 120).
+    const radShaped = (v: string, minLen = 150) => {
+      const lw = lenWid(v);
+      return !!lw && lw[0] >= minLen && lw[1] >= 115 && lw[1] <= 145;
+    };
+    // As medidas do radiador: no rótulo ou na seção dele, ou as primeiras medidas logo depois de ele aparecer,
+    // ou, sem a palavra, as únicas medidas com formato de radiador ("Dimensões (mm): 396 x 120 x 27").
+    // Não as medidas "incluindo ventilador" (a espessura muda, e a largura pode ser a da ventoinha de 140).
+    const notRad = /bomba|bloco|ventoinha|ventilador|fan\b|tubo|tela/;
     const radAt = doc.pairs.findIndex((p) => /radiador/.test(`${p.section} ${p.label} ${p.value}`));
     const dimLine =
-      doc.pairs.find((p) => /radiador/.test(`${p.section} ${p.label}`) && /dimens|tamanho|medidas/.test(p.label + p.value) && isDims(p.value)) ??
-      (radAt >= 0 ? doc.pairs.slice(radAt, radAt + 4).find((p) => /dimens|tamanho|medidas/.test(p.label) && isDims(p.value) && Number(p.value.match(/\d{3}/)![0]) >= 150) : undefined);
-    const dm = dimLine?.value.match(/(\d{3})(?:[.,]\d+)?\s*(?:\(c\)\s*)?x\s*(\d{2,3})(?:[.,]\d+)?/);
-    if (dm) {
-      const [len, wid] = [Number(dm[1]), Number(dm[2])];
+      doc.pairs.find((p) => /radiador/.test(`${p.section} ${p.label}`) && !notRad.test(p.label) && /dimens|tamanho|medidas/.test(p.label + p.value) && radShaped(p.value, 115)) ??
+      (radAt >= 0 ? doc.pairs.slice(radAt, radAt + 4).find((p) => /dimens|tamanho|medidas/.test(p.label) && !notRad.test(p.label) && radShaped(p.value)) : undefined) ??
+      doc.pairs.find((p) => /dimens|tamanho|medidas/.test(p.label) && !notRad.test(`${p.section} ${p.label}`) && radShaped(p.value));
+    // Só o comprimento: "Dimensões do radiador: Comprimento: 275 mm" (ventoinha de 120).
+    const lenOnly = doc.pairs.find((p) => /radiador/.test(`${p.section} ${p.label}`) && /comprimento/.test(`${p.label} ${p.value}`) && !notRad.test(p.label));
+    const len1 = lenOnly ? inRange(numberWith(lenOnly.value, /mm/), 150, 500) : undefined;
+    const lw = (dimLine && lenWid(dimLine.value)) ?? (len1 ? ([len1, 120] as [number, number]) : undefined);
+    if (lw) {
+      const [len, wid] = lw;
       const fan = wid >= 135 ? 140 : 120;
       const n = Math.round((len - 30) / fan);
       if (n >= 1 && n <= 3) radiatorMm = n * fan;

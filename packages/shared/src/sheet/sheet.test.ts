@@ -264,6 +264,48 @@ describe('leitor da ficha', () => {
     expect(readSheet('case', 'GABINETE COOLER MASTER ELITE 301 (COM 3 FANS ARGB)').fansIncluded).toBe(3);
   });
 
+  it('gabinete e water cooler: mais formatos das fichas da rotina (nov/2026, 2ª leva)', () => {
+    // Frente pelo material ("Materiais", plural); a frase sobre a frente vale mais.
+    expect(readSheet('case', 'Materiais:Aço, plástico, vidro temperado').front).toBe('Vidro');
+    expect(readSheet('case', lines('Materiais: Aço, ABS', 'O modelo conta com painel frontal em mesh')).front).toBe('Mesh');
+    expect(readSheet('case', '• Estilo do Painel: Malha Mesh de alto fluxo de ar').front).toBe('Mesh');
+    // Dimensões: sem a da caixa, com "(C)" antes do número, com "*", na seção, numa linha só, "Comprimento (Profundidade)".
+    expect(readSheet('case', '- Dimensões (C x L x A): 478 x 230 x 493 mm (Gabinete) / 555 x 293 x 535 mm (Caixa)').dimensions).toBe('478 x 230 x 493');
+    expect(readSheet('case', lines('Dimensões:', '- (C x L x A): - 400 x 200 x 455 mm')).dimensions).toBe('400 x 200 x 455');
+    expect(readSheet('case', lines('- informações dimensões: cubo design', 'dimensão embalagen: 435*340*490 mm', 'dimensão gabinete: 415*280*377 mm')).dimensions).toBe('415 x 280 x 377');
+    expect(readSheet('case', lines('• Dimensões Físicas (C x L x A):', '• Com saliências: 434 mm x 218 mm x 414 mm')).dimensions).toBe('434 x 218 x 414');
+    expect(readSheet('case', 'case form factor mid tower dimensions (wxhxd) 220 x 460 x 375 (mm) 8.7 x 18.1 x 14.8 (in)').dimensions).toBe('220 x 460 x 375');
+    expect(readSheet('case', lines('Dimensões Físicas', '• Altura: 485 mm', '• Comprimento (Profundidade): 510 mm', '• Largura: 255 mm')).dimensions).toBe('485 x 255 x 510');
+    expect(readSheet('case', 'Dimensões: 120 x 120 x 25 mm').dimensions).toBeUndefined();
+    // Cooler até, sem "CPU" no rótulo; não as ventoinhas chamadas de cooler.
+    expect(readSheet('case', '- Tamanho máximo do cooler: 157 mm').maxCoolerMm).toBe(157);
+    expect(readSheet('case', '- Suporte para cooler: até 157 mm').maxCoolerMm).toBe(157);
+    expect(readSheet('case', 'tamanho do cooler traseiro: 80 mm').maxCoolerMm).toBeUndefined();
+    // Ventoinhas inclusas: as posições nas linhas de baixo somam; o total no rótulo vale sozinho.
+    expect(readSheet('case', lines('Ventoinhas inclusas:Frente: 2 x 120 mm', 'Traseira: 1 x 140 mm', 'Ventoinhas suportadas:Frente: 4 x 120 mm')).fansIncluded).toBe(3);
+    expect(readSheet('case', lines('Ventoinhas inclusas:Traseira: 1 × 120 mm ARGB PWM', 'Montagem lateral: 3 × 120 mm ARGB PWM reversas')).fansIncluded).toBe(4);
+    expect(readSheet('case', lines('• Ventoinhas Inclusas: 3x Fans ARGB PWM de 120 mm', '– Lateral: 2x 120 mm ARGB PWM', '– Traseira: 1x 120 mm')).fansIncluded).toBe(3);
+    expect(readSheet('case', 'Ventoinhas inclusas:Frente: 120 mm PWM ARGB x3').fansIncluded).toBe(3);
+    expect(readSheet('case', 'Ventoinhas incluídas:3 x 120 mm').fansIncluded).toBe(3);
+    // Linhas "incluso" de cada posição somam (texto repetido não conta duas vezes); "(3x pré-instalados)" vale mais que o suportado.
+    expect(readSheet('case', lines('- Cooler traseiro: 1 x 120mm (INCLUSO)', '- Cooler Superior: 2 x 120mm (Não incluído)', '- Coolers frontais: 3 x 120mm (Incluso)')).fansIncluded).toBe(4);
+    const khali = lines('- painel frontal: 3x Fans 120mm (3x pré-instalados)', '- painel traseiro: 1x Fan 120mm (1x pré-instalado)');
+    expect(readSheet('case', `${khali}\n${khali}`).fansIncluded).toBe(4);
+    expect(readSheet('case', '- Frontal: 3 x 120 mm, 3 x 140 mm (inclusas 3 ventoinhas CT120 de 120 x 120 x 25 mm)').fansIncluded).toBe(3);
+    // A mesma informação em lugares diferentes: vale a maior, não a soma.
+    expect(readSheet('case', lines('• Sistema: 3x Ventoinhas CF120 ARGB de 120 mm pré-instaladas (Frontais)', 'ITENS INCLUSOS', '• 3x Ventoinhas CF120 ARGB de 120 mm (Pré-instaladas no painel frontal)')).fansIncluded).toBe(3);
+    expect(readSheet('case', lines('Conteúdo da embalagem:Parafuso', 'Manual', 'Gabinete', '4 x Ventoinhas')).fansIncluded).toBe(4);
+    expect(readSheet('case', lines('- fans: suporte para 6 fans (fans não inclusos)', 'acompanha cooler: nao')).fansIncluded).toBe(0);
+    // Water cooler: medidas com "mm" no meio, "(C)" antes do número, largura antes do comprimento, sem a palavra radiador.
+    expect(readSheet('cooler', lines('Bomba: 3200 RPM', 'Tamanho do radiador: 277.5mm x 119.2mm x 27mm')).radiatorMm).toBe(240);
+    expect(readSheet('cooler', lines('Bloco de água: Dimensões: (C) 85 x (L) 84,1 x (A) 53,5 mm', 'Radiador: Dimensões: (C) 277 x (L) 119,6 x (A) 27 mm')).radiatorMm).toBe(240);
+    expect(readSheet('cooler', lines('Dimensões do radiador:143 x 315 x 30 mm', 'Ventoinha:Dimensão: 140 x 140 x 26 mm')).radiatorMm).toBe(280);
+    expect(readSheet('cooler', lines('Comprimento da tubulação: 450mm', 'Dimensões (mm): 396 mm x 120 mm x 27 mm', 'Material do radiador: Alumínio')).radiatorMm).toBe(360);
+    expect(readSheet('cooler', lines('Dimensões do radiador, incl. ventilador (A x L x P), (mm): 397 x 140 x 52', 'Especificações do radiador:', 'Dimensões (A x L x P), (mm) : 397 x 120 x 27')).radiatorMm).toBe(360);
+    expect(readSheet('cooler', lines('Bomba: 2800 RPM', 'Dimensões do Radiador: 120×120×27mm')).radiatorMm).toBe(120);
+    expect(readSheet('cooler', lines('Material do radiador:Alumínio', 'Dimensões do radiador:Comprimento: 275 mm')).radiatorMm).toBe(240);
+  });
+
   it('marca e modelo; sem nada reconhecido, nada (nunca chuta)', () => {
     expect(readSheet('ssd', lines('MARCA: LEXAR', 'MODELO: NQ100 256GB', 'P/N: LNQ100X256G-RNNNG'))).toEqual({ brand: 'Lexar', model: 'LNQ100X256G-RNNNG' });
     expect(readSheet('cpu', 'Garantia: 12 meses')).toEqual({});
