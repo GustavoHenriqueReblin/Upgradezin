@@ -48,38 +48,13 @@ const valueAt = (s: Series, t: number) => s.steps.find((x) => t >= x.from && t <
 const day = (t: number) => new Date(t).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 const dayFull = (t: number) => new Date(t).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
+/** Histórico em janela (botão do card da busca). */
 export function PriceHistory({ title, offers, onClose }: { title: string; offers: Offer[]; onClose: () => void }) {
-  const [data, setData] = useState<ListingHistory[] | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [range, setRange] = useState<RangeId>('90');
-  const [table, setTable] = useState(false);
-
-  useEffect(() => {
-    const items = offers.map((o) => `${o.store}:${o.storeSku}`).join(',');
-    fetch(`/api/prices/history?items=${encodeURIComponent(items)}`)
-      .then((r) => (r.ok ? (r.json() as Promise<ListingHistory[]>) : Promise.reject(new Error(String(r.status)))))
-      .then(setData)
-      .catch(() => setFailed(true));
-  }, [offers]);
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-
-  const now = useMemo(() => Date.now(), [data]);
-  const series = useMemo(() => (data ?? []).map((h) => toSeries(h, now)).filter((s): s is Series => !!s), [data, now]);
-  const first = series.length ? Math.min(...series.map((s) => s.steps[0]!.from)) : now;
-  const days = RANGES.find((r) => r.id === range)!.days;
-  const x0 = Number.isFinite(days) ? Math.max(first, now - days * DAY) : first;
-
-  // Resumo: preço agora (menor entre as lojas com estoque) e menor/maior do período escolhido.
-  const inWindow = series.flatMap((s) => s.steps.filter((x) => x.to >= x0 && x.inStock).map((x) => ({ ...x, store: s.store })));
-  const nowPrices = series.map((s) => ({ store: s.store, v: valueAt(s, now) })).filter((x) => x.v?.inStock && x.v.to >= now - GONE_AFTER);
-  const current = nowPrices.length ? nowPrices.reduce((a, b) => (b.v!.price < a.v!.price ? b : a)) : null;
-  const low = inWindow.length ? inWindow.reduce((a, b) => (b.price < a.price ? b : a)) : null;
-  const high = inWindow.length ? inWindow.reduce((a, b) => (b.price > a.price ? b : a)) : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4" onClick={onClose}>
@@ -101,55 +76,90 @@ export function PriceHistory({ title, offers, onClose }: { title: string; offers
           </button>
         </div>
 
-        {failed ? (
-          <p className="py-10 text-center text-sm text-zinc-500">Não foi possível carregar o histórico agora.</p>
-        ) : !data ? (
-          <p className="py-10 text-center text-sm text-zinc-500">Carregando…</p>
-        ) : !series.length ? (
-          <p className="py-10 text-center text-sm text-zinc-500">
-            Ainda sem histórico. Os preços passam a ser guardados quando este produto é coletado.
-          </p>
-        ) : (
-          <>
-            <div className="mb-4 grid grid-cols-3 gap-3 text-sm">
-              <Stat label="Agora" value={current ? brl(current.v!.price) : '—'} sub={current ? storeName(current.store) : 'sem estoque'} />
-              <Stat label="Menor no Período" value={low ? brl(low.price) : '—'} sub={low ? `${storeName(low.store)}, ${day(Math.max(low.from, x0))}` : ''} />
-              <Stat label="Maior no Período" value={high ? brl(high.price) : '—'} sub={high ? `${storeName(high.store)}, ${day(Math.max(high.from, x0))}` : ''} />
-            </div>
-
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              {RANGES.map((r) => (
-                <button
-                  key={r.id}
-                  onClick={() => setRange(r.id)}
-                  className={`rounded-full px-3 py-1 text-xs font-medium ${
-                    range === r.id ? 'bg-accent-500 text-accent-950' : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
-                  }`}
-                >
-                  {r.label}
-                </button>
-              ))}
-              <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-600 dark:text-zinc-300">
-                {series.map((s) => (
-                  <span key={s.store} className="flex items-center gap-1.5">
-                    <span className="h-0.5 w-4 rounded" style={{ backgroundColor: SERIES_VAR[s.store] }} />
-                    {storeName(s.store)}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            {table ? <HistoryTable data={data} /> : <Chart series={series} x0={x0} x1={now} />}
-
-            <div className="mt-3 flex items-center justify-between text-xs text-zinc-500">
-              <span>À vista com cupom. Tracejado: sem estoque. Acompanhado desde {dayFull(first)}.</span>
-              <button onClick={() => setTable((v) => !v)} className="font-medium text-accent-600 hover:underline dark:text-accent-400">
-                {table ? 'Ver Gráfico' : 'Ver Tabela'}
-              </button>
-            </div>
-          </>
-        )}
+        <PriceHistoryBody offers={offers} />
       </div>
+    </div>
+  );
+}
+
+/** Resumo, gráfico e tabela do histórico (na janela ou dentro da página do produto). */
+export function PriceHistoryBody({ offers }: { offers: Offer[] }) {
+  const [data, setData] = useState<ListingHistory[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [range, setRange] = useState<RangeId>('90');
+  const [table, setTable] = useState(false);
+
+  useEffect(() => {
+    const items = offers.map((o) => `${o.store}:${o.storeSku}`).join(',');
+    fetch(`/api/prices/history?items=${encodeURIComponent(items)}`)
+      .then((r) => (r.ok ? (r.json() as Promise<ListingHistory[]>) : Promise.reject(new Error(String(r.status)))))
+      .then(setData)
+      .catch(() => setFailed(true));
+  }, [offers]);
+
+  const now = useMemo(() => Date.now(), [data]);
+  const series = useMemo(() => (data ?? []).map((h) => toSeries(h, now)).filter((s): s is Series => !!s), [data, now]);
+  const first = series.length ? Math.min(...series.map((s) => s.steps[0]!.from)) : now;
+  const days = RANGES.find((r) => r.id === range)!.days;
+  const x0 = Number.isFinite(days) ? Math.max(first, now - days * DAY) : first;
+
+  // Resumo: preço agora (menor entre as lojas com estoque) e menor/maior do período escolhido.
+  const inWindow = series.flatMap((s) => s.steps.filter((x) => x.to >= x0 && x.inStock).map((x) => ({ ...x, store: s.store })));
+  const nowPrices = series.map((s) => ({ store: s.store, v: valueAt(s, now) })).filter((x) => x.v?.inStock && x.v.to >= now - GONE_AFTER);
+  const current = nowPrices.length ? nowPrices.reduce((a, b) => (b.v!.price < a.v!.price ? b : a)) : null;
+  const low = inWindow.length ? inWindow.reduce((a, b) => (b.price < a.price ? b : a)) : null;
+  const high = inWindow.length ? inWindow.reduce((a, b) => (b.price > a.price ? b : a)) : null;
+
+  return (
+    <div className="viz">
+      {failed ? (
+        <p className="py-10 text-center text-sm text-zinc-500">Não foi possível carregar o histórico agora.</p>
+      ) : !data ? (
+        <p className="py-10 text-center text-sm text-zinc-500">Carregando…</p>
+      ) : !series.length ? (
+        <p className="py-10 text-center text-sm text-zinc-500">
+          Ainda sem histórico. Os preços passam a ser guardados quando este produto é coletado.
+        </p>
+      ) : (
+        <>
+          <div className="mb-4 grid grid-cols-3 gap-3 text-sm">
+            <Stat label="Agora" value={current ? brl(current.v!.price) : '—'} sub={current ? storeName(current.store) : 'sem estoque'} />
+            <Stat label="Menor no Período" value={low ? brl(low.price) : '—'} sub={low ? `${storeName(low.store)}, ${day(Math.max(low.from, x0))}` : ''} />
+            <Stat label="Maior no Período" value={high ? brl(high.price) : '—'} sub={high ? `${storeName(high.store)}, ${day(Math.max(high.from, x0))}` : ''} />
+          </div>
+
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            {RANGES.map((r) => (
+              <button
+                key={r.id}
+                onClick={() => setRange(r.id)}
+                className={`rounded-full px-3 py-1 text-xs font-medium ${
+                  range === r.id ? 'bg-accent-500 text-accent-950' : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+            <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-600 dark:text-zinc-300">
+              {series.map((s) => (
+                <span key={s.store} className="flex items-center gap-1.5">
+                  <span className="h-0.5 w-4 rounded" style={{ backgroundColor: SERIES_VAR[s.store] }} />
+                  {storeName(s.store)}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {table ? <HistoryTable data={data} /> : <Chart series={series} x0={x0} x1={now} />}
+
+          <div className="mt-3 flex items-center justify-between text-xs text-zinc-500">
+            <span>À vista com cupom. Tracejado: sem estoque. Acompanhado desde {dayFull(first)}.</span>
+            <button onClick={() => setTable((v) => !v)} className="font-medium text-accent-600 hover:underline dark:text-accent-400">
+              {table ? 'Ver Gráfico' : 'Ver Tabela'}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

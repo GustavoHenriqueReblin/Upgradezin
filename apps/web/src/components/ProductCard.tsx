@@ -198,7 +198,7 @@ export function ProductCard({ group, compat, onPick, picked, replacing }: Props)
  * "cupom CODIGO · sem cupom R$ 672,99 · limitado · até 24/11" (loja que não informa o código:
  * "cupom de 10% na loja"). Cupom que não vale para este preço diz por quê, sem desconto.
  */
-function CouponLine({ offer }: { offer: Offer }) {
+export function CouponLine({ offer }: { offer: Offer }) {
   const c = offer.coupon!;
   const what = c.code ? `cupom ${c.code}` : `cupom de ${c.percent ? `${c.percent}%` : brl(c.amount ?? 0)} na loja`;
   const day = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
@@ -225,7 +225,7 @@ function CouponLine({ offer }: { offer: Offer }) {
 }
 
 /** "Oferta até 21/11, 15h · restam 84": o preço volta ao normal quando a oferta acaba. */
-function PromoLine({ promo }: { promo: NonNullable<Offer['promo']> }) {
+export function PromoLine({ promo }: { promo: NonNullable<Offer['promo']> }) {
   const end = promo.endsAt ? new Date(promo.endsAt) : null;
   const two = (n: number) => String(n).padStart(2, '0');
   const when = end ? `${two(end.getDate())}/${two(end.getMonth() + 1)}, ${end.getHours()}h${end.getMinutes() ? two(end.getMinutes()) : ''}` : null;

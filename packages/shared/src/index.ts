@@ -16,6 +16,7 @@ export * from './cpuz.ts';
 export * from './perf.ts';
 export * from './upgrade.ts';
 export * from './sheet/index.ts';
+export * from './product.ts';
 export * from './admin.ts';
 export * from './picks.ts';
 export * from './identity.ts';

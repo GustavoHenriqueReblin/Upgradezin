@@ -4,6 +4,7 @@ import {
   ENABLED_CATEGORIES,
   CATEGORY_DEFS,
   formatSheetValue,
+  productPath,
   sheetFields,
   SHEET_SECONDS_MAX,
   SHEET_SECONDS_MIN,
@@ -357,7 +358,12 @@ function ProductDetail({ p, names, fail, onMessage }: Shared & { p: SheetProduct
   return (
     <div className="grid gap-4 text-sm md:grid-cols-2">
       <div>
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">Anúncios</p>
+        <p className="mb-1 flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+          Anúncios
+          <a href={productPath(p.key)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 normal-case tracking-normal text-accent-600 hover:underline dark:text-accent-400">
+            Ver página do produto <ExternalLink className="h-3 w-3" />
+          </a>
+        </p>
         <ul className="space-y-2 text-xs">
           {p.listings.map((l) => (
             <li key={`${l.store}:${l.sku}`} className="space-y-1">

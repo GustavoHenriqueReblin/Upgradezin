@@ -1,6 +1,8 @@
 import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';
+import { ProductPage } from './components/ProductPage.tsx';
+import { productKeyFromUrl } from './product.ts';
 import { loadStores } from './stores.ts';
 import '@fontsource-variable/quicksand';
 import './index.css';
@@ -21,6 +23,18 @@ if (location.pathname === '/admin' || location.pathname.startsWith('/admin/')) {
       </Suspense>
     </StrictMode>,
   );
+} else if (productKeyFromUrl()) {
+  // Página do produto: no ar mesmo com o resto do site em manutenção.
+  const key = productKeyFromUrl()!;
+  loadStores()
+    .catch(() => undefined)
+    .then(() =>
+      root.render(
+        <StrictMode>
+          <ProductPage productKey={key} />
+        </StrictMode>,
+      ),
+    );
 } else if (MAINTENANCE) {
   // Site em manutenção enquanto as fichas técnicas são refeitas (o admin continua no ar).
   root.render(

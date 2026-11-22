@@ -11,7 +11,7 @@ import { dec, firstInt, isNo, numberWith, pick, sheetDoc, thousands, type SheetD
  *
  * READER_VERSION: mudou o leitor ou os campos, sobe o número: o servidor relê as fichas guardadas.
  */
-export const READER_VERSION = 4;
+export const READER_VERSION = 5;
 
 type Reader = (doc: SheetDoc) => SheetValues;
 
@@ -445,12 +445,11 @@ const caseReader: Reader = (doc) => {
   });
   const dimensions = dimFromPairs ?? (sep.every((n) => n && n >= 100) ? sep.join(' x ') : undefined) ?? dimFromText;
   // Frente: mesh (entra ar), vidro ou fechada. Do painel frontal ou do material; no texto, só frases sobre a frente.
-  // "Materiais: Aço, plástico, vidro temperado": o vidro, quando há, costuma ser a lateral e a frente.
-  // Ordem: rótulo da frente, frase sobre a frente ("painel frontal em mesh"), material.
+  // Rótulo da frente ou frase sobre a frente ("painel frontal em mesh"). Não pelo material: o vidro de
+  // "Materiais: aço, vidro temperado" costuma ser só a lateral (um gabinete Airflow, de frente em malha, viraria "Vidro").
   const frontText =
     pick(doc, [/painel frontal|^frente|^frontal|estilo do painel/], (v) => (/mesh|malha|perfurad|vidro|glass|fechad|acrilico|solid|plastico|aco\b/.test(v) ? v : undefined)) ??
     doc.all.match(/(?:painel )?front(?:al)?[^\n]{0,30}(?:mesh|malha|perfurad|vidro)|(?:mesh|malha|vidro temperado)[^\n]{0,15}front/)?.[0] ??
-    pick(doc, [/^materia(l|is)/], (v) => (/mesh|malha|perfurad|vidro|glass|acrilico|plastico|aco\b/.test(v) ? v : undefined)) ??
     '';
   const front = /mesh|malha|perfurad/.test(frontText) ? 'Mesh' : /vidro|glass/.test(frontText) ? 'Vidro' : /fechad|acrilico|solid|plastico|aco\b/.test(frontText) ? 'Fechada' : undefined;
   // Ventoinhas que vêm instaladas: soma as linhas ("Top: 2 x 120 mm" / "Rear: 1 x 120 mm"); "Não possui" = 0.

@@ -24,6 +24,7 @@ import { clearBackoff, pauseStore, useBackoffStorage, type Backoff } from './pac
 import { closeDb, getDb } from './db/instance.ts';
 import { activeSessions, canReadSheet } from './prices/collect.ts';
 import { listingBrands, listingsHistory, recentOffers } from './prices/prices.ts';
+import { productPage } from './prices/product-page.ts';
 import { rereadSheets, SHEET_SCOPE_DAYS, sheetCoverage, syncSheetTables } from './prices/sheets.ts';
 import { startProductKeys } from './prices/identity.ts';
 import { setSheetRoutine, sheetNextAt, sheetRoutineBusy, sheetRoutineSettings, startSheetRoutine, stopSheetRoutine, useSheetRoutineStorage } from './prices/sheet-routine.ts';
@@ -262,6 +263,14 @@ app.get('/api/prices/history', async (req, reply) => {
   const parsed = HistoryQuery.safeParse(req.query);
   if (!parsed.success) return reply.code(400).send({ error: z.prettifyError(parsed.error) });
   return listingsHistory(getDb(), parsed.data.items);
+});
+
+/** Página do produto: ficha técnica juntada e as ofertas das lojas ligadas (só do banco). */
+app.get('/api/products/:key', async (req, reply) => {
+  const { key } = req.params as { key: string };
+  const page = key.length <= 200 ? productPage(getDb(), key, ACTIVE_STORES) : undefined;
+  if (!page) return reply.code(404).send({ error: 'not-found' });
+  return page;
 });
 
 /**

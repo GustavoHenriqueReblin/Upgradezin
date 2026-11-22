@@ -265,8 +265,8 @@ describe('leitor da ficha', () => {
   });
 
   it('gabinete e water cooler: mais formatos das fichas da rotina (nov/2026, 2ª leva)', () => {
-    // Frente pelo material ("Materiais", plural); a frase sobre a frente vale mais.
-    expect(readSheet('case', 'Materiais:Aço, plástico, vidro temperado').front).toBe('Vidro');
+    // Frente: não pelo material (o vidro é da lateral); a frase sobre a frente vale.
+    expect(readSheet('case', 'Materiais:Aço, plástico, vidro temperado').front).toBeUndefined();
     expect(readSheet('case', lines('Materiais: Aço, ABS', 'O modelo conta com painel frontal em mesh')).front).toBe('Mesh');
     expect(readSheet('case', '• Estilo do Painel: Malha Mesh de alto fluxo de ar').front).toBe('Mesh');
     // Dimensões: sem a da caixa, com "(C)" antes do número, com "*", na seção, numa linha só, "Comprimento (Profundidade)".
