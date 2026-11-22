@@ -11,7 +11,7 @@ import { dec, firstInt, isNo, numberWith, pick, sheetDoc, thousands, type SheetD
  *
  * READER_VERSION: mudou o leitor ou os campos, sobe o número: o servidor relê as fichas guardadas.
  */
-export const READER_VERSION = 1;
+export const READER_VERSION = 2;
 
 type Reader = (doc: SheetDoc) => SheetValues;
 
@@ -250,6 +250,8 @@ const ssd: Reader = (doc) => {
   const ifaceOf = (v: string) => {
     const gen = v.match(/(?:pcie|pci-e|gen)\s*(?:gen\s*)?(\d)(?:\.0)?/);
     if (gen) return `NVMe PCIe ${gen[1]}.0`;
+    // "Interface: PCIe" sem a versão.
+    if (/pci-?\s*e|pcie/.test(v)) return 'NVMe PCIe';
     if (/nvme/.test(v)) return 'NVMe';
     if (/sata/.test(v)) return 'SATA';
     return undefined;

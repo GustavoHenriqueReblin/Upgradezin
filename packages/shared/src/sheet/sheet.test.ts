@@ -163,6 +163,8 @@ describe('leitor da ficha', () => {
       writeMbs: 500,
     });
     expect(readSheet('ssd', 'Especificações: Capacidade: 2TB').capacityGb).toBe(2000); // rótulo dentro do valor
+    // "Interface: PCIe" sem versão vale mais que um "Sata de 2,5 polegadas" solto na mesma ficha (como na S3, nov/2026).
+    expect(readSheet('ssd', lines('Formato:', 'M2 2280', 'Interface:', 'PCIe', 'Forma:', 'Sata de 2,5 polegadas'))).toMatchObject({ formFactor: 'M.2 2280', interface: 'NVMe PCIe' });
   });
 
   it('fonte: potência, eficiência, modular, padrão e conectores (cabos com vários conectores, total)', () => {
