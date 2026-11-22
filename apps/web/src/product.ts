@@ -19,15 +19,18 @@ const byStockThenPrice = (a: Offer, b: Offer) => Number(b.inStock) - Number(a.in
 /**
  * Ofertas da página do produto: as da própria loja (novo) aparecem; produto aberto e outros vendedores
  * ficam atrás de um botão. O melhor preço e o histórico são só das da própria loja (o histórico usa
- * todas quando o produto não tem nenhuma da própria loja).
+ * todas quando o produto não tem nenhuma da própria loja). `rest`: as da própria loja sem a do melhor
+ * preço (que já aparece em cima, com o botão).
  */
 export function splitOffers(offers: Offer[]) {
   const main = offers.filter(trustedOffer).sort(byStockThenPrice);
   const others = offers.filter((o) => !trustedOffer(o)).sort(byStockThenPrice);
+  const best = main.find((o) => o.inStock);
   return {
     main,
+    rest: main.filter((o) => o !== best),
     others,
-    best: main.find((o) => o.inStock),
+    best,
     othersInStock: others.filter((o) => o.inStock).length,
     history: main.length ? main : others,
   };

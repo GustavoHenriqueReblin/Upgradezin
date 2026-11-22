@@ -27,6 +27,8 @@ describe('ofertas da página do produto', () => {
     ];
     const s = splitOffers(offers);
     expect(s.main.map((x) => x.storeSku)).toEqual(['novo', 'esgotado']);
+    // A do melhor preço já está em cima: a lista mostra só as outras.
+    expect(s.rest.map((x) => x.storeSku)).toEqual(['esgotado']);
     expect(s.others.map((x) => x.storeSku)).toEqual(['aberto', 'parceiro', 'parceiro-2']);
     expect(s.best?.storeSku).toBe('novo');
     expect(s.othersInStock).toBe(2);
@@ -34,7 +36,9 @@ describe('ofertas da página do produto', () => {
   });
 
   it('sem oferta da própria loja em estoque: sem melhor preço; sem nenhuma da própria loja, o histórico usa as outras', () => {
-    expect(splitOffers([o('s3', 'esgotado', 100, { inStock: false }), o('s1', 'p', 90, { marketplace: true })]).best).toBeUndefined();
+    const none = splitOffers([o('s3', 'esgotado', 100, { inStock: false }), o('s1', 'p', 90, { marketplace: true })]);
+    expect(none.best).toBeUndefined();
+    expect(none.rest.map((x) => x.storeSku)).toEqual(['esgotado']);
     const only = splitOffers([o('s1', 'p', 90, { marketplace: true })]);
     expect(only.main).toEqual([]);
     expect(only.history.map((x) => x.storeSku)).toEqual(['p']);

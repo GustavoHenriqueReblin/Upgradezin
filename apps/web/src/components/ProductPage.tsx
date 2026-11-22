@@ -52,7 +52,7 @@ const offerKey = (o: Offer) => `${o.store}-${o.storeSku}`;
 
 function Content({ page }: { page: ProductPageData }) {
   // Padrão da busca: só o novo vendido pela própria loja; produto aberto e outros vendedores atrás do botão.
-  const { main, others, best, othersInStock, history } = useMemo(() => splitOffers(page.offers), [page.offers]);
+  const { rest, others, best, othersInStock, history } = useMemo(() => splitOffers(page.offers), [page.offers]);
   const [showOthers, setShowOthers] = useState(false);
   const rows = sheetRows(page.category, page.values);
   const price = best ? effectiveCash(best) : 0;
@@ -104,27 +104,25 @@ function Content({ page }: { page: ProductPageData }) {
         </div>
       </section>
 
-      <section className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 className="border-b border-zinc-100 px-4 py-3 font-semibold dark:border-zinc-800">Onde Comprar</h2>
-        {main.length ? (
-          <OfferList offers={main} bestKey={best && offerKey(best)} />
-        ) : (
-          <p className="px-4 py-3 text-sm text-zinc-500">Nenhuma loja vende este produto novo agora.</p>
-        )}
-        {others.length > 0 && (
-          <div className="border-t border-zinc-100 dark:border-zinc-800">
-            <button
-              type="button"
-              onClick={() => setShowOthers((v) => !v)}
-              className="flex w-full items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-zinc-600 hover:text-accent-600 dark:text-zinc-300 dark:hover:text-accent-400"
-            >
-              <ChevronDown className={`h-4 w-4 transition-transform ${showOthers ? 'rotate-180' : ''}`} />
-              {showOthers ? 'Esconder' : 'Ver também'} produto aberto e outros vendedores ({others.length})
-            </button>
-            {showOthers && <OfferList offers={others} />}
-          </div>
-        )}
-      </section>
+      {(rest.length > 0 || others.length > 0) && (
+        <section className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="border-b border-zinc-100 px-4 py-3 font-semibold dark:border-zinc-800">{best ? 'Outras Ofertas' : 'Onde Comprar'}</h2>
+          {rest.length > 0 && <OfferList offers={rest} />}
+          {others.length > 0 && (
+            <div className={rest.length ? 'border-t border-zinc-100 dark:border-zinc-800' : ''}>
+              <button
+                type="button"
+                onClick={() => setShowOthers((v) => !v)}
+                className="flex w-full items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-zinc-600 hover:text-accent-600 dark:text-zinc-300 dark:hover:text-accent-400"
+              >
+                <ChevronDown className={`h-4 w-4 transition-transform ${showOthers ? 'rotate-180' : ''}`} />
+                {showOthers ? 'Esconder' : 'Ver também'} produto aberto e outros vendedores ({others.length})
+              </button>
+              {showOthers && <OfferList offers={others} />}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <h2 className="border-b border-zinc-100 px-4 py-3 font-semibold dark:border-zinc-800">Ficha Técnica</h2>
@@ -146,8 +144,8 @@ function Content({ page }: { page: ProductPageData }) {
   );
 }
 
-/** Linhas de oferta: a linha toda leva à loja (como no card da busca); o botão fica só no melhor preço, em cima. */
-function OfferList({ offers, bestKey }: { offers: Offer[]; bestKey?: string }) {
+/** Linhas de oferta: a linha toda leva à loja (como no card da busca); o botão e o melhor preço ficam só em cima. */
+function OfferList({ offers }: { offers: Offer[] }) {
   return (
     <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
       {offers.map((o) => (
@@ -160,7 +158,7 @@ function OfferList({ offers, bestKey }: { offers: Offer[]; bestKey?: string }) {
           >
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <StoreDot store={o.store} />
-              <span className={bestKey === offerKey(o) ? 'font-semibold' : 'font-medium'}>{storeName(o.store)}</span>
+              <span className="font-medium">{storeName(o.store)}</span>
               {o.marketplace && (
                 <span className="truncate text-xs text-amber-600" title={o.seller}>
                   · {o.seller}
