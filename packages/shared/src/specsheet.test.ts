@@ -67,4 +67,40 @@ describe('ficha técnica da página do produto', () => {
     expect(parseSpecSheet('gpu', '<p>Tamanho: 233x120x44mm</p>').specs.gpuLength).toBe(233);
     expect(parseSpecSheet('gpu', '<p>Tamanho da memória: 8 GB</p><p>Consumo: 170 W</p>').specs.gpuLength).toBeUndefined();
   });
+
+  it('placa de vídeo: "Product Size", "Tamanho do produto", "Formato" e "Length" (como em fichas reais da S3, nov/2026)', () => {
+    expect(parseSpecSheet('gpu', '<p>Slot Number: 2 slot Product Size: 255*130*41.3mm</p>').specs.gpuLength).toBe(255);
+    expect(parseSpecSheet('gpu', '<p>Número de slot: 2 slots Tamanho do produto: 239.1*114.4*39mm</p>').specs.gpuLength).toBe(239);
+    expect(parseSpecSheet('gpu', '<p>Consumo de Energia : &lt;65W</p><p>Formato : 158mm x 112mm x 28mm</p>').specs.gpuLength).toBe(158);
+    expect(parseSpecSheet('gpu', '<p>Graphics Card Dimensions</p><p>Length</p><p>334mm</p>').specs.gpuLength).toBe(334); // rótulo e valor em linhas separadas
+    expect(parseSpecSheet('gpu', '<p>Length: 334mm</p><p>Height: 148mm</p>').specs.gpuLength).toBe(334);
+    expect(parseSpecSheet('gpu', '<p>Formato: ATX</p>').specs.gpuLength).toBeUndefined();
+  });
+
+  it('cooler de ar sem marcação (C x L x A): torre pela maior medida, cooler baixo pela última; "(com ventoinhas)" vale', () => {
+    const h = (html: string) => parseSpecSheet('cooler', html).specs.coolerHeight;
+    expect(h('<p>Dimensões do dissipador: 130 x 135 x 157 mm</p><p>Dimensões da ventoinha: 120 x 120 x 25 mm</p>')).toBe(157);
+    expect(h('<p>Tamanho do dissipador de calor: 122 x 50 x 158 mm</p>')).toBe(158);
+    expect(h('<p>Dimensões: 154 x 120 x 124 mm</p><p>Dimensões do dissipador de calor: 154 x 120 x 99 mm</p>')).toBe(154); // altura primeiro
+    expect(h('<p>Dimensões: 124 x 124 x 68 mm</p>')).toBe(68); // cooler baixo (top-flow)
+    expect(h('<p>Dimensões (com ventoinhas): 123 x 98 x 155 mm</p>')).toBe(155);
+    expect(h('<p>Altura: 27 mm</p>')).toBe(27); // low profile
+  });
+
+  it('water cooler: as medidas são do radiador e do bloco, não viram altura de cooler', () => {
+    const h = (html: string) => parseSpecSheet('cooler', html).specs.coolerHeight;
+    // Como na S2 (nov/2026): sem a palavra "radiador", mas com o bloco e o tubo.
+    expect(h('<p>Dimensões: 395 x 120 x 27 mm</p><p>Comprimento do tubo: 380 mm</p><p>Bloco: Dimensões: 73x86,5x51 mm</p>')).toBeUndefined();
+    expect(h('<p>Radiador: 274 x 120 x 27 mm</p><p>Bomba: Tamanho: 75 x 55 mm</p>')).toBeUndefined();
+    // "Tubo de calor" é heatpipe de cooler de ar.
+    expect(h('<p>Dimensão: 149 x 139 x 160 mm</p><p>Tubo de calor: 6mm * 6pcs</p>')).toBe(160);
+  });
+
+  it('gabinete: "VGA suportada", seção de folgas máximas e rótulo com o valor na linha seguinte; ventoinha não é altura de cooler', () => {
+    const c = (html: string) => parseSpecSheet('case', html).specs;
+    expect(c('<p>VGA Suportada: 410mm CPU cooler suportado: 170mm</p>')).toMatchObject({ caseMaxGpu: 410, caseMaxCooler: 170 });
+    expect(c('<p>Compatibilidade / Máxima :</p><p>Refrigerador de CPU: 175 mm</p><p>GPU: 420 mm</p>')).toMatchObject({ caseMaxGpu: 420, caseMaxCooler: 175 });
+    expect(c('<p>Suporte a GPU:</p><p>Até 430 mm de comprimento</p>').caseMaxGpu).toBe(430);
+    expect(c('<p>tamanho do cooler traseiro : 120 mm</p><p>tamanho do cooler superior : 120 mm</p>').caseMaxCooler).toBeUndefined();
+  });
 });

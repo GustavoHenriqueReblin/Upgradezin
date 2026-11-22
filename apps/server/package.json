@@ -8,6 +8,7 @@
     "start": "tsx src/index.ts",
     "scan": "tsx src/cli/scan.ts",
     "routine-test": "tsx src/cli/routine-test.ts",
+    "sheet-dumps": "tsx src/cli/sheet-dumps.ts",
     "chrome-setup": "tsx src/cli/chrome-setup.ts",
     "typecheck": "tsc -p ."
   },

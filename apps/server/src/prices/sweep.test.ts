@@ -103,6 +103,18 @@ describe('rotina de preços pelas páginas de categoria', () => {
     expect(inStockOf(db, 'a')).toBe(true);
   });
 
+  it('volta começada antes de guardar o início (estado antigo): o fim dela não marca nada como esgotado', async () => {
+    const db = openDb(':memory:');
+    page(db, 'cpu', 1, 1, [offer('a', 400), offer('b', 500)], T0);
+    const { setMeta } = await import('../db/db.ts');
+    setMeta(db, 'sweep:s1:cpu', JSON.stringify({ page: 5, doneAt: iso(T0) })); // como ficou do código anterior
+    expect(page(db, 'cpu', 5, 5, [offer('z', 900)], T0 + 25 * H)).toMatchObject({ roundDone: true, outOfStock: 0 });
+    expect(inStockOf(db, 'a')).toBe(true);
+    // A volta seguinte já guarda o início e marca normalmente.
+    expect(page(db, 'cpu', 1, 1, [offer('a', 400), offer('z', 900)], T0 + 50 * H)).toMatchObject({ outOfStock: 1 });
+    expect(inStockOf(db, 'b')).toBe(false);
+  });
+
   it('ordem: volta em andamento, depois nunca lida, depois a mais antiga; "varrer agora" recomeça do começo', () => {
     const db = openDb(':memory:');
     page(db, 'cpu', 1, 1, [], T0); // cpu completa em T0

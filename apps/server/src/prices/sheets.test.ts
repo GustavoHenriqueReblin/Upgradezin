@@ -31,7 +31,7 @@ describe('fichas técnicas guardadas', () => {
 
   it('fila da rotina: placa de vídeo, gabinete e cooler, em estoque primeiro; pula os já lidos e os que saíram do catálogo', () => {
     const db = openDb(':memory:');
-    seen(db, 's2', 'cooler', [offer('s2', 'c1')], NOW);
+    seen(db, 's2', 'cooler', [offer('s2', 'c1'), { ...offer('s2', 'water'), specs: { coolerType: 'water' } }], NOW); // water cooler: sem ficha física
     seen(db, 's2', 'case', [offer('s2', 'k1')], NOW);
     seen(db, 's2', 'gpu', [offer('s2', 'g-sem-estoque', false), offer('s2', 'g1'), offer('s2', 'g-lida')], NOW);
     seen(db, 's2', 'gpu', [offer('s2', 'g-antiga')], '2026-10-01T00:00:00.000Z'); // não vista nos últimos 14 dias

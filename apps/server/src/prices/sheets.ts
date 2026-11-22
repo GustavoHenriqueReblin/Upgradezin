@@ -15,6 +15,13 @@ export const SHEET_SCOPE_DAYS = 14;
 /** Categorias com ficha física (comprimento, altura, folgas): as que a montagem confere. */
 export const SHEET_CATEGORIES: CategoryId[] = ['gpu', 'case', 'cooler'];
 
+/**
+ * O anúncio tem ficha física para ler, em SQL sobre o anúncio `l`: as categorias acima, menos water
+ * cooler (a ficha dele não tem medida que a montagem use: o radiador vem do título; a altura é só do
+ * cooler de ar).
+ */
+export const SHEETABLE = `l.category IN (${SHEET_CATEGORIES.map((c) => `'${c}'`).join(', ')}) AND NOT (l.category = 'cooler' AND coalesce(json_extract(l.offer, '$.specs.coolerType'), '') = 'water')`;
+
 /** Ficha guardada vazia: a página não tinha ficha nem part number. */
 const EMPTY = "json_extract(data, '$.specs') = '{}' AND json_extract(data, '$.mpn') IS NULL";
 
@@ -71,7 +78,7 @@ export function saveSheet(db: Db, store: StoreId, sku: string, sheet: SpecSheet,
 
 /**
  * Próximos produtos da loja sem ficha guardada (ou com ficha vazia lida antes de `emptyBefore`),
- * vistos desde `seenSince`, para a rotina ler. Ordem: placa de vídeo, gabinete, cooler (o
+ * vistos desde `seenSince`, para a rotina ler (water cooler fica de fora: SHEETABLE). Ordem: placa de vídeo, gabinete, cooler (o
  * comprimento da placa é o que mais reprova peça); dentro de cada uma, em estoque e vistos há
  * menos tempo primeiro. Pula o produto que já tem ficha com medidas em outro anúncio (outra loja):
  * a ficha vale para os dois, não precisa abrir a página.
@@ -82,13 +89,13 @@ export function nextSheets(db: Db, store: StoreId, seenSince: string, emptyBefor
     .prepare(
       `SELECT l.store_sku AS sku, l.category FROM listings l
        LEFT JOIN product_sheets ps ON ps.store = l.store AND ps.store_sku = l.store_sku
-       WHERE l.store = ? AND l.category IN (${SHEET_CATEGORIES.map(() => '?').join(', ')}) AND l.last_seen_at >= ?
+       WHERE l.store = ? AND ${SHEETABLE} AND l.last_seen_at >= ?
          AND (ps.store_sku IS NULL OR (${EMPTY.replaceAll('data', 'ps.data')} AND ps.fetched_at < ?))
          AND NOT (${SHARED_SHEET})
        ORDER BY CASE l.category ${order} END, json_extract(l.offer, '$.inStock') DESC, l.last_seen_at DESC
        LIMIT ?`,
     )
-    .all(store, ...SHEET_CATEGORIES, seenSince, emptyBefore, limit) as { sku: string; category: CategoryId }[];
+    .all(store, seenSince, emptyBefore, limit) as { sku: string; category: CategoryId }[];
 }
 
 /** Anúncios com ficha guardada, por loja e categoria (para a cobertura do admin). */

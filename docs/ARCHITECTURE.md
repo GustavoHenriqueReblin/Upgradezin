@@ -165,6 +165,7 @@ Adapters não conhecem cache, fila nem navegador: montam a URL, chamam `takePage
 - `pnpm scan <termo>[,<termo>…] [--category=<categoria>] [--stores=s1,s2] [--json] [--top=N]` roda a busca pelo terminal, como a do site (termos do formulário pelo banco; texto livre também nas lojas).
 - `pnpm scan --sweep [--category=<categoria>] [--stores=s1]` lê a primeira página de cada caminho de categoria (configuração da loja no admin, aba Lojas), sem gravar, para conferir.
 - `pnpm routine-test [--stores=s2,s3] [--categories=gpu,ssd] [--keep-open]` lê de verdade a 1ª página de cada categoria em cada loja (pelo mesmo `collectSweepPage` da rotina), grava como a rotina e salva um relatório em `data/debug/`.
+- `pnpm sheet-dumps <pasta> [loja] [categoria] [--text]` roda o leitor de ficha nas páginas de ficha vazia guardadas com `DEBUG_DUMPS` (`data/debug/*-ficha-*.html`) e mostra o que cada uma dá agora, com o resumo por loja e categoria.
 - `pnpm chrome-setup [--stores=…]` abre o Chrome de cada loja na página de extensões para instalar a extensão uma vez e confere se ela conectou.
 - `BROWSER_HIDE_WINDOW=false` mostra as janelas; `BROWSER_STEP_MS=1000` espera 1 s a cada passo (abrir aba, abrir página, ler, fechar) e escreve o passo no terminal.
 - `pnpm dev`, `pnpm scan`, `pnpm routine-test` e `pnpm chrome-setup` usam a mesma porta local da extensão (`EXT_PORT`): um de cada vez.

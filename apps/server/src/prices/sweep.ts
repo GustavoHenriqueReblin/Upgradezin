@@ -104,7 +104,9 @@ export function recordSweepPage(db: Db, run: SweepPageRun): { saved: number; lis
   saveCollection(db, { store, category, offers: keep, at });
   const prev = sweepState(db, store, category);
   const started = inProgress(prev) && prev.startedAt ? prev.startedAt : at;
-  const capped = !!prev.capped && inProgress(prev);
+  // Volta começada antes de o início ser guardado: não dá para saber o que ela já viu, então o fim
+  // dela não marca nada como esgotado (antes, marcava tudo o que não estava na última página).
+  const capped = inProgress(prev) && (!!prev.capped || !prev.startedAt);
   const atCap = page >= maxPages && page < totalPages && inStock > 0;
   const listEnded = inStock === 0 || page >= totalPages || page >= maxPages;
   let outOfStock = 0;

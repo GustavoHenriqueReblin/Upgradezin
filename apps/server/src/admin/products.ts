@@ -1,6 +1,6 @@
 import { cpuPerf, effectiveCash, gpuPerf, type AdminProduct, type AdminProductFilter, type AdminProductPage, type Offer, type SheetStatus, type SheetStoreStatus, type SpecSheet, type StoreId } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
-import { HAS_SPECS, productSheet, SHARED_SHEET, SHEET_CATEGORIES, SHEET_SCOPE_DAYS } from '../prices/sheets.ts';
+import { HAS_SPECS, productSheet, SHARED_SHEET, SHEET_SCOPE_DAYS, SHEETABLE } from '../prices/sheets.ts';
 import { pageOf } from './paging.ts';
 
 /**
@@ -10,7 +10,6 @@ import { pageOf } from './paging.ts';
  */
 
 const EMPTY = "json_extract(ps.data, '$.specs') = '{}' AND json_extract(ps.data, '$.mpn') IS NULL";
-const SHEETABLE = `l.category IN (${SHEET_CATEGORIES.map((c) => `'${c}'`).join(', ')})`;
 /**
  * Situação da ficha em SQL (mesma regra de SheetStatus): com medidas = lida; senão, com a de outro
  * anúncio do mesmo produto = de outra loja; senão não lida, vazia ou lida (só o part number).
