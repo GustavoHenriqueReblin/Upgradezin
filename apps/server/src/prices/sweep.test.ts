@@ -11,7 +11,7 @@ import { useBackoffStorage } from '../pace.ts';
 import { routineNextAt, setRoutineSettings, stopRoutine, sweepPathCounts, tick, useRoutineStorage } from './routine.ts';
 import { storeConfig, sweepPaths, useStoreStorage } from '../stores.ts';
 import { priceHistory, saveCollection } from './prices.ts';
-import { nextSweep, recordSweepFailure, recordSweepPage, restartSweep, sweepState, type SweepPageRun } from './sweep.ts';
+import { FULL_SWEEP_MAX_PAGES, nextSweep, recordSweepFailure, recordSweepPage, restartSweep, sweepState, type SweepPageRun } from './sweep.ts';
 
 const offer = (sku: string, priceCash: number, patch: Partial<Offer> = {}): Offer => ({
   store: 's1',
@@ -66,6 +66,30 @@ describe('rotina de preços pelas páginas de categoria', () => {
     expect(r.saved).toBe(2);
     expect(db.prepare('SELECT store_sku FROM listings ORDER BY store_sku').all().map((x) => (x as { store_sku: string }).store_sku)).toEqual(['novo', 'velho']);
     expect(inStockOf(db, 'velho')).toBe(false);
+  });
+
+  it('volta completa ("varrer agora"): passa da página sem estoque até o fim da lista e grava anúncio novo esgotado; depois, a rotina volta ao normal', () => {
+    const db = openDb(':memory:');
+    restartSweep(db, 's1', 'psu', { full: true });
+    expect(sweepState(db, 's1', 'psu')).toEqual({ page: 1, full: true });
+    page(db, 'psu', 1, 3, [offer('a', 400)], T0);
+    // Página só de esgotados: a volta normal acabaria aqui; a completa segue, e o modo fica no estado
+    // (uma página que a rotina leia no meio da volta segue a mesma regra).
+    expect(page(db, 'psu', 2, 3, [offer('esgotado-novo', 500, { inStock: false })], T0 + 1, { inStock: 0 })).toMatchObject({ saved: 1, listEnded: false, roundDone: false });
+    expect(sweepState(db, 's1', 'psu')).toMatchObject({ path: 0, page: 3, full: true });
+    expect(page(db, 'psu', 3, 3, [offer('esgotado-2', 600, { inStock: false })], T0 + 2, { inStock: 0 })).toMatchObject({ roundDone: true, outOfStock: 0 });
+    expect(['a', 'esgotado-novo', 'esgotado-2'].map((sku) => inStockOf(db, sku))).toEqual([true, false, false]);
+    expect(sweepState(db, 's1', 'psu')).toEqual({ page: 1, doneAt: iso(T0 + 2) });
+    // Volta seguinte (rotina): de novo só até acabar o estoque, sem criar anúncio esgotado.
+    page(db, 'psu', 1, 3, [offer('a', 400)], T0 + 25 * H);
+    expect(page(db, 'psu', 2, 3, [offer('outro-esgotado', 700, { inStock: false })], T0 + 25 * H + 1, { inStock: 0 })).toMatchObject({ saved: 0, roundDone: true });
+  });
+
+  it('volta completa: teto de páginas próprio, maior que o da rotina', () => {
+    const db = openDb(':memory:');
+    restartSweep(db, 's1', 'psu', { full: true });
+    expect(page(db, 'psu', 25, 300, [], T0, { inStock: 0 })).toMatchObject({ listEnded: false });
+    expect(page(db, 'psu', FULL_SWEEP_MAX_PAGES, 300, [], T0 + 1, { inStock: 0 })).toMatchObject({ roundDone: true, outOfStock: 0 });
   });
 
   it('fim da volta: o que estava em estoque e não apareceu nela vira "sem estoque"; voltou ao estoque, a volta seguinte grava de novo', () => {
@@ -227,17 +251,19 @@ describe('rotina de preços', () => {
     stopRoutine();
   });
 
-  it('cada vez da loja lê uma página de categoria (nunca uma busca), em qualquer modo', async () => {
+  it('cada vez da loja lê uma categoria pela página dela (nunca uma busca), em qualquer modo', async () => {
     useStoreStorage(getDb());
     useBackoffStorage([], () => {});
     useRoutineStorage(null, () => {});
+    restartSweep(getDb(), 's1', 'cpu');
+    restartSweep(getDb(), 's1', 'psu');
     const urls: string[] = [];
     usePageLoader(async (_store, url) => {
       urls.push(url);
       return { html: fixture('s1-cpu.html'), url, title: '' };
     });
     setRoutineSettings({ enabled: true, stores: ['s1'], modes: { s1: 'reduced' } });
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 2; i++) {
       const before = urls.length;
       await tick(routineNextAt('s1')!);
       expect(urls[before]).toContain('/hardware/'); // primeira página aberta nesta vez (a S1 pode abrir um produto depois, pelo cupom)

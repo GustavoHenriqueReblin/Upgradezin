@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { CATEGORY_DEFS, ENABLED_CATEGORIES, MODE_SECONDS_MAX, MODE_SECONDS_MIN, ROUTINE_MODES, type AdminStoreState, type CategoryId, type RoutineInfo, type RoutineInput, type RoutineMode, type StoreAttempt, type StoreId } from '@upgradezin/shared';
+import { CATEGORY_DEFS, MODE_SECONDS_MAX, MODE_SECONDS_MIN, ROUTINE_MODES, type AdminStoreState, type RoutineInfo, type RoutineInput, type RoutineMode, type StoreAttempt, type StoreId } from '@upgradezin/shared';
 import { Pause, Play, RefreshCw } from 'lucide-react';
 import { AdminError, adminApi } from './api.ts';
 import { attemptLabel, countdown, formatWhen, MODE_LABEL, modeHint, pauseLabel, queueLabel, routineStores, shortDuration } from './format.ts';
@@ -13,7 +13,7 @@ const PAUSES = [
   { label: '24 h', minutes: 1440 },
 ];
 
-/** Coleta: rotina de preços (ligada, lojas) e o painel de cada loja (pausa, páginas, últimas consultas, "varrer agora"). */
+/** Coleta: rotina de preços (ligada, lojas) e o painel de cada loja (pausa, páginas, últimas consultas, "varredura completa"). */
 export function CollectPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [states, setStates] = useState<AdminStoreState[] | null>(null);
   const [routine, setRoutine] = useState<RoutineInfo | null>(null);
@@ -69,8 +69,8 @@ export function CollectPanel({ onUnauthorized }: { onUnauthorized: () => void })
       <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
         <h2 className="font-semibold">Rotina de preços</h2>
         <p className="mt-0.5 text-sm text-zinc-500">
-          Rotina: em cada loja ligada, o servidor lê as páginas de categoria (configuradas em Lojas), só o que está em estoque, uma página a cada intervalo do modo; a busca do site mostra o que ela
-          gravou. Busca ao vivo: o "Não achou? Buscar nas lojas" consulta a loja na hora (na frente da rotina); desmarcada, mostra só o banco. As duas são independentes e valem na hora.
+          Rotina: em cada loja ligada, o servidor lê cada categoria pela página dela na loja (configurada em Lojas): todas as páginas com estoque, uma atrás da outra, e passa à próxima
+          categoria depois do intervalo do modo; a busca do site mostra o que ela gravou. A "Varredura completa" de cada loja lê também os esgotados. Busca ao vivo: o "Não achou? Buscar nas lojas" consulta a loja na hora (na frente da rotina); desmarcada, mostra só o banco. As duas são independentes e valem na hora.
         </p>
 
         <ul className="mt-3 divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -113,7 +113,7 @@ export function CollectPanel({ onUnauthorized }: { onUnauthorized: () => void })
 
         <div className="mt-1 border-t border-zinc-200 pt-3 text-xs text-zinc-500 dark:border-zinc-800">
           {!active.length ? (
-            'Nenhuma loja ligada: as lojas só são consultadas pela busca por texto ou em "Varrer agora".'
+            'Nenhuma loja ligada: as lojas só são consultadas pela busca por texto ou na "Varredura completa".'
           ) : (
             <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
               {routine.busy && (
@@ -124,6 +124,13 @@ export function CollectPanel({ onUnauthorized }: { onUnauthorized: () => void })
               <span>{routine.lastTickAt ? `Última rodada ${formatWhen(routine.lastTickAt)}` : 'Primeira rodada em instantes'}</span>
               {routine.nextTickAt && <span>Próxima {formatWhen(routine.nextTickAt)}</span>}
             </span>
+          )}
+          {routine.nightly && (
+            <p className="mt-1">
+              {routine.nightly.hour === null
+                ? 'Varredura completa de madrugada: desligada (NIGHTLY_SWEEP_HOUR no .env).'
+                : `Varredura completa de madrugada: todo dia às ${String(routine.nightly.hour).padStart(2, '0')}:00, em todas as lojas (pausa as rotinas de preços e de fichas e volta cada uma a como estava)${routine.nightly.nextAt ? `; próxima ${formatWhen(routine.nightly.nextAt)}` : ''}${routine.nightly.lastAt ? `; última ${formatWhen(routine.nightly.lastAt)}` : ''}.`}
+            </p>
           )}
         </div>
       </section>
@@ -151,7 +158,7 @@ function ModeSeconds({ seconds, onSave }: { seconds: Record<RoutineMode, number>
         if (valid && changed) onSave(parsed);
       }}
     >
-      <span className="w-full text-xs text-zinc-500">Segundos entre duas páginas de categoria em cada modo ({MODE_SECONDS_MIN} a {MODE_SECONDS_MAX}). Não afeta a busca por texto.</span>
+      <span className="w-full text-xs text-zinc-500">Segundos entre uma categoria e a próxima em cada modo ({MODE_SECONDS_MIN} a {MODE_SECONDS_MAX}). As páginas de uma mesma categoria seguem uma atrás da outra. Não afeta a busca por texto.</span>
       {ROUTINE_MODES.map((m) => (
         <label key={m} className="flex flex-col gap-1 text-xs text-zinc-500">
           {MODE_LABEL[m]}
@@ -177,7 +184,6 @@ function ModeSeconds({ seconds, onSave }: { seconds: Record<RoutineMode, number>
 }
 
 function StoreCard({ s, act }: { s: AdminStoreState; act: (fn: () => Promise<unknown>, ok: string) => Promise<void> }) {
-  const [category, setCategory] = useState<CategoryId>('gpu');
   const counts = s.last24h;
   const total = Object.values(counts).reduce((a, b) => a + (b ?? 0), 0);
 
@@ -196,6 +202,11 @@ function StoreCard({ s, act }: { s: AdminStoreState; act: (fn: () => Promise<unk
           {s.pagesUsed} de {s.pagesPerHour} <span className="text-zinc-500">(rotina até {s.routinePagesPerHour})</span>
         </Row>
         <Row k="Rotina">{s.inRoutine ? `sim, modo ${MODE_LABEL[s.mode].toLowerCase()}` : 'não'}</Row>
+        {s.fullSweep && (
+          <Row k="Varredura completa">
+            {CATEGORY_DEFS[s.fullSweep.category].name} ({s.fullSweep.index + 1} de {s.fullSweep.total})
+          </Row>
+        )}
         <Row k="Busca por texto">{s.live ? 'sim, na hora' : 'não (só o banco)'}</Row>
         <Row k="Fila">
           <span className="inline-flex items-center gap-1.5">
@@ -225,27 +236,20 @@ function StoreCard({ s, act }: { s: AdminStoreState; act: (fn: () => Promise<unk
         ))}
       </div>
 
-      <form
-        className="mt-3 flex gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void act(
-            () => adminApi<{ startsAt: string }>(`/stores/${s.id}/sweep`, { method: 'POST', body: { category } }),
-            `${s.name}: ${CATEGORY_DEFS[category].name.toLowerCase()} sendo lida do começo, na frente da rotina. As páginas aparecem em Consultas; a volta, em Cobertura.`,
-          );
-        }}
-      >
-        <select value={category} onChange={(e) => setCategory(e.target.value as CategoryId)} className="rounded-lg border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-950">
-          {ENABLED_CATEGORIES.map((c) => (
-            <option key={c} value={c}>
-              {CATEGORY_DEFS[c].name}
-            </option>
-          ))}
-        </select>
-        <Btn type="submit" disabled={!s.enabled || !!s.pause} title="Lê a categoria inteira nesta loja agora (até acabar o que está em estoque)">
-          <RefreshCw className="h-3.5 w-3.5" /> Varrer agora
+      <div className="mt-3 flex items-center gap-2">
+        <Btn
+          disabled={!s.enabled || !!s.pause || !!s.fullSweep}
+          title="Pausa a rotina de preços e a de fichas e lê todas as categorias desta loja, uma depois da outra, até o fim da lista: os esgotados também entram no banco (a rotina só lê o que está em estoque). No fim, cada rotina volta a como estava."
+          onClick={() =>
+            void act(
+              () => adminApi<{ startsAt: string }>(`/stores/${s.id}/sweep`, { method: 'POST' }),
+              `${s.name}: varredura completa começou (todas as categorias, esgotados também). As rotinas de preços e de fichas ficam pausadas até ela terminar e voltam sozinhas a como estavam. As páginas aparecem em Consultas; cada volta, em Cobertura.`,
+            )
+          }
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${s.fullSweep ? 'animate-spin' : ''}`} /> {s.fullSweep ? 'Varredura completa rodando' : 'Varredura completa'}
         </Btn>
-      </form>
+      </div>
     </Box>
   );
 }

@@ -23,8 +23,8 @@ export interface AdminDeps {
     storesState: () => AdminStoreState[];
     unpause: (id: StoreId) => boolean;
     pause: (id: StoreId, minutes: number) => void;
-    /** "Varrer agora": lê a categoria inteira na loja agora. */
-    sweep: (id: StoreId, category: CategoryId) => CollectNowResult;
+    /** "Varredura completa": desliga a rotina e lê todas as categorias da loja até o fim (esgotados também). */
+    sweep: (id: StoreId) => CollectNowResult;
     routine: () => RoutineInfo;
     setRoutine: (s: RoutineInput) => RoutineInfo;
   };
@@ -83,7 +83,6 @@ const SheetPageQuery = z.object({ store: z.enum(STORES), sku: z.string().regex(/
 const TimelineQuery = z.object({ hours: z.coerce.number().int().min(1).max(720).default(48) });
 
 const Pause = z.object({ minutes: z.number().int().min(5).max(7 * 24 * 60) });
-const Sweep = z.object({ category: z.enum(CATEGORIES) });
 const Routine = z.object({ enabled: z.boolean(), stores: z.array(z.enum(STORES)).max(STORES.length),
   modes: z.partialRecord(z.enum(STORES), z.enum(ROUTINE_MODES)).optional(),
   live: z.partialRecord(z.enum(STORES), z.boolean()).optional(),
@@ -191,12 +190,10 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
       });
       admin.post<{ Params: { id: string } }>('/stores/:id/sweep', async (req, reply) => {
         const id = storeParam(req.params.id);
-        const body = Sweep.safeParse(req.body);
         if (!id) return reply.code(404).send({ error: 'not-found' });
-        if (!body.success) return reply.code(400).send({ error: 'invalid', errors: ['Categoria obrigatória.'] });
-        const r = deps.ops.sweep(id, body.data.category);
+        const r = deps.ops.sweep(id);
         if (!r.ok) return reply.code(409).send({ error: 'rejected', errors: [r.error] });
-        req.log.info({ store: id, ...body.data }, 'admin: varrer agora');
+        req.log.info({ store: id }, 'admin: varredura completa');
         return r;
       });
 

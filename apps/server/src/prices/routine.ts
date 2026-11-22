@@ -1,7 +1,7 @@
 import { ENABLED_CATEGORIES, MODE_SECONDS_MAX, MODE_SECONDS_MIN, ROUTINE_MODES, STORES, type CategoryId, type RoutineInfo, type RoutineInput, type RoutineMode, type RoutineSettings, type StoreId } from '@upgradezin/shared';
 import { config } from '../config.ts';
 import { getDb } from '../db/instance.ts';
-import { backoffInfo, BlockedError, PageLimitError, pageLimitUntil, pagesUsed, registerSuccess } from '../pace.ts';
+import { backoffInfo, BlockedError, jitter, PageLimitError, pageLimitUntil, pagesUsed, registerSuccess, sleep } from '../pace.ts';
 import { ACTIVE_STORES, sweepPaths } from '../stores.ts';
 import { canSweep, collectSweepPage, withBrowserSession } from './collect.ts';
 import { nextSweep } from './sweep.ts';
@@ -13,8 +13,10 @@ import { nextSweep } from './sweep.ts';
  * consulta por vez por loja, e loja bloqueada fica parada até o fim da pausa; na fila da loja, a
  * busca por texto e o admin passam na frente da rotina.
  *
- * Cada loja tem seu modo (admin) e sua própria agenda: depois de cada página, espera os segundos do
- * modo (editáveis no admin; padrão ROUTINE_NORMAL_GAP_S / _REDUCED_ / _SLOW_) + até 20% aleatório.
+ * Cada vez de uma loja lê uma categoria inteira: todas as páginas com estoque, uma atrás da outra
+ * (com o intervalo de sempre entre páginas da loja, PAGE_DELAY_*), até o fim da volta da categoria.
+ * Depois espera os segundos do modo (editáveis no admin; padrão ROUTINE_NORMAL_GAP_S / _REDUCED_ /
+ * _SLOW_) + até 20% aleatório e passa à próxima categoria.
  * As fichas técnicas têm rotina própria (sheet-routine.ts). A busca por texto é outra chave por
  * loja (`live`): ligada, o "Não achou? Buscar nas lojas" vai à loja na hora.
  */
@@ -175,27 +177,50 @@ export function sweepPathCounts(store: StoreId): Partial<Record<CategoryId, numb
   return out;
 }
 
-/** Uma página de categoria da loja, se alguma está na hora. Retoma de onde parou. Devolve se foi à loja. */
-async function sweepOne(store: StoreId, signal: AbortSignal): Promise<boolean> {
-  const next = nextSweep(getDb(), store, sweepPathCounts(store), Date.now(), config.ROUTINE_REFRESH_H * 3_600_000, config.ROUTINE_RETRY_MIN * 60_000);
-  if (!next) return false;
+/** Teto de páginas numa vez da rotina (uma categoria inteira, todos os caminhos). */
+const MAX_PAGES_PER_TURN = 200;
+
+/**
+ * Uma categoria inteira da loja, se alguma está na hora: as páginas com estoque, uma atrás da outra
+ * (retoma de onde parou), até o fim da volta da categoria. Para antes se a loja entrar em pausa, o
+ * limite da hora acabar ou a rotina desligar. Devolve se foi à loja.
+ */
+async function sweepCategory(store: StoreId, signal: AbortSignal): Promise<boolean> {
+  const first = nextSweep(getDb(), store, sweepPathCounts(store), Date.now(), config.ROUTINE_REFRESH_H * 3_600_000, config.ROUTINE_RETRY_MIN * 60_000);
+  if (!first) return false;
+  const { category } = first;
+  let pages = 0;
+  let saved = 0;
   try {
-    const r = await collectSweepPage(store, next.category, next.path, next.page, signal);
-    registerSuccess(store);
-    const end = r.roundDone ? `; volta completa${r.outOfStock ? `, ${r.outOfStock} sem estoque agora` : ''}` : r.listEnded ? '; fim do caminho' : '';
-    console.info(`[rotina ${store}] ${next.category} caminho ${next.path + 1} pág ${next.page}: ${r.read} ofertas (${r.saved} gravadas)${end}`);
+    for (let n = 0; n < MAX_PAGES_PER_TURN && !signal.aborted; n++) {
+      if (n > 0) {
+        if (backoffInfo(store) || pageLimitUntil(store) || !hasBudget(store)) break;
+        await sleep(jitter(), signal);
+      }
+      const next = nextSweep(getDb(), store, { [category]: sweepPathCounts(store)[category] ?? 0 }, Date.now(), config.ROUTINE_REFRESH_H * 3_600_000, config.ROUTINE_RETRY_MIN * 60_000);
+      if (!next) break;
+      const r = await collectSweepPage(store, category, next.path, next.page, signal);
+      registerSuccess(store);
+      pages++;
+      saved += r.saved;
+      if (r.roundDone) {
+        console.info(`[rotina ${store}] ${category}: ${pages} página(s), ${saved} ofertas gravadas; volta completa${r.outOfStock ? `, ${r.outOfStock} sem estoque agora` : ''}`);
+        return true;
+      }
+    }
+    console.info(`[rotina ${store}] ${category}: ${pages} página(s), ${saved} ofertas gravadas; parou antes do fim (continua na próxima vez)`);
   } catch (err) {
-    if (!signal.aborted && !(err instanceof BlockedError) && !(err instanceof PageLimitError)) console.error(`[rotina ${store}] ${next.category} pág ${next.page}:`, err);
+    if (!signal.aborted && !(err instanceof BlockedError) && !(err instanceof PageLimitError)) console.error(`[rotina ${store}] ${category}:`, err);
   }
   return true;
 }
 
-/** A vez de uma loja: uma página de categoria e marca a próxima vez para o intervalo do modo depois que ela terminar. */
+/** A vez de uma loja: uma categoria inteira e marca a próxima vez para o intervalo do modo depois que ela terminar. */
 async function turn(store: StoreId, signal: AbortSignal): Promise<void> {
   if (backoffInfo(store) || pageLimitUntil(store) || !hasBudget(store)) {
     nextAt.set(store, Date.now() + IDLE_MS);
     return;
   }
-  const did = await sweepOne(store, signal);
+  const did = await sweepCategory(store, signal);
   nextAt.set(store, Date.now() + (did ? modeDelay(settings.seconds[settings.modes[store]]) : IDLE_MS));
 }

@@ -1,10 +1,11 @@
-import { CATEGORY_DEFS, ENABLED_CATEGORIES, type AdminStoreState, type CategoryId, type StoreId } from '@upgradezin/shared';
+import { ENABLED_CATEGORIES, type AdminStoreState, type CategoryId, type StoreId } from '@upgradezin/shared';
 import { config } from '../config.ts';
-import type { Db } from '../db/db.ts';
+import { deleteMeta, getMeta, setMeta, type Db } from '../db/db.ts';
 import { backoffInfo, BlockedError, jitter, PageLimitError, pagesUsed, queuedAt, registerSuccess, sleep } from '../pace.ts';
 import { attemptCounts, lastAttempt } from '../prices/attempts.ts';
 import { canReadSheet, canSweep, collectSweepPage, sheetOf, withBrowserSession } from '../prices/collect.ts';
-import { routineBusy, routineNextAt, routineSettings } from '../prices/routine.ts';
+import { routineBusy, routineNextAt, routineSettings, setRoutineSettings } from '../prices/routine.ts';
+import { setSheetRoutine, sheetRoutineSettings } from '../prices/sheet-routine.ts';
 import { restartSweep, sweepState } from '../prices/sweep.ts';
 import { ACTIVE_STORES, adminStores, sweepPaths } from '../stores.ts';
 
@@ -28,6 +29,7 @@ export function storesState(db: Db, now = Date.now()): AdminStoreState[] {
         mode: routine.modes[id],
         live: routine.live[id],
         busy: routineBusy(id),
+        fullSweep: fullSweepOf(id),
         queue: queuedAt(id),
         pause: bo ? { until: new Date(bo.until).toISOString(), step: bo.step, reason: bo.reason } : null,
         pagesUsed: pagesUsed(id),
@@ -47,45 +49,93 @@ export const stopAdminJobs = () => jobs.abort();
 
 export type CollectNowResult = { ok: true; startsAt: string } | { ok: false; error: string };
 
-/** Categorias sendo lidas pelo "varrer agora" (loja|categoria). */
-const sweeping = new Set<string>();
-
-/** Teto de páginas de uma volta do "varrer agora" (todos os caminhos juntos). */
-const SWEEP_NOW_MAX_PAGES = 200;
+/** Varredura completa em andamento, por loja: a categoria sendo lida e a posição dela na lista. */
+const fullSweeps = new Map<StoreId, { category: CategoryId; index: number; total: number }>();
 
 /**
- * "Varrer agora" (admin): lê a categoria inteira na loja agora, do começo (todos os caminhos, até
- * acabar o que está em estoque), uma página por vez na fila da loja, na frente da rotina, com o
- * intervalo e o limite por hora de sempre. Serve também para conferir um caminho novo. Loja em pausa
- * recusa. Responde na hora; as páginas aparecem em Consultas e a volta na Cobertura.
+ * Rotinas pausadas pela varredura completa: como estavam antes (meta "sweep-paused", para voltar ao
+ * normal mesmo se o servidor reiniciar no meio). A primeira varredura pausa; a última que acaba volta.
  */
-export function sweepNow(db: Db, store: StoreId, category: CategoryId, now = Date.now()): CollectNowResult {
+const PAUSED_KEY = 'sweep-paused';
+type PausedRoutines = { routine: boolean; sheets: boolean };
+
+function pauseRoutines(db: Db): void {
+  if (getMeta(db, PAUSED_KEY)) return;
+  const routine = routineSettings();
+  const sheets = sheetRoutineSettings();
+  const was: PausedRoutines = { routine: routine.enabled, sheets: sheets.enabled };
+  setMeta(db, PAUSED_KEY, JSON.stringify(was));
+  if (was.routine) setRoutineSettings({ ...routine, enabled: false });
+  if (was.sheets) setSheetRoutine({ enabled: false });
+}
+
+/** Volta as rotinas a como estavam antes da varredura completa (e apaga a marca). */
+export function resumeRoutines(db: Db): PausedRoutines | null {
+  const raw = getMeta(db, PAUSED_KEY);
+  if (!raw) return null;
+  const was = JSON.parse(raw) as PausedRoutines;
+  if (was.routine) setRoutineSettings({ ...routineSettings(), enabled: true });
+  if (was.sheets) setSheetRoutine({ enabled: true });
+  deleteMeta(db, PAUSED_KEY);
+  return was;
+}
+
+/** Varredura completa da loja agora (para o painel das lojas). */
+export const fullSweepOf = (store: StoreId) => fullSweeps.get(store) ?? null;
+
+/** Teto de páginas de uma categoria na varredura completa (todos os caminhos juntos; cada caminho vai até FULL_SWEEP_MAX_PAGES). */
+const FULL_SWEEP_CATEGORY_MAX_PAGES = 600;
+
+/**
+ * "Varredura completa" (admin): lê todas as categorias da loja, uma depois da outra, cada uma do
+ * começo até o fim da lista (todos os caminhos, esgotados também: anúncio novo esgotado entra no
+ * banco, para popular o catálogo com o que a loja tem; a rotina só lê o que está em estoque).
+ * Pausa a rotina de preços e a de fichas enquanto roda (para não disputar a loja nem pesar no
+ * servidor) e volta cada uma a como estava quando a última varredura completa acabar. Uma página por vez na fila da loja, com o intervalo e
+ * o limite por hora de sempre. Loja em pausa recusa. Responde na hora; as páginas aparecem em
+ * Consultas e cada volta na Cobertura.
+ */
+export function fullSweep(db: Db, store: StoreId, now = Date.now()): CollectNowResult {
   if (!ACTIVE_STORES.includes(store)) return { ok: false, error: 'Loja desligada ou não configurada.' };
-  if (!ENABLED_CATEGORIES.includes(category)) return { ok: false, error: 'Categoria inválida.' };
   if (!canSweep(store)) return { ok: false, error: 'Esta loja ainda não tem leitor de página de categoria.' };
-  if (!sweepPaths(store, category).length) return { ok: false, error: `Sem página de ${CATEGORY_DEFS[category].name.toLowerCase()} nesta loja: configure em Lojas.` };
-  const key = `${store}|${category}`;
-  if (sweeping.has(key)) return { ok: false, error: 'Essa categoria já está sendo lida agora.' };
+  const categories = ENABLED_CATEGORIES.filter((c) => sweepPaths(store, c).length);
+  if (!categories.length) return { ok: false, error: 'Nenhuma página de categoria configurada nesta loja: configure em Lojas.' };
+  if (fullSweeps.has(store)) return { ok: false, error: 'A varredura completa desta loja já está rodando.' };
   const bo = backoffInfo(store);
   if (bo) return { ok: false, error: `Loja em pausa até ${new Date(bo.until).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. Tire a pausa antes.` };
-  restartSweep(db, store, category);
-  sweeping.add(key);
+  pauseRoutines(db);
+  fullSweeps.set(store, { category: categories[0]!, index: 0, total: categories.length });
   void withBrowserSession(async () => {
-    for (let n = 0; n < SWEEP_NOW_MAX_PAGES && !jobs.signal.aborted; n++) {
-      if (n > 0) await sleep(jitter(), jobs.signal);
-      const s = sweepState(db, store, category);
-      const r = await collectSweepPage(store, category, s.path ?? 0, s.page, jobs.signal, { origin: 'admin' });
-      registerSuccess(store);
-      if (r.roundDone) {
-        console.info(`[admin ${store}] ${category}: volta completa${r.outOfStock ? `, ${r.outOfStock} sem estoque agora` : ''}`);
-        break;
+    for (const [index, category] of categories.entries()) {
+      if (jobs.signal.aborted) break;
+      fullSweeps.set(store, { category, index, total: categories.length });
+      restartSweep(db, store, category, { full: true });
+      try {
+        for (let n = 0; n < FULL_SWEEP_CATEGORY_MAX_PAGES && !jobs.signal.aborted; n++) {
+          if (n > 0) await sleep(jitter(), jobs.signal);
+          const s = sweepState(db, store, category);
+          const r = await collectSweepPage(store, category, s.path ?? 0, s.page, jobs.signal, { origin: 'admin' });
+          registerSuccess(store);
+          if (r.roundDone) {
+            console.info(`[admin ${store}] varredura completa, ${category}: volta completa${r.outOfStock ? `, ${r.outOfStock} sem estoque agora` : ''}`);
+            break;
+          }
+        }
+      } catch (err) {
+        // Bloqueio ou limite da hora: para a loja inteira; erro numa categoria: segue para a próxima.
+        if (jobs.signal.aborted || err instanceof BlockedError || err instanceof PageLimitError) throw err;
+        console.warn(`[admin ${store}] varredura completa, ${category}:`, err instanceof Error ? err.message : err);
       }
     }
   })
     .catch((err) => {
-      if (!jobs.signal.aborted && !(err instanceof BlockedError) && !(err instanceof PageLimitError)) console.warn(`[admin ${store}] ${category}:`, err instanceof Error ? err.message : err);
+      if (!jobs.signal.aborted) console.warn(`[admin ${store}] varredura completa parou:`, err instanceof Error ? err.message : err);
     })
-    .finally(() => sweeping.delete(key));
+    .finally(() => {
+      fullSweeps.delete(store);
+      // Servidor desligando: a marca fica no banco e as rotinas voltam ao subir (resumeRoutines no index).
+      if (!fullSweeps.size && !jobs.signal.aborted) resumeRoutines(db);
+    });
   return { ok: true, startsAt: new Date(now).toISOString() };
 }
 
@@ -110,4 +160,9 @@ export function readSheetNow(db: Db, store: StoreId, sku: string): CollectNowRes
       if (!jobs.signal.aborted) console.warn(`[admin ${store}] ficha ${sku}:`, err instanceof Error ? err.message : err);
     });
   return { ok: true, startsAt: new Date().toISOString() };
+}
+
+/** Varredura completa em todas as lojas ligadas que sabem ler página de categoria (a da madrugada). */
+export function fullSweepAll(db: Db): { store: StoreId; result: CollectNowResult }[] {
+  return ACTIVE_STORES.filter((store) => canSweep(store)).map((store) => ({ store, result: fullSweep(db, store) }));
 }

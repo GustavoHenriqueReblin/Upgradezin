@@ -6,7 +6,9 @@ import { attemptCounts, lastAttempt, listAttempts, onAttempt, pageAttempts, reco
 import { attemptOutcome } from '../prices/collect.ts';
 import { isLive, modeDelay, routineInfo, routineNextAt, routineSettings, setRoutineSettings, stopRoutine, tick, useRoutineStorage } from '../prices/routine.ts';
 import { useStoreStorage } from '../stores.ts';
-import { readSheetNow, storesState, sweepNow } from './actions.ts';
+import { fullSweep, fullSweepAll, fullSweepOf, readSheetNow, resumeRoutines, storesState } from './actions.ts';
+import { setSheetRoutine, sheetRoutineSettings, stopSheetRoutine, useSheetRoutineStorage } from '../prices/sheet-routine.ts';
+import { getMeta, setMeta } from '../db/db.ts';
 import { usePageLoader } from '../browser.ts';
 import { fixture } from '../adapters/fixtures.ts';
 import { getDb } from '../db/instance.ts';
@@ -163,34 +165,106 @@ describe('rotina pelo admin', () => {
   });
 });
 
-describe('varrer agora e painel das lojas', () => {
-  it('recusa loja em pausa, categoria sem página na loja e loja desconhecida, sem ir à loja', () => {
+describe('varredura completa e painel das lojas', () => {
+  it('recusa loja em pausa, loja sem página de categoria e loja desconhecida, sem ir à loja nem mexer na rotina', () => {
     const db = openDb(':memory:');
     useStoreStorage(db);
     useBackoffStorage([], () => {});
     pauseStore('s1', 60);
-    expect(sweepNow(db, 's1', 'cpu')).toMatchObject({ ok: false, error: expect.stringContaining('pausa') });
+    expect(fullSweep(db, 's1')).toMatchObject({ ok: false, error: expect.stringContaining('pausa') });
     clearBackoff('s1');
-    expect(sweepNow(db, 's1', 'gpu')).toMatchObject({ ok: false, error: expect.stringContaining('Sem página') });
-    expect(sweepNow(db, 's9' as 's1', 'cpu')).toMatchObject({ ok: false });
+    expect(fullSweep(db, 's2')).toMatchObject({ ok: false, error: expect.stringContaining('Nenhuma página') });
+    expect(fullSweep(db, 's9' as 's1')).toMatchObject({ ok: false });
+    expect(fullSweepOf('s1')).toBeNull();
   });
 
-  it('lê a categoria inteira do começo, na frente da rotina; a mesma categoria não roda duas vezes ao mesmo tempo', async () => {
+  it('pausa a rotina de preços e a de fichas, lê todas as categorias da loja até o fim (esgotados também), uma depois da outra, e volta cada rotina a como estava', async () => {
     const db = getDb();
     useStoreStorage(db);
     useBackoffStorage([], () => {});
+    useRoutineStorage(null, () => {});
+    useSheetRoutineStorage(null, () => {});
+    setRoutineSettings({ enabled: true, stores: ['s3'] });
+    setSheetRoutine({ enabled: true, stores: ['s3'] });
     const urls: string[] = [];
     usePageLoader(async (_store, url) => {
       urls.push(url);
       return { html: fixture('s1-cpu.html'), url, title: '' };
     });
     try {
-      expect(sweepNow(db, 's1', 'cpu')).toMatchObject({ ok: true });
-      expect(sweepNow(db, 's1', 'cpu')).toMatchObject({ ok: false, error: expect.stringContaining('já está sendo lida') });
-      for (let i = 0; i < 300 && !sweepState(db, 's1', 'cpu').doneAt; i++) await new Promise((r) => setTimeout(r, 10));
+      expect(fullSweep(db, 's1')).toMatchObject({ ok: true });
+      expect(routineSettings().enabled).toBe(false);
+      expect(sheetRoutineSettings().enabled).toBe(false);
+      expect(JSON.parse(getMeta(db, 'sweep-paused')!)).toEqual({ routine: true, sheets: true }); // sobrevive a um reinício
+      expect(fullSweepOf('s1')).toMatchObject({ category: 'cpu', index: 0, total: 2 });
+      expect(storesState(db).find((x) => x.id === 's1')?.fullSweep).toMatchObject({ total: 2 });
+      expect(fullSweep(db, 's1')).toMatchObject({ ok: false, error: expect.stringContaining('já está rodando') });
+      for (let i = 0; i < 500 && fullSweepOf('s1'); i++) await new Promise((r) => setTimeout(r, 10));
+      expect(fullSweepOf('s1')).toBeNull();
+      // As duas categorias da loja (processadores e fontes), cada uma até a última página da lista (6).
       expect(sweepState(db, 's1', 'cpu').doneAt).toBeTruthy();
-      expect(urls[0]).toContain('/hardware/processadores?page_number=1');
-      expect(listAttempts(db, { limit: 5 }).some((a) => a.kind === 'sweep' && a.origin === 'admin')).toBe(true);
+      expect(sweepState(db, 's1', 'psu').doneAt).toBeTruthy();
+      expect(urls.filter((u) => u.includes('/hardware/processadores')).length).toBe(6);
+      expect(urls.filter((u) => u.includes('/hardware/fontes')).length).toBe(6);
+      expect(listAttempts(db, { limit: 5 }).some((x) => x.kind === 'sweep' && x.origin === 'admin')).toBe(true);
+      expect(routineSettings().enabled).toBe(true);
+      expect(sheetRoutineSettings().enabled).toBe(true);
+      expect(getMeta(db, 'sweep-paused')).toBeUndefined();
+    } finally {
+      usePageLoader(null);
+      setRoutineSettings({ enabled: false, stores: [] });
+      stopRoutine();
+      setSheetRoutine({ enabled: false });
+      stopSheetRoutine();
+    }
+  });
+
+  it('reinício no meio da varredura: ao subir, cada rotina volta a como estava antes dela', () => {
+    const db = openDb(':memory:');
+    useRoutineStorage(null, () => {});
+    useSheetRoutineStorage(null, () => {});
+    setRoutineSettings({ enabled: false, stores: ['s3'] });
+    setSheetRoutine({ enabled: false, stores: ['s3'] });
+    setMeta(db, 'sweep-paused', JSON.stringify({ routine: true, sheets: false }));
+    expect(resumeRoutines(db)).toEqual({ routine: true, sheets: false });
+    expect(routineSettings().enabled).toBe(true);
+    expect(sheetRoutineSettings().enabled).toBe(false);
+    expect(getMeta(db, 'sweep-paused')).toBeUndefined();
+    expect(resumeRoutines(db)).toBeNull();
+    setRoutineSettings({ enabled: false, stores: [] });
+    stopRoutine();
+  });
+
+  it('madrugada: varredura completa em todas as lojas que leem página de categoria; a loja que recusa não impede as outras', async () => {
+    const db = openDb(':memory:');
+    useStoreStorage(db);
+    useBackoffStorage([], () => {});
+    pauseStore('s3', 60);
+    usePageLoader(async (_store, url) => ({ html: fixture('s1-cpu.html'), url, title: '' }));
+    try {
+      const r = fullSweepAll(db);
+      expect(r.find((x) => x.store === 's3')?.result).toMatchObject({ ok: false, error: expect.stringContaining('pausa') });
+      expect(r.find((x) => x.store === 's1')?.result).toMatchObject({ ok: true });
+      for (let i = 0; i < 500 && fullSweepOf('s1'); i++) await new Promise((res) => setTimeout(res, 10));
+      expect(fullSweepOf('s1')).toBeNull();
+    } finally {
+      clearBackoff('s3');
+      usePageLoader(null);
+    }
+  });
+
+  it('rotina desligada antes: continua desligada no fim', async () => {
+    const db = getDb();
+    useStoreStorage(db);
+    useBackoffStorage([], () => {});
+    useRoutineStorage(null, () => {});
+    setRoutineSettings({ enabled: false, stores: [] });
+    usePageLoader(async (_store, url) => ({ html: fixture('s1-cpu.html'), url, title: '' }));
+    try {
+      expect(fullSweep(db, 's1')).toMatchObject({ ok: true });
+      for (let i = 0; i < 500 && fullSweepOf('s1'); i++) await new Promise((r) => setTimeout(r, 10));
+      expect(fullSweepOf('s1')).toBeNull();
+      expect(routineSettings().enabled).toBe(false);
     } finally {
       usePageLoader(null);
     }

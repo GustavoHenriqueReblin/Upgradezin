@@ -118,6 +118,8 @@ const Env = z.object({
     .optional()
     .transform((v) => v === '1' || v === 'true'),
   SHEET_ROUTINE_SECONDS: z.coerce.number().int().default(180),
+  /** Hora (0-23, horário do servidor) da varredura completa automática de madrugada, antes do backup do cron (04:30). -1 desliga. */
+  NIGHTLY_SWEEP_HOUR: z.coerce.number().int().min(-1).max(23).default(1),
   /** Teto de páginas por caminho de categoria numa volta (120 itens por página na S1, 36 na S2, ~150 na S3). */
   ROUTINE_SWEEP_MAX_PAGES: z.coerce.number().default(40),
   /** Intervalo aleatório entre páginas da MESMA loja. */

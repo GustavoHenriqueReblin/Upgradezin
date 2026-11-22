@@ -14,6 +14,10 @@ import { hasListing, markOutOfStock, saveCollection } from './prices.ts';
  * de uma volta completa, o que estava em estoque e não apareceu na volta passa a "sem estoque"
  * (markOutOfStock). Voltou ao estoque: a próxima volta o encontra entre os em estoque.
  *
+ * Volta completa ("varrer agora" do admin, `full`): lê cada caminho até o fim da lista, esgotados
+ * também, e grava anúncio novo mesmo esgotado (para popular o banco com o que a loja tem). O modo fica
+ * no estado da volta, então uma página que a rotina leia no meio dela segue a mesma regra.
+ *
  * Estado por loja e categoria em meta ("sweep:<loja>:<categoria>").
  */
 export interface SweepState {
@@ -29,7 +33,12 @@ export interface SweepState {
   doneAt?: string;
   /** Última falha (erro que não é bloqueio): a categoria espera antes de tentar de novo. */
   failedAt?: string;
+  /** Volta completa: até o fim da lista, esgotados também. */
+  full?: boolean;
 }
+
+/** Teto de páginas por caminho numa volta completa. */
+export const FULL_SWEEP_MAX_PAGES = 200;
 
 const key = (store: StoreId, category: CategoryId) => `sweep:${store}:${category}`;
 
@@ -43,9 +52,12 @@ const saveState = (db: Db, store: StoreId, category: CategoryId, s: SweepState) 
 /** Volta em andamento (já leu alguma página). */
 export const inProgress = (s: SweepState) => (s.path ?? 0) > 0 || s.page > 1;
 
-/** Recomeça a categoria do começo agora ("varrer agora" do admin): a volta seguinte não espera o intervalo. */
-export function restartSweep(db: Db, store: StoreId, category: CategoryId): void {
-  saveState(db, store, category, { page: 1 });
+/**
+ * Recomeça a categoria do começo agora ("varrer agora" do admin): a volta seguinte não espera o
+ * intervalo. `full`: volta completa, até o fim da lista (esgotados também).
+ */
+export function restartSweep(db: Db, store: StoreId, category: CategoryId, opts: { full?: boolean } = {}): void {
+  saveState(db, store, category, { page: 1, ...(opts.full && { full: true }) });
 }
 
 /**
@@ -98,22 +110,26 @@ export interface SweepPageRun {
  * anúncios passaram a "sem estoque" no fim dela.
  */
 export function recordSweepPage(db: Db, run: SweepPageRun): { saved: number; listEnded: boolean; roundDone: boolean; outOfStock: number } {
-  const { store, category, path, paths, page, totalPages, maxPages, inStock, offers, at } = run;
-  // Esgotado só atualiza o anúncio que já existe (não cria anúncio novo de produto que não dá para comprar).
-  const keep = offers.filter((o) => o.inStock || hasListing(db, store, o.storeSku));
-  saveCollection(db, { store, category, offers: keep, at });
+  const { store, category, path, paths, page, totalPages, inStock, offers, at } = run;
   const prev = sweepState(db, store, category);
+  const full = !!prev.full;
+  const maxPages = full ? Math.max(run.maxPages, FULL_SWEEP_MAX_PAGES) : run.maxPages;
+  // Esgotado só atualiza o anúncio que já existe (não cria anúncio novo de produto que não dá para
+  // comprar), menos na volta completa, que serve para popular o banco com tudo o que a loja tem.
+  const keep = full ? offers : offers.filter((o) => o.inStock || hasListing(db, store, o.storeSku));
+  saveCollection(db, { store, category, offers: keep, at });
   const started = inProgress(prev) && prev.startedAt ? prev.startedAt : at;
   // Volta começada antes de o início ser guardado: não dá para saber o que ela já viu, então o fim
   // dela não marca nada como esgotado (antes, marcava tudo o que não estava na última página).
   const capped = inProgress(prev) && (!!prev.capped || !prev.startedAt);
-  const atCap = page >= maxPages && page < totalPages && inStock > 0;
-  const listEnded = inStock === 0 || page >= totalPages || page >= maxPages;
+  const atCap = page >= maxPages && page < totalPages && (full || inStock > 0);
+  const listEnded = (!full && inStock === 0) || page >= totalPages || page >= maxPages;
+  const mode = full ? { full: true } : {};
   let outOfStock = 0;
   if (!listEnded) {
-    saveState(db, store, category, { path, page: page + 1, startedAt: started, capped, doneAt: prev.doneAt });
+    saveState(db, store, category, { path, page: page + 1, startedAt: started, capped, doneAt: prev.doneAt, ...mode });
   } else if (path + 1 < paths) {
-    saveState(db, store, category, { path: path + 1, page: 1, startedAt: started, capped: capped || atCap, doneAt: prev.doneAt });
+    saveState(db, store, category, { path: path + 1, page: 1, startedAt: started, capped: capped || atCap, doneAt: prev.doneAt, ...mode });
   } else {
     if (!capped && !atCap) outOfStock = markOutOfStock(db, store, category, started, at);
     saveState(db, store, category, { page: 1, doneAt: at });

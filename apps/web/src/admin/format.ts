@@ -113,7 +113,7 @@ export function queueLabel(q: { priority: number; routine: number }): string {
 
 /** O que o modo faz, com os segundos que o servidor usa. */
 export function modeHint(mode: RoutineMode, seconds: Record<RoutineMode, number>): string {
-  return `rotina: 1 termo a cada ${shortDuration(seconds[mode])}`;
+  return `rotina: 1 categoria a cada ${shortDuration(seconds[mode])}`;
 }
 
 /** Unidades do intervalo da rotina de fichas no admin. */

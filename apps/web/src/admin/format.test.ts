@@ -79,9 +79,9 @@ describe('rotina: contagem e modos', () => {
 
   it('texto de cada modo com os segundos do servidor', () => {
     const s = { normal: 15, reduced: 20, slow: 60 };
-    expect(modeHint('normal', s)).toBe('rotina: 1 termo a cada 15 s');
-    expect(modeHint('reduced', s)).toBe('rotina: 1 termo a cada 20 s');
-    expect(modeHint('slow', s)).toBe('rotina: 1 termo a cada 1 min');
+    expect(modeHint('normal', s)).toBe('rotina: 1 categoria a cada 15 s');
+    expect(modeHint('reduced', s)).toBe('rotina: 1 categoria a cada 20 s');
+    expect(modeHint('slow', s)).toBe('rotina: 1 categoria a cada 1 min');
     expect(modeHint('slow', { ...s, slow: 90 })).toContain('1 min 30 s');
   });
 });

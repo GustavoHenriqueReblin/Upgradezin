@@ -101,7 +101,7 @@ function makeApp() {
       storesState: () => [],
       unpause: (id) => (calls.push(['unpause', id]), true),
       pause: (id, minutes) => void calls.push(['pause', id, minutes]),
-      sweep: (id, category) => (calls.push(['sweep', id, category]), id === 's3' ? { ok: false, error: 'Loja em pausa.' } : { ok: true, startsAt: '2026-11-20T21:00:00.000Z' }),
+      sweep: (id) => (calls.push(['sweep', id]), id === 's3' ? { ok: false as const, error: 'Loja em pausa.' } : { ok: true as const, startsAt: '2026-11-20T21:00:00.000Z' }),
       routine: () => routine,
       setRoutine: (s) => (calls.push(['routine', s]), { ...routine, ...s, modes: { ...routine.modes, ...s.modes }, live: { ...routine.live, ...s.live }, seconds: { ...routine.seconds, ...s.seconds } }),
     },
@@ -244,14 +244,14 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     expect(calls).toEqual([['unpause', 's2'], ['pause', 's2', 60]]);
   });
 
-  it('varrer agora: aceito com o horário; recusado (409) com o motivo', async () => {
+  it('varredura completa: aceita com o horário; recusada (409) com o motivo; loja desconhecida, 404', async () => {
     const { post } = await setup();
-    const ok = await post('/api/admin/stores/s1/sweep', { category: 'gpu' });
+    const ok = await post('/api/admin/stores/s1/sweep');
     expect(ok.json()).toEqual({ ok: true, startsAt: '2026-11-20T21:00:00.000Z' });
-    const no = await post('/api/admin/stores/s3/sweep', { category: 'gpu' });
+    const no = await post('/api/admin/stores/s3/sweep');
     expect(no.statusCode).toBe(409);
     expect(no.json().errors).toEqual(['Loja em pausa.']);
-    expect((await post('/api/admin/stores/s1/sweep', { category: 'inventada' })).statusCode).toBe(400);
+    expect((await post('/api/admin/stores/s9/sweep')).statusCode).toBe(404);
     expect((await post('/api/admin/stores/s1/collect', { category: 'gpu', term: 'RTX 3050' })).statusCode).toBe(404); // rota antiga saiu
   });
 

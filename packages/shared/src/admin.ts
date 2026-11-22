@@ -142,6 +142,8 @@ export interface RoutineInfo extends RoutineSettings {
   lastTickAt: string | null;
   /** A próxima vez que alguma loja da rotina consulta. */
   nextTickAt: string | null;
+  /** Varredura completa automática de madrugada: hora (null = desligada), próxima e última vez. */
+  nightly?: { hour: number | null; nextAt: string | null; lastAt: string | null };
 }
 
 /** Situação de uma loja agora, para o painel do admin. */
@@ -162,6 +164,8 @@ export interface AdminStoreState {
    * a vez. `priority`: busca por texto, "varrer agora" e ficha técnica (passam na frente); `routine`: rotina.
    */
   queue: { running: boolean; priority: number; routine: number };
+  /** Varredura completa em andamento (todas as categorias, esgotados também): a categoria sendo lida e a posição dela. */
+  fullSweep: { category: CategoryId; index: number; total: number } | null;
   /** Pausa valendo agora (bloqueio ou manual, reason "paused"). step -1: pausa manual sem bloqueio antes. */
   pause: { until: string; step: number; reason: BlockReason } | null;
   /** Páginas pedidas na última hora e os limites. */

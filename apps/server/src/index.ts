@@ -4,7 +4,8 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { z } from 'zod';
 import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, pickUpgrades, STORES, type CategoryId, type Offer, type SheetRoutineStatus, type StoreId } from '@upgradezin/shared';
-import { readSheetNow, stopAdminJobs, storesState, sweepNow } from './admin/actions.ts';
+import { fullSweep, fullSweepAll, readSheetNow, resumeRoutines, stopAdminJobs, storesState } from './admin/actions.ts';
+import { nightlySchedule, startNightlySweep, stopNightlySweep } from './admin/nightly.ts';
 import { listProducts } from './admin/products.ts';
 import { listSheetProducts, sheetPageText, sheetStoreStatus } from './admin/sheets.ts';
 import { AdminAuth, MIN_PASSWORD } from './admin/auth.ts';
@@ -125,8 +126,8 @@ if (AdminAuth.isConfigured(config.ADMIN_USER, config.ADMIN_PASSWORD)) {
       storesState: () => storesState(getDb()),
       unpause: clearBackoff,
       pause: (id, minutes) => void pauseStore(id, minutes),
-      sweep: (id, category) => sweepNow(getDb(), id, category),
-      routine: routineInfo,
+      sweep: (id) => fullSweep(getDb(), id),
+      routine: () => ({ ...routineInfo(), nightly: { ...nightlySchedule(), lastAt: getMeta(getDb(), 'nightly-sweep') ?? null } }),
       setRoutine: (s) => (setRoutineSettings(s), routineInfo()),
     },
     products: { list: (f) => listProducts(getDb(), f) },
@@ -388,6 +389,7 @@ const shutdown = async () => {
   setTimeout(() => process.exit(1), 10_000).unref();
   stopRoutine();
   stopSheetRoutine();
+  stopNightlySweep();
   stopProductKeys();
   stopAdminJobs();
   stopBackgroundSearches();
@@ -401,7 +403,21 @@ process.on('SIGTERM', shutdown);
 
 await app.listen({ port: config.PORT, host: config.HOST });
 app.log.info(`Upgradezin v${VERSION}`);
+// Varredura completa interrompida por um reinício: as rotinas voltam a como estavam antes dela.
+{
+  const was = resumeRoutines(getDb());
+  if (was) app.log.info(`Varredura completa interrompida: rotinas de volta (preços ${was.routine ? 'ligada' : 'desligada'}, fichas ${was.sheets ? 'ligada' : 'desligada'}).`);
+}
 startRoutine();
 startSheetRoutine();
+// Varredura completa automática de madrugada (antes do backup do cron).
+startNightlySweep(
+  config.NIGHTLY_SWEEP_HOUR,
+  () => {
+    const started = fullSweepAll(getDb());
+    app.log.info(`Varredura da madrugada: ${started.map((x) => `${x.store} ${x.result.ok ? 'começou' : `não começou (${x.result.error})`}`).join(', ') || 'nenhuma loja'}`);
+  },
+  (at) => setMeta(getDb(), 'nightly-sweep', at.toISOString()),
+);
 // Mesmo produto em lojas diferentes: chaves recalculadas ao subir e depois das coletas.
 stopProductKeys = startProductKeys(getDb);
