@@ -3,6 +3,7 @@ import { s1 } from '../adapters/s1.ts';
 import { s2 } from '../adapters/s2.ts';
 import { s3 } from '../adapters/s3.ts';
 import type { SearchContext, StoreAdapter } from '../adapters/types.ts';
+import { lastPageHtml, saveDebugHtml } from '../browser.ts';
 import { config } from '../config.ts';
 import { getDb } from '../db/instance.ts';
 import { BlockedError, PageLimitError, registerBlock, SearchRedirectError, withStore } from '../pace.ts';
@@ -177,6 +178,8 @@ export async function sheetOf(
       const html = await adapter.productSheet!({ sku, ...(url && { url }) }, signal);
       const sheet = html ? parseSpecSheet(category, html) : { specs: {} };
       saveSheet(db, store, sku, sheet);
+      // Ficha sem nenhuma medida: guarda a página inteira para conferir se faltou no anúncio ou no leitor (só com DEBUG_DUMPS).
+      if (!Object.keys(sheet.specs).length) await saveDebugHtml(store, lastPageHtml(store) ?? html ?? '', `ficha-${category}-${sku}`);
       logAttempt(base, t0, { count: html ? 1 : 0 });
       return sheet;
     } catch (err) {

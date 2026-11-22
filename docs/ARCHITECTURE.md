@@ -162,7 +162,7 @@ Adapters não conhecem cache, fila nem navegador: montam a URL, chamam `takePage
 
 ### 4.6 Falhas e depuração
 
-- Com `DEBUG_DUMPS=1`, página sem itens esperados ou bloqueada gera HTML + screenshot em `data/debug/` (fora do git).
+- Com `DEBUG_DUMPS=1`, página sem itens esperados ou bloqueada gera HTML + screenshot em `data/debug/` (fora do git). Ficha técnica que vem sem nenhuma medida também guarda a página inteira (`<data>-<loja>-ficha-<categoria>-<código>.html`), para conferir se a medida faltou no anúncio ou no leitor.
 - `pnpm scan <termo>[,<termo>…] [--category=<categoria>] [--stores=s1,s2] [--json] [--top=N]` roda a busca pelo terminal (sempre consulta as lojas e grava no banco, como `force=1`).
 - `pnpm scan --sweep [--category=<categoria>] [--stores=s1]` lê a primeira página de cada caminho de varredura (configuração da loja no admin, aba Lojas), sem gravar, para conferir.
 - `pnpm routine-test [--stores=s2,s3] [--categories=gpu,ssd] [--keep-open]` roda a rotina de verdade (um termo por categoria em cada loja, pelo mesmo `collectTerm`) e salva um relatório por loja e categoria em `data/debug/`.

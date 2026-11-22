@@ -144,7 +144,20 @@ const realLoader: Loader = (store, url, opts) =>
 let loader: Loader = realLoader;
 
 /** Abre a página na loja (aba nova no Chrome dela), lê e fecha a aba. Único caminho até as lojas. */
-export const loadPage = (store: StoreId, url: string, opts: LoadOptions = {}): Promise<LoadedPage> => loader(store, url, opts);
+/** Última página lida em cada loja (uma por loja: a fila da loja lê uma página por vez). */
+const lastPages = new Map<StoreId, LoadedPage>();
+
+export async function loadPage(store: StoreId, url: string, opts: LoadOptions = {}): Promise<LoadedPage> {
+  const page = await loader(store, url, opts);
+  lastPages.set(store, page);
+  return page;
+}
+
+/**
+ * HTML inteiro da última página lida na loja. Dentro da vez da loja (withStore), é a página que
+ * a consulta acabou de abrir: a ficha guarda a página quando vem vazia (DEBUG_DUMPS).
+ */
+export const lastPageHtml = (store: StoreId): string | undefined => lastPages.get(store)?.html;
 
 /** Testes: troca o Chrome por uma função que devolve a página (null volta ao Chrome). */
 export function usePageLoader(fake: Loader | null) {
