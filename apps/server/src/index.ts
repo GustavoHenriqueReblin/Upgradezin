@@ -23,7 +23,8 @@ import { clearBackoff, pauseStore, useBackoffStorage, type Backoff } from './pac
 import { closeDb, getDb } from './db/instance.ts';
 import { activeSessions, canReadSheet, sheetOf } from './prices/collect.ts';
 import { listingBrands, listingsHistory, recentOffers } from './prices/prices.ts';
-import { getSheet } from './prices/sheets.ts';
+import { productSheet } from './prices/sheets.ts';
+import { startProductKeys } from './prices/identity.ts';
 import { setSheetRoutine, sheetNextAt, sheetRoutineBusy, sheetRoutineSettings, startSheetRoutine, stopSheetRoutine, useSheetRoutineStorage } from './prices/sheet-routine.ts';
 import { routineInfo, routineSettings, setRoutineSettings, startRoutine, stopRoutine, useRoutineStorage } from './prices/routine.ts';
 import { runSearch, stopBackgroundSearches, storedList } from './search.ts';
@@ -206,7 +207,7 @@ app.get('/api/sheets', async (req, reply) => {
       out[item] = null;
       continue;
     }
-    const cached = getSheet(db, store, sku, since);
+    const cached = productSheet(db, store, sku, since)?.sheet; // a do anúncio ou a de outro anúncio do mesmo produto
     if (cached) out[item] = cached;
     else if (sheetLimiter.take(ip)) {
       const sheet = await sheetOf(store, sku, category, ac.signal).catch(() => undefined);
@@ -409,11 +410,15 @@ if (existsSync(webDist)) {
   );
 }
 
+/** Para o recálculo das chaves de produto (ligado depois de subir). */
+let stopProductKeys = () => {};
+
 const shutdown = async () => {
   // Garantia: se algo travar ao fechar, sai mesmo assim (antes do SIGKILL do systemd, 90 s).
   setTimeout(() => process.exit(1), 10_000).unref();
   stopRoutine();
   stopSheetRoutine();
+  stopProductKeys();
   stopAdminJobs();
   stopBackgroundSearches();
   await closeBrowser();
@@ -428,3 +433,5 @@ await app.listen({ port: config.PORT, host: config.HOST });
 app.log.info(`Upgradezin v${VERSION}`);
 startRoutine();
 startSheetRoutine();
+// Mesmo produto em lojas diferentes: chaves recalculadas ao subir e depois das coletas.
+stopProductKeys = startProductKeys(getDb);

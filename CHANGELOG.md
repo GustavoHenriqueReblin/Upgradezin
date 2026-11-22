@@ -5,6 +5,7 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 ## [Não lançado]
 
 ### Adicionado
+- Mesmo produto em lojas diferentes: chave de produto por anúncio (mesmo part number, também achado no título ou no endereço de outra loja, sem o "NAC" que uma loja põe no fim) e de grupo (mais EAN, chave do título e assinatura de placa de vídeo: marca + chip + memória + linha). Nas placas de vídeo, os anúncios casados com outra loja foram de 24% para 35% (exato) e de 37% para 44% (grupo). A ficha técnica passa a valer para todos os anúncios do mesmo produto: 190 anúncios ganharam ficha de outra loja na hora, e a rotina não abre a página de produto já coberto. Admin, Produtos: status "de outra loja", de onde veio a ficha e os outros anúncios do mesmo produto. A busca agrupa com as mesmas regras (e deixa de juntar variantes como "Infinity 2" e "Infinity 3", "Ventus 2X" e "3X", DDR4 e DDR5).
 - Identificar Gargalo: cada dica de upgrade mostra as 5 melhores ofertas de agora. Processador e placa de vídeo ordenados por desempenho ganho por real (só os compatíveis: placa que cabe na fonte, processador aceito pela placa-mãe, com aviso quando pede BIOS nova), com o ganho estimado; memória, fonte e SSD, as mais baratas que servem. Tudo do banco, sem consultar loja.
 - Admin, cobertura: modelos de processador e placa de vídeo à venda que a tabela de desempenho não conhece.
 - Tabela de desempenho: placas antigas ainda à venda (GT 210 a GTX 750) e RX 5600.

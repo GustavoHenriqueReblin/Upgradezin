@@ -206,10 +206,11 @@ export interface PerfGap {
 }
 
 /**
- * Ficha técnica de um produto do catálogo: lida (com medidas ou part number), vazia (a página não
- * tinha ficha), ainda não lida, ou a categoria não tem ficha física (só placa de vídeo, gabinete e cooler têm).
+ * Ficha técnica de um produto do catálogo: lida (com medidas ou part number), de outra loja (outro
+ * anúncio do mesmo produto tem a ficha com medidas: vale para este), vazia (a página não tinha ficha),
+ * ainda não lida, ou a categoria não tem ficha física (só placa de vídeo, gabinete e cooler têm).
  */
-export type SheetStatus = 'ok' | 'empty' | 'missing' | 'na';
+export type SheetStatus = 'ok' | 'shared' | 'empty' | 'missing' | 'na';
 
 /** Um produto do catálogo (anúncio de uma loja) para a aba Produtos do admin. */
 export interface AdminProduct {
@@ -230,6 +231,11 @@ export interface AdminProduct {
   sheetStatus: SheetStatus;
   sheet?: SpecSheet;
   sheetAt?: string;
+  /** Ficha de outro anúncio do mesmo produto (status 'shared'): de onde veio. */
+  sheetFrom?: { store: StoreId; sku: string };
+  /** Chave do produto (mesmo part number em todas as lojas) e quantos anúncios, nesta e nas outras lojas, são ele. */
+  productKey?: string;
+  siblings?: { store: StoreId; sku: string; title: string; url: string }[];
 }
 
 /** Uma página de uma tabela do admin (produtos, consultas, termos): os itens, o total com os filtros e onde está. */
@@ -265,6 +271,8 @@ export interface SheetStoreStatus {
   canRead: boolean;
   total: number;
   ok: number;
+  /** Sem ficha própria, mas com a de outro anúncio do mesmo produto (outra loja): não precisa ler. */
+  shared: number;
   empty: number;
   missing: number;
   /** Fichas lidas na última hora (rotina, montagem e admin) e a última. */

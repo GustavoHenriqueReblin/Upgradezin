@@ -26,6 +26,7 @@ const select = 'rounded-lg border border-zinc-300 bg-white px-2 py-1 text-sm dar
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const STATUS_TONE: Record<SheetStatus, string> = {
   ok: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+  shared: 'bg-sky-500/15 text-sky-700 dark:text-sky-300',
   empty: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
   missing: 'bg-zinc-500/15 text-zinc-600 dark:text-zinc-300',
   na: 'text-zinc-400',
@@ -155,10 +156,11 @@ function SheetRoutine({ fail, onMessage }: Shared) {
                   <input type="checkbox" checked={marked} disabled={!s.canRead} onChange={(e) => toggleStore(s.store, e.target.checked)} />
                   {s.name}
                 </label>
-                <span className="text-xs font-normal tabular-nums text-zinc-500">{s.total ? `${Math.round(pct(s.ok + s.empty))}%` : '—'}</span>
+                <span className="text-xs font-normal tabular-nums text-zinc-500">{s.total ? `${Math.round(pct(s.ok + s.shared + s.empty))}%` : '—'}</span>
               </p>
               <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800" aria-hidden>
                 <div className="h-full bg-emerald-500" style={{ width: `${pct(s.ok)}%` }} />
+                <div className="h-full bg-sky-500" style={{ width: `${pct(s.shared)}%` }} />
                 <div className="h-full bg-amber-400" style={{ width: `${pct(s.empty)}%` }} />
               </div>
               {!s.canRead ? (
@@ -166,7 +168,7 @@ function SheetRoutine({ fail, onMessage }: Shared) {
               ) : (
                 <dl className="mt-2 space-y-0.5 text-xs text-zinc-500">
                   <div className="tabular-nums">
-                    {s.ok} lidas · {s.empty} sem ficha · {s.missing} faltam (de {s.total})
+                    {s.ok} lidas · {s.shared} de outra loja · {s.empty} sem ficha · {s.missing} faltam (de {s.total})
                   </div>
                   <div className="tabular-nums">
                     {s.lastHour} na última hora{s.lastAt ? ` · última ${formatWhen(s.lastAt)}` : ''}
@@ -180,7 +182,7 @@ function SheetRoutine({ fail, onMessage }: Shared) {
           );
         })}
       </div>
-      <p className="mt-2 text-xs text-zinc-500">Produtos vistos nas lojas nos últimos 14 dias. Verde: ficha lida; amarelo: a página não tinha ficha (lida de novo depois de 30 dias).</p>
+      <p className="mt-2 text-xs text-zinc-500">Produtos vistos nas lojas nos últimos 14 dias. Verde: ficha lida; azul: usa a ficha de outro anúncio do mesmo produto (mesmo part number, outra loja), sem precisar ler; amarelo: a página não tinha ficha (lida de novo depois de 30 dias).</p>
     </Box>
   );
 }
@@ -245,7 +247,7 @@ function Catalog({ fail, onMessage }: Shared) {
         </select>
         <select className={select} value={filters.sheet} onChange={(e) => set({ sheet: e.target.value })} aria-label="Ficha técnica">
           <option value="">qualquer ficha</option>
-          {(['ok', 'empty', 'missing', 'na'] as const).map((s) => (
+          {(['ok', 'shared', 'empty', 'missing', 'na'] as const).map((s) => (
             <option key={s} value={s}>
               ficha: {SHEET_STATUS_LABEL[s]}
             </option>
@@ -296,7 +298,7 @@ function Catalog({ fail, onMessage }: Shared) {
                   <Td className="whitespace-nowrap text-zinc-500">{formatWhen(p.lastSeenAt)}</Td>
                   <Td>
                     <span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium ${STATUS_TONE[p.sheetStatus]}`}>{SHEET_STATUS_LABEL[p.sheetStatus]}</span>
-                    {p.sheetStatus === 'ok' && <span className="mt-0.5 block text-xs text-zinc-500">{sheetSummary(p.sheet)}</span>}
+                    {(p.sheetStatus === 'ok' || p.sheetStatus === 'shared') && <span className="mt-0.5 block text-xs text-zinc-500">{sheetSummary(p.sheet)}</span>}
                   </Td>
                   <Td>
                     {p.sheetStatus !== 'na' && (
@@ -317,7 +319,7 @@ function Catalog({ fail, onMessage }: Shared) {
                 {isOpen && (
                   <tr className="bg-zinc-50 dark:bg-zinc-950/40">
                     <td colSpan={9} className="px-3 py-3">
-                      <ProductDetail p={p} />
+                      <ProductDetail p={p} names={stores} />
                     </td>
                   </tr>
                 )}
@@ -332,8 +334,8 @@ function Catalog({ fail, onMessage }: Shared) {
   );
 }
 
-/** Detalhes de um produto: specs do título, índice de desempenho e ficha técnica. */
-function ProductDetail({ p }: { p: AdminProduct }) {
+/** Detalhes de um produto: specs do título, índice de desempenho, ficha técnica e o mesmo produto nas outras lojas. */
+function ProductDetail({ p, names }: { p: AdminProduct; names: Map<string, string> }) {
   const pairs = specPairs(p.specs);
   return (
     <div className="grid gap-4 text-sm md:grid-cols-3">
@@ -354,7 +356,11 @@ function ProductDetail({ p }: { p: AdminProduct }) {
       </div>
       <div>
         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">Ficha técnica</p>
-        <p className="text-xs">{SHEET_STATUS_LABEL[p.sheetStatus]}{p.sheetAt ? ` · lida ${formatWhen(p.sheetAt)}` : ''}</p>
+        <p className="text-xs">
+          {SHEET_STATUS_LABEL[p.sheetStatus]}
+          {p.sheetFrom ? ` (${names.get(p.sheetFrom.store) ?? p.sheetFrom.store}, código ${p.sheetFrom.sku})` : ''}
+          {p.sheetAt ? ` · lida ${formatWhen(p.sheetAt)}` : ''}
+        </p>
         {p.sheet && <p className="mt-1 text-xs text-zinc-500">{sheetSummary(p.sheet)}</p>}
         {(p.category === 'gpu' || p.category === 'cpu') && (
           <>
@@ -372,6 +378,20 @@ function ProductDetail({ p }: { p: AdminProduct }) {
         <a href={p.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent-600 hover:underline dark:text-accent-400">
           Abrir na loja <ExternalLink className="h-3 w-3" />
         </a>
+        <p className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">Mesmo produto</p>
+        {p.siblings?.length ? (
+          <ul className="space-y-0.5 text-xs">
+            {p.siblings.map((x) => (
+              <li key={`${x.store}:${x.sku}`}>
+                <a href={x.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                  <span className="font-medium">{names.get(x.store) ?? x.store}</span> · <span className="text-zinc-500">{x.title.slice(0, 70)}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-zinc-500">Nenhum outro anúncio com o mesmo part number.</p>
+        )}
       </div>
     </div>
   );

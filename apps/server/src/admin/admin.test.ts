@@ -175,7 +175,7 @@ describe('rotas /api/admin', () => {
     const app = makeApp();
     const cookie = cookieOf(await login(app));
     const s = (await app.inject({ url: '/api/admin/status', headers: { cookie } })).json();
-    expect(s).toMatchObject({ version: '9.9.9', browserOpen: false, activeSessions: 0, db: { file: ':memory:', migration: 10 } });
+    expect(s).toMatchObject({ version: '9.9.9', browserOpen: false, activeSessions: 0, db: { file: ':memory:', migration: 11 } });
     expect(s.uptimeS).toBeGreaterThanOrEqual(0);
     expect(s.memory.rssMb).toBeGreaterThan(0);
   });

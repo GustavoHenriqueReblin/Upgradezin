@@ -238,11 +238,24 @@ Os campos estruturados de placa-mãe da S2 (`socket`, `formato_placa`) são cód
 
 ### 6.2 Agrupamento entre lojas
 
-União de conjuntos (union-find) sobre três critérios:
+Mesmo produto em lojas diferentes (`packages/shared/src/identity.ts`, `identifyProducts`), em dois níveis, por união de conjuntos (union-find):
 
-1. **EAN** igual → mesmo produto.
-2. **Part number** do fabricante igual, comparado só com letras e dígitos. S2 informa em campo próprio; S1 e S3 no fim do título (`mpnFromTitle`: "… - 90-GA41ZZ-00UANF" na S1, "…, Preta, SYDSCD4-3200MHZ-8GB" na S3; pedaço que é spec, como "3200MHz" ou "8GB", não conta). A S3 não tem EAN nem campo de código: até nov/2026 ela só casava pela chave de modelo; com a leitura do título, 68% dos anúncios dela ganharam part number. Código "quase igual" não junta: a diferença costuma ser variante (W = branca, R = vermelha, K × KF). Exceção: se a mesma loja usa o código para produtos diferentes (título cortado, ex. "BX8071514" para i5-14600KF e i7-14700KF), o código é ambíguo e é ignorado.
-3. **Chave de modelo** igual, definida por categoria (tabela em [§6.1](#61-pipeline)). Fonte: marca + palavras do título até a potência, sem ruído ("Fonte XPG Kyber, 750W…" → `xpg kyber 750`), com sufixo para variante branca.
+**Exato** (o mesmo item do fabricante: a ficha técnica de um vale para o outro):
+
+1. **Part number** igual, comparado só com letras e dígitos e sem o "NAC" que a S2 acrescenta no fim (`productMpn`). S2 informa em campo próprio; S1 e S3 no fim do título (`mpnFromTitle`: "… - 90-GA41ZZ-00UANF" na S1, "…, Preta, SYDSCD4-3200MHZ-8GB" na S3; pedaço que é spec, como "3200MHz" ou "8GB", não conta).
+2. **Part number de outra loja no título ou no endereço** (código de 8+ caracteres, em palavras inteiras, sem marca de outra versão logo depois, `textHasCode`): a S1 às vezes usa o código interno do fabricante ("90YV0MD0-M0NA00") e põe o nome comercial ("TUF-RTX5070TI-O16G-GAMING") no título ou no endereço. "B860M-AORUS-ELITE" não casa com "B860M Aorus Elite WIFI6E" (outra versão).
+
+**Grupo** (para mostrar junto na busca): o exato mais
+
+3. **EAN** igual (≈10% dos anúncios têm; em nov/2026 nenhum casou entre lojas).
+4. **Chave de modelo** igual (tabela em [§6.1](#61-pipeline)), só entre anúncios com a mesma assinatura de placa de vídeo (ou os dois sem): a chave descarta números soltos ("Infinity 2" = "Infinity 3", "Ventus 2X" = "3X").
+5. **Assinatura de placa de vídeo** (`gpuSignature`, marcas conhecidas): marca + chip + VRAM + linha ("Dual", "TUF", "Windforce", "Challenger", com o número logo depois: "infinity2") + OC + branca. Junta "ASRock Arc B570 Challenger OC" com e sem o código no título.
+
+Proteções: branco e não branco nunca se juntam; specs contraditórias (chip, VRAM, modelo do processador, capacidade, potência, DDR4 × DDR5, socket, chipset, Wi-Fi) separam; o mesmo código (ou assinatura) em dois anúncios da mesma loja com títulos e specs diferentes é ambíguo e fica de fora (título cortado: "BX8071514" para i5-14600KF e i7-14700KF). Chave do produto: o menor part number do conjunto (único: dois conjuntos com o mesmo código ganham o menor id no fim). Na busca (`groupOffers`), a chave do grupo continua a menor chave de modelo dele.
+
+No banco, `listings.product_key` (exato) e `listings.group_key` (grupo), por categoria (`gpu:DUALRTX5070O12G`), são recalculadas sobre todos os anúncios da categoria (`prices/identity.ts`): ao subir (5 s depois) e 30 s depois de uma coleta da categoria, juntando as seguidas (~2 s para todas as categorias com ~12,7 mil anúncios). Em nov/2026, nas placas de vídeo vistas em 14 dias, 35% dos anúncios casam com outra loja no nível exato e 44% no grupo (antes: 24% e 37%).
+
+**Fichas compartilhadas:** anúncio sem ficha com medidas usa a de outro anúncio do mesmo produto (nível exato, `productSheet`): na montagem (`GET /api/sheets`), na leitura (`sheetOf` não abre a página) e no admin (status "de outra loja", com a origem e os outros anúncios do mesmo produto). A rotina de fichas pula o produto já coberto. Na primeira conta, 190 anúncios ganharam ficha de outra loja (com ~360 fichas lidas).
 
 A melhor oferta do grupo é a em estoque com menor preço à vista com cupom. Cada loja aparece uma vez no grupo, com a melhor oferta dela.
 
@@ -315,7 +328,7 @@ Migrações versionadas por `PRAGMA user_version` em `db.ts` (só acrescentar no
 | `meta` | chave/valor: pausa por bloqueio ou manual de cada loja (`backoff:<loja>`), para sobreviver a reinício, a rotina do admin (`routine`: ligada, lojas, modos, busca ao vivo e segundos de cada modo), a rotina de fichas (`sheet-routine`: ligada, lojas, segundos entre fichas), e o estado da varredura de cada categoria (`sweep:<loja>:<categoria>`) |
 | `search_terms` | termos coletados (categoria + termo, como vai para a loja): os do formulário (`seed`) e os que alguém pesquisou (`user`, com a data do último pedido) |
 | `term_runs` | última tentativa e última coleta completa de cada termo em cada loja, com o status (`ok`, `partial`, `blocked`, `error`) |
-| `listings` | anúncio de uma loja (loja + código na loja): título, URL, chave de modelo, EAN, part number e a última oferta (`offer`, JSON no formato `Offer`) |
+| `listings` | anúncio de uma loja (loja + código na loja): título, URL, chave de modelo, EAN, part number, a última oferta (`offer`, JSON no formato `Offer`) e as chaves de produto e de grupo (`product_key`, `group_key`: mesmo produto em outras lojas, [§6.2](#62-agrupamento-entre-lojas)) |
 | `listing_terms` | em quais termos o anúncio apareceu e quando por último |
 | `price_points` | histórico: um ponto quando preço à vista, cartão, cupom, oferta temporária ou estoque mudam (não a cada coleta) |
 | `store_attempts` | cada consulta a uma loja (termo, página de varredura, ficha técnica): quando, de onde veio, resultado, ofertas, motivo do bloqueio, duração; 90 dias ([§9.3](#93-admin-admin)) |

@@ -26,6 +26,43 @@ export function getSheet(db: Db, store: StoreId, sku: string, emptySince: string
   return row ? (JSON.parse(row.data) as SpecSheet) : undefined;
 }
 
+/** Ficha com alguma medida (não só o part number). */
+export const HAS_SPECS = (col: string) => `json_extract(${col}, '$.specs') != '{}'`;
+
+/**
+ * Outro anúncio do mesmo produto (listings.product_key, prices/identity.ts) com ficha com medidas: a
+ * ficha de um vale para o outro (mesmo part number). Em SQL, sobre o anúncio `l`.
+ */
+export const SHARED_SHEET = `l.product_key IS NOT NULL AND EXISTS (
+  SELECT 1 FROM listings o JOIN product_sheets p2 ON p2.store = o.store AND p2.store_sku = o.store_sku
+  WHERE o.product_key = l.product_key AND o.id != l.id AND ${HAS_SPECS('p2.data')})`;
+
+/**
+ * Ficha do produto: a do próprio anúncio, se tem medidas; senão a de outro anúncio do mesmo produto
+ * (outra loja, ou outro anúncio da mesma) que tenha, com a origem; senão a própria (vazia ou só com o
+ * part number, se ainda vale).
+ */
+export function productSheet(
+  db: Db,
+  store: StoreId,
+  sku: string,
+  emptySince: string,
+): { sheet: SpecSheet; at?: string; from?: { store: StoreId; sku: string } } | undefined {
+  const own = getSheet(db, store, sku, emptySince);
+  if (own && Object.keys(own.specs).length) return { sheet: own };
+  const other = db
+    .prepare(
+      `SELECT o.store, o.store_sku, p2.data, p2.fetched_at FROM listings l
+       JOIN listings o ON o.product_key = l.product_key AND o.id != l.id
+       JOIN product_sheets p2 ON p2.store = o.store AND p2.store_sku = o.store_sku
+       WHERE l.store = ? AND l.store_sku = ? AND l.product_key IS NOT NULL AND ${HAS_SPECS('p2.data')}
+       ORDER BY p2.fetched_at DESC LIMIT 1`,
+    )
+    .get(store, sku) as { store: StoreId; store_sku: string; data: string; fetched_at: string } | undefined;
+  if (other) return { sheet: JSON.parse(other.data) as SpecSheet, at: other.fetched_at, from: { store: other.store, sku: other.store_sku } };
+  return own ? { sheet: own } : undefined;
+}
+
 export function saveSheet(db: Db, store: StoreId, sku: string, sheet: SpecSheet, at = new Date().toISOString()): void {
   db.prepare(`
     INSERT INTO product_sheets (store, store_sku, data, fetched_at) VALUES (?, ?, ?, ?)
@@ -36,7 +73,8 @@ export function saveSheet(db: Db, store: StoreId, sku: string, sheet: SpecSheet,
  * Próximos produtos da loja sem ficha guardada (ou com ficha vazia lida antes de `emptyBefore`),
  * vistos desde `seenSince`, para a rotina ler. Ordem: placa de vídeo, gabinete, cooler (o
  * comprimento da placa é o que mais reprova peça); dentro de cada uma, em estoque e vistos há
- * menos tempo primeiro.
+ * menos tempo primeiro. Pula o produto que já tem ficha com medidas em outro anúncio (outra loja):
+ * a ficha vale para os dois, não precisa abrir a página.
  */
 export function nextSheets(db: Db, store: StoreId, seenSince: string, emptyBefore: string, limit = 1): { sku: string; category: CategoryId }[] {
   const order = SHEET_CATEGORIES.map((c, i) => `WHEN '${c}' THEN ${i}`).join(' ');
@@ -46,6 +84,7 @@ export function nextSheets(db: Db, store: StoreId, seenSince: string, emptyBefor
        LEFT JOIN product_sheets ps ON ps.store = l.store AND ps.store_sku = l.store_sku
        WHERE l.store = ? AND l.category IN (${SHEET_CATEGORIES.map(() => '?').join(', ')}) AND l.last_seen_at >= ?
          AND (ps.store_sku IS NULL OR (${EMPTY.replaceAll('data', 'ps.data')} AND ps.fetched_at < ?))
+         AND NOT (${SHARED_SHEET})
        ORDER BY CASE l.category ${order} END, json_extract(l.offer, '$.inStock') DESC, l.last_seen_at DESC
        LIMIT ?`,
     )

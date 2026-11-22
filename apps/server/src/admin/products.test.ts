@@ -72,8 +72,8 @@ describe('produtos do catálogo (admin)', () => {
     recordAttempt(db, { store: 's1', at: at(5 * 60_000), kind: 'term', origin: 'routine', category: 'gpu', term: 'x', status: 'ok', count: 3, ms: 900 }); // termo não conta
     const st = sheetStoreStatus(db, [{ id: 's1', name: 'Loja S1', canRead: true }, { id: 's2', name: 'Loja S2', canRead: true }], NOW);
     expect(st).toEqual([
-      { store: 's1', name: 'Loja S1', canRead: true, total: 3, ok: 1, empty: 1, missing: 1, lastHour: 1, lastAt: at(10 * 60_000) },
-      { store: 's2', name: 'Loja S2', canRead: true, total: 0, ok: 0, empty: 0, missing: 0, lastHour: 0, lastAt: null }, // o cooler da s2 saiu do catálogo
+      { store: 's1', name: 'Loja S1', canRead: true, total: 3, ok: 1, shared: 0, empty: 1, missing: 1, lastHour: 1, lastAt: at(10 * 60_000) },
+      { store: 's2', name: 'Loja S2', canRead: true, total: 0, ok: 0, shared: 0, empty: 0, missing: 0, lastHour: 0, lastAt: null }, // o cooler da s2 saiu do catálogo
     ]);
   });
 });

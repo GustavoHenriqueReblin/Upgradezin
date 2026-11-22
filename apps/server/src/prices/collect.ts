@@ -10,7 +10,7 @@ import { BlockedError, PageLimitError, registerBlock, SearchRedirectError, withS
 import { storeConfig } from '../stores.ts';
 import { recordAttempt, type NewAttempt } from './attempts.ts';
 import { markFailedRun, redirectPathOf, saveCollection, type DueTerm } from './prices.ts';
-import { getSheet, saveSheet } from './sheets.ts';
+import { productSheet, saveSheet } from './sheets.ts';
 import { recordSweepFailure, recordSweepPage } from './sweep.ts';
 
 const ADAPTERS: Record<StoreId, StoreAdapter> = { s1, s2, s3 };
@@ -164,7 +164,7 @@ export async function sheetOf(
 ): Promise<SpecSheet | null> {
   const db = getDb();
   // force (admin, "Ler ficha"): abre a página mesmo com ficha guardada.
-  const cached = opts.force ? undefined : getSheet(db, store, sku, new Date(Date.now() - config.SHEET_MAX_AGE_DAYS * 86_400_000).toISOString());
+  const cached = opts.force ? undefined : productSheet(db, store, sku, new Date(Date.now() - config.SHEET_MAX_AGE_DAYS * 86_400_000).toISOString())?.sheet;
   if (cached) return cached;
   const adapter = ADAPTERS[store];
   if (!adapter.productSheet) return null;

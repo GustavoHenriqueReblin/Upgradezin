@@ -73,7 +73,7 @@ const AttemptsQuery = z.object({
 const ProductsQuery = z.object({
   store: z.enum(STORES).optional(),
   category: z.enum(CATEGORIES).optional(),
-  sheet: z.enum(['ok', 'empty', 'missing', 'na']).optional(),
+  sheet: z.enum(['ok', 'shared', 'empty', 'missing', 'na']).optional(),
   inStock: z.enum(['1', '0']).transform((v) => v === '1').optional(),
   q: z.string().max(80).optional(),
   ...Paging,

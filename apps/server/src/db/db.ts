@@ -212,6 +212,13 @@ const MIGRATIONS: (string | Rebuild)[] = [
   `
   CREATE INDEX listings_seen ON listings (last_seen_at, id);
   `,
+  // 11: mesmo produto em lojas diferentes (prices/identity.ts): exato (mesmo part number: a ficha vale
+  // para os dois) e grupo (para mostrar junto). Recalculado depois das coletas.
+  `
+  ALTER TABLE listings ADD COLUMN product_key TEXT;
+  ALTER TABLE listings ADD COLUMN group_key TEXT;
+  CREATE INDEX listings_product ON listings (product_key);
+  `,
 ];
 
 export type Db = DatabaseSync;

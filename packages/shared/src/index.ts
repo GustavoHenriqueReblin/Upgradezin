@@ -18,3 +18,4 @@ export * from './upgrade.ts';
 export * from './specsheet.ts';
 export * from './admin.ts';
 export * from './picks.ts';
+export * from './identity.ts';

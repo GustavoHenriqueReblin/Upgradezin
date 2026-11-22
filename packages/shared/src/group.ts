@@ -1,4 +1,5 @@
 import { effectiveCash, type Offer } from './types.ts';
+import { identifyProducts } from './identity.ts';
 import { isWhite, stripAccents } from './normalize.ts';
 
 /** Cor sai do nome e volta como sufixo fixo (" white"), seja qual for a grafia e a posição. */
@@ -55,53 +56,28 @@ export interface ProductGroup {
   best: Offer;
 }
 
-/** Agrupa ofertas de lojas diferentes: mesmo EAN ou mesma chave de modelo. */
+/**
+ * Agrupa ofertas de lojas diferentes que são o mesmo produto (identity.ts, nível grupo): mesmo part
+ * number (também achado no título ou no endereço de outra loja), EAN, chave do título ou assinatura
+ * de placa de vídeo. A chave do grupo é a menor chave de modelo dele (repetida em outro grupo: + o produto).
+ */
 export function groupOffers(offers: Offer[]): ProductGroup[] {
-  const parent = new Map<string, string>();
-  const find = (k: string): string => {
-    let p = parent.get(k) ?? k;
-    if (p !== k) {
-      p = find(p);
-      parent.set(k, p);
-    }
-    return p;
-  };
-  const union = (a: string, b: string) => {
-    const ra = find(a);
-    const rb = find(b);
-    if (ra !== rb) parent.set(ra, rb);
-  };
-
-  const byEan = new Map<string, string>();
-  for (const o of offers) {
-    parent.set(o.modelKey, find(o.modelKey));
-    if (o.ean) {
-      const prev = byEan.get(o.ean);
-      if (prev) union(prev, o.modelKey);
-      else byEan.set(o.ean, o.modelKey);
-    }
-  }
-
-  // Part number igual também é o mesmo produto, exceto quando a mesma loja usa o código para
-  // produtos diferentes (título cortado: "BX8071514" para i5-14600KF e i7-14700KF).
-  const byMpn = new Map<string, Offer[]>();
-  for (const o of offers) {
-    const mpn = normalizeMpn(o.mpn);
-    if (mpn) byMpn.set(mpn, [...(byMpn.get(mpn) ?? []), o]);
-  }
-  for (const list of byMpn.values()) {
-    const keysPerStore = new Map<string, Set<string>>();
-    for (const o of list) keysPerStore.set(o.store, (keysPerStore.get(o.store) ?? new Set()).add(o.modelKey));
-    if ([...keysPerStore.values()].some((keys) => keys.size > 1)) continue; // código ambíguo
-    for (const o of list.slice(1)) union(list[0]!.modelKey, o.modelKey);
-  }
-
-  const groups = new Map<string, Offer[]>();
-  for (const o of offers) {
-    const root = find(o.modelKey);
-    const list = groups.get(root);
+  // Posição na lista: duas ofertas iguais de loja e código continuam sendo duas.
+  const { group } = identifyProducts(
+    offers.map((o, i) => ({ id: String(i), store: o.store, title: o.title, url: o.url, mpn: o.mpn, ean: o.ean, brand: o.brand, modelKey: o.modelKey, specs: o.specs ?? {} })),
+  );
+  const byProduct = new Map<string, Offer[]>();
+  for (const [i, o] of offers.entries()) {
+    const key = group.get(String(i))!;
+    const list = byProduct.get(key);
     if (list) list.push(o);
-    else groups.set(root, [o]);
+    else byProduct.set(key, [o]);
+  }
+  // Chave do grupo para a tela: a menor chave de modelo dele (como antes); repetida, ganha o produto no fim.
+  const groups = new Map<string, Offer[]>();
+  for (const [product, list] of byProduct) {
+    const label = list.map((o) => o.modelKey).sort()[0]!;
+    groups.set(groups.has(label) ? `${label}|${product}` : label, list);
   }
 
   return [...groups.entries()].map(([key, list]) => {

@@ -140,7 +140,7 @@ export function sheetEta(missing: number, seconds: number): string {
   return h < 48 ? `cerca de ${Math.ceil(h)} h` : `cerca de ${Math.round(h / 24)} dias`;
 }
 
-export const SHEET_STATUS_LABEL: Record<SheetStatus, string> = { ok: 'lida', empty: 'página sem ficha', missing: 'não lida', na: 'sem ficha física' };
+export const SHEET_STATUS_LABEL: Record<SheetStatus, string> = { ok: 'lida', shared: 'de outra loja', empty: 'página sem ficha', missing: 'não lida', na: 'sem ficha física' };
 
 /** O que a ficha trouxe, em texto curto: "placa 228 mm · sem 12V-2x6 · part number DUAL-RTX5060". */
 export function sheetSummary(sheet: SpecSheet | undefined): string {
