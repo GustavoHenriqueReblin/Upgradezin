@@ -6,16 +6,16 @@ import type { SearchContext, StoreAdapter } from '../adapters/types.ts';
 import { lastPageHtml, saveDebugHtml } from '../browser.ts';
 import { config } from '../config.ts';
 import { getDb } from '../db/instance.ts';
-import { BlockedError, PageLimitError, registerBlock, SearchRedirectError, withStore } from '../pace.ts';
-import { storeConfig } from '../stores.ts';
+import { BlockedError, PageLimitError, registerBlock, withStore } from '../pace.ts';
+import { storeConfig, sweepPaths } from '../stores.ts';
 import { recordAttempt, type NewAttempt } from './attempts.ts';
-import { markFailedRun, redirectPathOf, saveCollection, type DueTerm } from './prices.ts';
+import { saveCollection } from './prices.ts';
 import { productSheet, saveSheet } from './sheets.ts';
 import { recordSweepFailure, recordSweepPage } from './sweep.ts';
 
 const ADAPTERS: Record<StoreId, StoreAdapter> = { s1, s2, s3 };
 
-/** Coletas em andamento por (loja, termo): a busca do site e a rotina não repetem a mesma. */
+/** Buscas por texto em andamento por (loja, categoria, texto): duas pessoas buscando o mesmo não repetem a consulta. */
 const inflight = new Map<string, Promise<Offer[]>>();
 
 export interface CollectHooks {
@@ -55,86 +55,100 @@ export function attemptOutcome(err: unknown, count: number): Pick<NewAttempt, 's
 const didNotRun = (err: unknown, signal: AbortSignal) => signal.aborted || (err instanceof BlockedError && err.paused);
 
 /**
- * Consulta um termo numa loja e grava no banco. Bloqueio ou limite no meio: grava o que
- * leu (incompleto), registra o bloqueio e repassa o erro para quem chamou.
+ * Busca um texto numa loja ("Não achou? Buscar nas lojas") e grava no banco o que vier. Na fila da
+ * loja, na frente da rotina. Bloqueio ou limite no meio: grava o que leu, registra o bloqueio e
+ * repassa o erro (com as ofertas lidas em `partial`). Texto que a loja redireciona para a página de
+ * uma categoria: SearchRedirectError (o que essa página tem, a rotina já lê).
  */
-export function collectTerm(store: StoreId, t: DueTerm, signal: AbortSignal, hooks: CollectHooks = {}): Promise<Offer[]> {
-  // Busca do site (e admin) passa na frente da rotina na fila da loja. Quem busca só reaproveita
-  // uma consulta igual se ela também for prioritária (a da rotina pode estar no fim da fila).
-  const priority = hooks.origin !== 'routine';
-  const key = `${store}|${t.id}|${priority ? 'p' : 'r'}`;
+export function collectText(store: StoreId, category: CategoryId, text: string, signal: AbortSignal, hooks: CollectHooks = {}): Promise<Offer[]> {
+  const key = `${store}|${category}|${text.toLowerCase()}`;
   const running = inflight.get(key);
   if (running) return running;
   const job = withStore(store, signal, async () => {
     const pages: Offer[] = [];
     const t0 = Date.now();
-    const base = { store, kind: 'term' as const, origin: hooks.origin ?? 'search', category: t.category, term: t.term };
+    const base = { store, kind: 'term' as const, origin: hooks.origin ?? 'search', category, term: text };
     try {
       const offers = await ADAPTERS[store].search({
-        category: t.category,
-        q: t.term,
-        // Termo que a busca dessa loja já redirecionou: vai direto ao destino.
-        path: redirectPathOf(getDb(), store, t.id) ?? undefined,
+        category,
+        q: text,
         signal,
-        // Busca do site: só as primeiras páginas (a pessoa não espera o intervalo entre páginas);
-        // as seguintes ficam para a rotina e a varredura, e a busca mostra o que o banco já tem.
-        maxPages: base.origin === 'search' ? config.SEARCH_MAX_PAGES : undefined,
+        // Quem busca não espera o intervalo entre páginas: só as primeiras.
+        maxPages: config.SEARCH_MAX_PAGES,
         onPage: (info) => {
           pages.push(...info.offers);
           hooks.onPage?.(info);
         },
         onNeedsHuman: hooks.onNeedsHuman,
       });
-      saveCollection(getDb(), { store, category: t.category, termId: t.id, offers, at: new Date().toISOString(), complete: true });
+      saveCollection(getDb(), { store, category, offers, at: new Date().toISOString() });
       logAttempt(base, t0, { count: offers.length });
       return offers;
     } catch (err) {
       if (!didNotRun(err, signal)) logAttempt(base, t0, { count: pages.length, err });
       // Loja já em pausa: a consulta nem saiu (nada a gravar, nenhum bloqueio novo).
       if (signal.aborted || (err instanceof BlockedError && err.paused)) throw err;
-      const at = new Date().toISOString();
-      const blocked = err instanceof BlockedError || err instanceof PageLimitError;
-      if (pages.length) saveCollection(getDb(), { store, category: t.category, termId: t.id, offers: pages, at, complete: false });
-      else if (err instanceof SearchRedirectError) markFailedRun(getDb(), store, t.id, at, 'redirect', err.to);
-      else markFailedRun(getDb(), store, t.id, at, blocked ? 'blocked' : 'error');
+      if (pages.length) saveCollection(getDb(), { store, category, offers: pages, at: new Date().toISOString() });
       if (err instanceof BlockedError) {
         console.warn(`[${store}] bloqueio (${err.reason}): ${err.message}`);
         registerBlock(store, err.reason);
       }
       throw Object.assign(err as object, { partial: pages });
     }
-  }, { priority });
+  }, { priority: true });
   inflight.set(key, job);
   job.finally(() => inflight.delete(key)).catch(() => {});
   return job;
 }
 
-/** A loja sabe ler a página de uma categoria inteira (varredura da rotina). */
+/** A loja sabe ler a página de uma categoria (rotina de preços). */
 export const canSweep = (store: StoreId) => !!ADAPTERS[store].sweepPage;
 
+export interface SweepPageResult {
+  /** Ofertas lidas e gravadas (as esgotadas só entram se o anúncio já existia). */
+  read: number;
+  saved: number;
+  listEnded: boolean;
+  roundDone: boolean;
+  outOfStock: number;
+}
+
 /**
- * Lê uma página da varredura de uma categoria e grava, na mesma fila da loja (uma consulta por
- * vez, com intervalo). Bloqueio pausa a loja; outro erro faz a categoria esperar e retomar
- * da mesma página. Devolve quantas ofertas leu.
+ * Lê uma página de categoria e grava, na mesma fila da loja (uma consulta por vez, com intervalo).
+ * `path`: qual dos caminhos da categoria na loja. Bloqueio pausa a loja; outro erro faz a categoria
+ * esperar e retomar da mesma página. `origin` "admin" ("varrer agora") passa na frente da rotina.
  */
 export function collectSweepPage(
   store: StoreId,
   category: CategoryId,
+  path: number,
   page: number,
   signal: AbortSignal,
-  maxPages = config.ROUTINE_SWEEP_MAX_PAGES,
-): Promise<number> {
+  opts: { origin?: 'routine' | 'admin'; maxPages?: number } = {},
+): Promise<SweepPageResult> {
   const adapter = ADAPTERS[store];
-  const path = storeConfig(store).sweep[category];
-  if (!adapter.sweepPage || !path) return Promise.reject(new Error(`${store}: sem varredura de ${category}`));
+  const paths = sweepPaths(store, category);
+  const origin = opts.origin ?? 'routine';
+  if (!adapter.sweepPage || !paths[path]) return Promise.reject(new Error(`${store}: sem página de ${category}`));
   return withStore(store, signal, async () => {
     const t0 = Date.now();
-    const base = { store, kind: 'sweep' as const, origin: 'routine' as const, category, page };
+    const base = { store, kind: 'sweep' as const, origin, category, page, term: paths.length > 1 ? paths[path] : undefined };
     try {
-      const r = await adapter.sweepPage!({ category, url: storeConfig(store).url + path, page, signal });
-      recordSweepPage(getDb(), { store, category, page, totalPages: r.totalPages, maxPages, offers: r.offers, at: new Date().toISOString() });
+      const r = await adapter.sweepPage!({ category, url: storeConfig(store).url + paths[path], page, signal });
+      const done = recordSweepPage(getDb(), {
+        store,
+        category,
+        path,
+        paths: paths.length,
+        page,
+        totalPages: r.totalPages,
+        maxPages: opts.maxPages ?? config.ROUTINE_SWEEP_MAX_PAGES,
+        inStock: r.inStock,
+        offers: r.offers,
+        at: new Date().toISOString(),
+      });
       logAttempt(base, t0, { count: r.offers.length });
-      return r.offers.length;
+      return { read: r.offers.length, ...done };
     } catch (err) {
       if (!didNotRun(err, signal)) logAttempt(base, t0, { count: 0, err });
       if (signal.aborted || err instanceof PageLimitError || (err instanceof BlockedError && err.paused)) throw err;
@@ -190,18 +204,18 @@ export async function sheetOf(
   }, { priority: origin !== 'routine' });
 }
 
-/** Primeira página da varredura, sem gravar (conferir o caminho: pnpm scan --sweep). */
-export function previewSweep(store: StoreId, category: CategoryId, signal: AbortSignal) {
-  const path = storeConfig(store).sweep[category];
-  if (!ADAPTERS[store].sweepPage || !path) return Promise.resolve(null);
-  return withStore(store, signal, () => ADAPTERS[store].sweepPage!({ category, url: storeConfig(store).url + path, page: 1, signal }), { priority: true });
+/** Primeira página de categoria, sem gravar (conferir o caminho: pnpm scan --sweep). */
+export function previewSweep(store: StoreId, category: CategoryId, signal: AbortSignal, path = 0) {
+  const paths = sweepPaths(store, category);
+  if (!ADAPTERS[store].sweepPage || !paths[path]) return Promise.resolve(null);
+  return withStore(store, signal, () => ADAPTERS[store].sweepPage!({ category, url: storeConfig(store).url + paths[path], page: 1, signal }), { priority: true });
 }
 
 /** Ofertas lidas antes de um bloqueio no meio da coleta. */
 export const partialOf = (err: unknown): Offer[] => ((err as { partial?: Offer[] })?.partial ?? []);
 
 /**
- * Quem está usando as lojas agora (buscas do site e rotina), para o status do admin.
+ * Quem está usando as lojas agora (busca por texto, rotina, admin), para o status do admin.
  * O Chrome de cada loja fica aberto entre as consultas (fecha só quando o servidor para).
  */
 let active = 0;

@@ -17,6 +17,8 @@ describe('extractGpuModel', () => {
     ['Placa de Vídeo Asus RTX 4070 Ti Super 16GB', 'nvidia', 'RTX 4070 Ti Super'],
     ['Placa de Vídeo ASRock RX 7600 XT Challenger, 16GB', 'amd', 'RX 7600 XT'],
     ['Placa de Vídeo Sapphire Pulse RX 9060 XT 16GB GDDR6', 'amd', 'RX 9060 XT'],
+    ['Placa de Vídeo PowerColor Reaper AMD Radeon RX 9050, 8GB, GDDR6', 'amd', 'RX 9050'],
+    ['Placa de Vídeo ASRock Radeon RX 7650 GRE Challenger OC, 8GB, GDDR6', 'amd', 'RX 7650 GRE'],
     ['Placa de Vídeo Galax GeForce GTX 1660 Super 6GB', 'nvidia', 'GTX 1660 Super'],
     ['Placa de Vídeo Gt740 4gb GDDR5', 'nvidia', 'GT 740'],
     ['Placa de Vídeo Intel Arc B580 Limited Edition, 12GB', 'intel', 'Arc B580'],

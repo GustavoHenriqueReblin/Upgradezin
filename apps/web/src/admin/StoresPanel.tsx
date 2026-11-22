@@ -106,7 +106,7 @@ function StoreForm({ store, onSaved, onUnauthorized }: { store: AdminStoreConfig
               <tr>
                 <th className="py-1 pr-2 font-medium">Categoria</th>
                 <th className="py-1 pr-2 font-medium">Categoria na loja (filtro do adapter)</th>
-                <th className="py-1 font-medium">Página da categoria (varredura da rotina)</th>
+                <th className="py-1 font-medium">Página da categoria (lida pela rotina; mais de uma: separadas por espaço)</th>
               </tr>
             </thead>
             <tbody>

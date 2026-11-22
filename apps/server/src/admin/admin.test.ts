@@ -9,7 +9,7 @@ import { adminStores, saveStoreConfig, useStoreStorage } from '../stores.ts';
 import { AdminAuth, readCookie, sessionCookie } from './auth.ts';
 import { Backups, MergeUploads } from './backup.ts';
 import { listAttempts, onAttempt, pageAttempts } from '../prices/attempts.ts';
-import { attemptTimeline, coverage, perfGaps, deleteTerm, listTerms, prioritizeTerm } from './data.ts';
+import { attemptTimeline, coverage, perfGaps } from './data.ts';
 import { listProducts, sheetStoreStatus } from './products.ts';
 import { registerAdmin } from './routes.ts';
 import { emitChange, onChange } from '../changes.ts';
@@ -95,7 +95,7 @@ function makeApp() {
       storesState: () => [],
       unpause: (id) => (calls.push(['unpause', id]), true),
       pause: (id, minutes) => void calls.push(['pause', id, minutes]),
-      collect: (id, category, term) => (calls.push(['collect', id, category, term]), term === 'pausada' ? { ok: false, error: 'Loja em pausa.' } : { ok: true, startsAt: '2026-11-20T21:00:00.000Z' }),
+      sweep: (id, category) => (calls.push(['sweep', id, category]), id === 's3' ? { ok: false, error: 'Loja em pausa.' } : { ok: true, startsAt: '2026-11-20T21:00:00.000Z' }),
       routine: () => routine,
       setRoutine: (s) => (calls.push(['routine', s]), { ...routine, ...s, modes: { ...routine.modes, ...s.modes }, live: { ...routine.live, ...s.live }, seconds: { ...routine.seconds, ...s.seconds } }),
     },
@@ -110,11 +110,8 @@ function makeApp() {
       readSheet: (id, sku) => (calls.push(['sheet', id, sku]), sku === 'pausada' ? { ok: false, error: 'Loja em pausa.' } : { ok: true, startsAt: '2026-11-20T21:00:00.000Z' }),
     },
     data: {
-      coverage: () => coverage(db),
+      coverage: () => coverage(db, () => 0),
       perfGaps: () => perfGaps(db),
-      terms: (f) => listTerms(db, f),
-      deleteTerm: (id) => deleteTerm(db, id),
-      prioritizeTerm: (id) => prioritizeTerm(db, id),
       attempts: (f) => pageAttempts(db, f),
       timeline: (hours) => attemptTimeline(db, hours),
     },
@@ -175,7 +172,7 @@ describe('rotas /api/admin', () => {
     const app = makeApp();
     const cookie = cookieOf(await login(app));
     const s = (await app.inject({ url: '/api/admin/status', headers: { cookie } })).json();
-    expect(s).toMatchObject({ version: '9.9.9', browserOpen: false, activeSessions: 0, db: { file: ':memory:', migration: 11 } });
+    expect(s).toMatchObject({ version: '9.9.9', browserOpen: false, activeSessions: 0, db: { file: ':memory:', migration: 12 } });
     expect(s.uptimeS).toBeGreaterThanOrEqual(0);
     expect(s.memory.rssMb).toBeGreaterThan(0);
   });
@@ -238,14 +235,15 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     expect(calls).toEqual([['unpause', 's2'], ['pause', 's2', 60]]);
   });
 
-  it('coletar agora: aceito com o horário; recusado (409) com o motivo', async () => {
+  it('varrer agora: aceito com o horário; recusado (409) com o motivo', async () => {
     const { post } = await setup();
-    const ok = await post('/api/admin/stores/s1/collect', { category: 'gpu', term: 'RTX 3050' });
+    const ok = await post('/api/admin/stores/s1/sweep', { category: 'gpu' });
     expect(ok.json()).toEqual({ ok: true, startsAt: '2026-11-20T21:00:00.000Z' });
-    const no = await post('/api/admin/stores/s1/collect', { category: 'gpu', term: 'pausada' });
+    const no = await post('/api/admin/stores/s3/sweep', { category: 'gpu' });
     expect(no.statusCode).toBe(409);
     expect(no.json().errors).toEqual(['Loja em pausa.']);
-    expect((await post('/api/admin/stores/s1/collect', { category: 'inventada', term: 'x' })).statusCode).toBe(400);
+    expect((await post('/api/admin/stores/s1/sweep', { category: 'inventada' })).statusCode).toBe(400);
+    expect((await post('/api/admin/stores/s1/collect', { category: 'gpu', term: 'RTX 3050' })).statusCode).toBe(404); // rota antiga saiu
   });
 
   it('produtos: lista paginada com filtros, andamento das fichas e "Ler ficha"', async () => {
@@ -307,21 +305,17 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
   });
 });
 
-describe('rotas de dados (cobertura, termos, consultas)', () => {
+describe('rotas de dados (cobertura, consultas)', () => {
   it('respondem com sessão e validam os filtros', async () => {
     const app = makeApp();
     const cookie = cookieOf(await login(app));
     const get = (url: string) => app.inject({ url, headers: { cookie } });
     expect((await get('/api/admin/coverage')).json()).toEqual([]);
-    expect((await get('/api/admin/terms?category=gpu&never=some&page=1&pageSize=20')).json()).toEqual({ items: [], total: 0, page: 1, pageSize: 20 });
-    for (const q of ['category=inventada', 'never=talvez', 'page=0', 'pageSize=500']) expect((await get(`/api/admin/terms?${q}`)).statusCode).toBe(400);
+    expect((await get('/api/admin/terms')).statusCode).toBe(404); // os termos saíram
     expect((await get('/api/admin/attempts?store=s2&status=blocked&page=2')).json()).toEqual({ items: [], total: 0, page: 2, pageSize: 50 });
     for (const q of ['page=0', 'pageSize=9999', 'status=talvez']) expect((await get(`/api/admin/attempts?${q}`)).statusCode).toBe(400);
     expect((await get('/api/admin/attempts/timeline?hours=48')).json()).toEqual([]);
     expect((await get('/api/admin/attempts/timeline?hours=0')).statusCode).toBe(400);
-    const del = await app.inject({ method: 'DELETE', url: '/api/admin/terms/999', headers: { cookie, 'x-admin': '1' } });
-    expect(del.statusCode).toBe(404);
-    expect((await app.inject({ method: 'DELETE', url: '/api/admin/terms/abc', headers: { cookie, 'x-admin': '1' } })).statusCode).toBe(404);
   });
 });
 
@@ -352,15 +346,15 @@ describe('rotas de backup, merge e atividade', () => {
 
     const src = join(mkdtempSync(join(tmpdir(), 'uz-src-')), 'local.db');
     const sdb = openDb(src);
-    sdb.prepare("INSERT INTO search_terms (category, term, origin, created_at) VALUES ('gpu', 'Zotac RTX 3050', 'text', '2026-11-20')").run();
+    sdb.prepare("INSERT INTO listings (store, store_sku, category, title, url, model_key, offer, first_seen_at, last_seen_at) VALUES ('s2', '1', 'gpu', 'Placa', 'https://s2.example/1', 'k', '{}', '2026-11-20', '2026-11-20')").run();
     sdb.close();
     const up = await app.inject({ method: 'POST', url: '/api/admin/merge', headers: h, payload: readFileSync(src) });
     expect(up.statusCode).toBe(200);
     const { id, report } = up.json();
-    expect(report).toMatchObject({ newTerms: 1, newListings: 0 });
+    expect(report).toMatchObject({ newListings: 1 });
     const applied = await app.inject({ method: 'POST', url: `/api/admin/merge/${id}/apply`, headers: { cookie, 'x-admin': '1' } });
     expect(applied.statusCode).toBe(200);
-    expect(applied.json()).toMatchObject({ backup: expect.stringMatching(/^pre-merge-/), report: { newTerms: 1 } });
+    expect(applied.json()).toMatchObject({ backup: expect.stringMatching(/^pre-merge-/), report: { newListings: 1 } });
     // Já aplicado: o envio não existe mais.
     expect((await app.inject({ method: 'POST', url: `/api/admin/merge/${id}/apply`, headers: { cookie, 'x-admin': '1' } })).statusCode).toBe(404);
   });

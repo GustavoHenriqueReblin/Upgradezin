@@ -5,7 +5,7 @@ import { usePageLoader } from '../browser.ts';
 import { getDb } from '../db/instance.ts';
 import { clearBackoff, pauseStore, useBackoffStorage } from '../pace.ts';
 import { useStoreStorage } from '../stores.ts';
-import { ensureTerms, idOf, saveCollection } from './prices.ts';
+import { saveCollection } from './prices.ts';
 import { routineNextAt, setRoutineSettings, stopRoutine } from './routine.ts';
 import { setSheetRoutine, sheetDelay, sheetNextAt, sheetRoutineSettings, sheetTick, stopSheetRoutine, useSheetRoutineStorage } from './sheet-routine.ts';
 import { getSheet } from './sheets.ts';
@@ -20,9 +20,8 @@ afterEach(() => {
 /** Placas de vídeo da S1 no catálogo, sem ficha lida. */
 function gpusInCatalog(...skus: string[]) {
   const db = getDb();
-  const ids = ensureTerms(db, [{ category: 'gpu', term: 'NVIDIA GeForce' }], 'seed');
   const offers = skus.map((sku) => ({ store: 's1', storeSku: sku, title: 'Placa RTX 5060', url: `https://www.s1.example/produto/${sku}`, priceCash: 2000, inStock: true, specs: { gpuModel: 'RTX 5060' }, modelKey: `gpu:${sku}`, collectedAt: '' }) as Offer);
-  saveCollection(db, { store: 's1', category: 'gpu', termId: idOf(ids, { category: 'gpu', term: 'NVIDIA GeForce' }), offers, at: new Date().toISOString(), complete: true });
+  saveCollection(db, { store: 's1', category: 'gpu', offers, at: new Date().toISOString() });
 }
 
 /** Página de produto da S1 com a ficha (comprimento da placa em mm). */

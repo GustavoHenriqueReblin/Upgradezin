@@ -49,7 +49,7 @@ describe('textos das consultas e pausas', () => {
 });
 
 describe('relatório do merge', () => {
-  const zero = { newListings: 0, newerListings: 0, newPricePoints: 0, newTerms: 0, newerRuns: 0, newerSheets: 0 };
+  const zero = { newListings: 0, newerListings: 0, newPricePoints: 0, newerSheets: 0 };
   it('só o que entra; nada vira uma linha', () => {
     expect(mergeLines({ ...zero, newListings: 297, newPricePoints: 2172 })).toEqual(['297 anúncio(s) novo(s)', '2172 ponto(s) de histórico de preço']);
     expect(mergeLines(zero)).toEqual(['nada: este servidor já tem tudo o que o banco enviado tem']);

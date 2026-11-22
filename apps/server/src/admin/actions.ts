@@ -1,13 +1,13 @@
-import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, type AdminStoreState, type CategoryId, type StoreId } from '@upgradezin/shared';
+import { CATEGORY_DEFS, ENABLED_CATEGORIES, type AdminStoreState, type CategoryId, type StoreId } from '@upgradezin/shared';
 import { config } from '../config.ts';
 import type { Db } from '../db/db.ts';
-import { backoffInfo, pagesUsed, queuedAt, registerSuccess } from '../pace.ts';
+import { backoffInfo, BlockedError, jitter, PageLimitError, pagesUsed, queuedAt, registerSuccess, sleep } from '../pace.ts';
 import { attemptCounts, lastAttempt } from '../prices/attempts.ts';
-import { canReadSheet, collectTerm, sheetOf, withBrowserSession } from '../prices/collect.ts';
-import { ensureTerms, idOf } from '../prices/prices.ts';
+import { canReadSheet, canSweep, collectSweepPage, sheetOf, withBrowserSession } from '../prices/collect.ts';
 import { SHEET_CATEGORIES } from '../prices/sheets.ts';
 import { routineBusy, routineNextAt, routineSettings } from '../prices/routine.ts';
-import { ACTIVE_STORES, adminStores } from '../stores.ts';
+import { restartSweep, sweepState } from '../prices/sweep.ts';
+import { ACTIVE_STORES, adminStores, sweepPaths } from '../stores.ts';
 
 /** Situação de cada loja agora: pausa, páginas da hora, intervalo, última coleta boa e último bloqueio. */
 export function storesState(db: Db, now = Date.now()): AdminStoreState[] {
@@ -42,35 +42,51 @@ export function storesState(db: Db, now = Date.now()): AdminStoreState[] {
     });
 }
 
-/** Coletas pedidas no admin seguem depois da resposta; só param quando o servidor desliga. */
+/** Leituras pedidas no admin seguem depois da resposta; só param quando o servidor desliga. */
 const jobs = new AbortController();
 export const stopAdminJobs = () => jobs.abort();
 
 export type CollectNowResult = { ok: true; startsAt: string } | { ok: false; error: string };
 
+/** Categorias sendo lidas pelo "varrer agora" (loja|categoria). */
+const sweeping = new Set<string>();
+
+/** Teto de páginas de uma volta do "varrer agora" (todos os caminhos juntos). */
+const SWEEP_NOW_MAX_PAGES = 200;
+
 /**
- * "Coletar agora" (admin): consulta um termo numa loja, na fila dela, com as mesmas regras de
- * sempre (fila da loja, na frente da rotina; limite por hora). Loja em pausa recusa:
- * tire a pausa antes. Responde na hora; o resultado aparece no registro de consultas.
+ * "Varrer agora" (admin): lê a categoria inteira na loja agora, do começo (todos os caminhos, até
+ * acabar o que está em estoque), uma página por vez na fila da loja, na frente da rotina, com o
+ * intervalo e o limite por hora de sempre. Serve também para conferir um caminho novo. Loja em pausa
+ * recusa. Responde na hora; as páginas aparecem em Consultas e a volta na Cobertura.
  */
-export function collectNow(db: Db, store: StoreId, category: CategoryId, term: string, now = Date.now()): CollectNowResult {
-  const t = term.trim().replace(/\s+/g, ' ');
+export function sweepNow(db: Db, store: StoreId, category: CategoryId, now = Date.now()): CollectNowResult {
   if (!ACTIVE_STORES.includes(store)) return { ok: false, error: 'Loja desligada ou não configurada.' };
   if (!ENABLED_CATEGORIES.includes(category)) return { ok: false, error: 'Categoria inválida.' };
-  const form = isFormTerm(category, t);
-  if (!form && !isTextTerm(t)) return { ok: false, error: 'Termo inválido: de 3 a 60 caracteres, letras, números e - + . /' };
+  if (!canSweep(store)) return { ok: false, error: 'Esta loja ainda não tem leitor de página de categoria.' };
+  if (!sweepPaths(store, category).length) return { ok: false, error: `Sem página de ${CATEGORY_DEFS[category].name.toLowerCase()} nesta loja: configure em Lojas.` };
+  const key = `${store}|${category}`;
+  if (sweeping.has(key)) return { ok: false, error: 'Essa categoria já está sendo lida agora.' };
   const bo = backoffInfo(store);
   if (bo) return { ok: false, error: `Loja em pausa até ${new Date(bo.until).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. Tire a pausa antes.` };
-  const ids = ensureTerms(db, [{ category, term: t }], form ? 'user' : 'text');
-  const due = { id: idOf(ids, { category, term: t }), category, term: t };
-  void withBrowserSession(() => collectTerm(store, due, jobs.signal, { origin: 'admin' }))
-    .then((offers) => {
+  restartSweep(db, store, category);
+  sweeping.add(key);
+  void withBrowserSession(async () => {
+    for (let n = 0; n < SWEEP_NOW_MAX_PAGES && !jobs.signal.aborted; n++) {
+      if (n > 0) await sleep(jitter(), jobs.signal);
+      const s = sweepState(db, store, category);
+      const r = await collectSweepPage(store, category, s.path ?? 0, s.page, jobs.signal, { origin: 'admin' });
       registerSuccess(store);
-      console.info(`[admin ${store}] ${category} "${t}": ${offers.length} ofertas`);
-    })
+      if (r.roundDone) {
+        console.info(`[admin ${store}] ${category}: volta completa${r.outOfStock ? `, ${r.outOfStock} sem estoque agora` : ''}`);
+        break;
+      }
+    }
+  })
     .catch((err) => {
-      if (!jobs.signal.aborted) console.warn(`[admin ${store}] ${category} "${t}":`, err instanceof Error ? err.message : err);
-    });
+      if (!jobs.signal.aborted && !(err instanceof BlockedError) && !(err instanceof PageLimitError)) console.warn(`[admin ${store}] ${category}:`, err instanceof Error ? err.message : err);
+    })
+    .finally(() => sweeping.delete(key));
   return { ok: true, startsAt: new Date(now).toISOString() };
 }
 

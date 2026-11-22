@@ -39,12 +39,18 @@ describe('validação da loja (admin)', () => {
     ['busca sem marcador', { search: '/busca?q=' }, 'Busca'],
     ['busca sem / no começo', { search: 'busca/{slug}' }, 'Busca'],
     ['busca para outra origem', { search: '//outro.example/{q}' }, 'Busca'],
-    ['varredura para outra origem', { sweep: { psu: 'https://outro.example/x' } }, 'Varredura'],
-    ['varredura sem /', { sweep: { psu: 'hardware/fontes' } }, 'Varredura'],
+    ['página da categoria para outra origem', { sweep: { psu: 'https://outro.example/x' } }, 'Página da categoria'],
+    ['página da categoria sem /', { sweep: { psu: 'hardware/fontes' } }, 'Página da categoria'],
+    ['um dos caminhos da categoria sem /', { sweep: { cooler: '/hardware/air hardware/water' } }, 'Página da categoria'],
     ['cor inválida', { colors: 'vermelho' }, 'Cor'],
   ])('recusa %s', (_, patch, field) => {
     const r = validateStoreInput('s1', { ...VALID, ...patch } as AdminStoreInput);
     expect('errors' in r && r.errors.some((e) => e.startsWith(field))).toBe(true);
+  });
+
+  it('página da categoria: mais de um caminho, separados por espaço (guardados com um espaço só)', () => {
+    const r = validateStoreInput('s1', { ...VALID, sweep: { cooler: '  /hardware/coolers/air-cooler   /hardware/coolers/water-cooler ' } });
+    expect('config' in r && r.config.sweep).toEqual({ cooler: '/hardware/coolers/air-cooler /hardware/coolers/water-cooler' });
   });
 
   it('sem cor: vale a cor padrão da tela (lista vazia)', () => {

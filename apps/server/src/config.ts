@@ -67,13 +67,13 @@ const Env = z.object({
   DEBUG_DUMPS: bool,
   /** Requisições à API por pessoa (IP) por minuto. */
   RATE_LIMIT_PER_MIN: z.coerce.number().default(120),
-  /** "Atualizar" (consultar as lojas de novo) por pessoa por hora; além disso, vale o que está no banco. */
+  /** "Atualizar" (buscar o texto livre nas lojas de novo) por pessoa por hora; além disso, vale o que está no banco. */
   FORCE_PER_HOUR: z.coerce.number().default(10),
-  /** "Atualizar" não consulta a loja se o resultado do banco tem menos que isto (minutos). */
+  /** "Atualizar" não busca o texto de novo na loja se a última busca dele tem menos que isto (minutos). */
   FORCE_MIN_AGE_MIN: z.coerce.number().default(10),
   /** Fichas técnicas (páginas de produto) que uma pessoa pode pedir por hora (as já guardadas não contam). */
   SHEETS_PER_HOUR: z.coerce.number().default(30),
-  /** Buscas com texto livre ("Buscar nas lojas" do filtro de texto) por pessoa por hora; além disso, só os termos do formulário. */
+  /** Buscas com texto livre ("Não achou? Buscar nas lojas") por pessoa por hora; além disso, só os termos do formulário (banco). */
   TEXT_SEARCHES_PER_HOUR: z.coerce.number().default(20),
   /**
    * Ficha técnica: com dados, vale para sempre (a ficha do produto não muda). Página sem ficha é lida
@@ -86,22 +86,16 @@ const Env = z.object({
   WATCHES_PER_IP: z.coerce.number().default(4),
   /** Buscas abertas ao mesmo tempo por pessoa. */
   SEARCHES_PER_IP: z.coerce.number().default(3),
-  /**
-   * Toda busca do site mostra o banco na hora e atualiza por trás os termos coletados há mais
-   * que isto (minutos). Menos que isso, vale o banco (não repete uma coleta de minutos atrás).
-   */
+  /** O mesmo texto livre só vai de novo à mesma loja depois disto (minutos); antes, vale o banco. */
   REVALIDATE_MIN: z.coerce.number().default(10),
-  /**
-   * A busca junta ao resultado de cada termo os anúncios da loja que o banco já tem de outras
-   * coletas e batem com o termo pelas specs, se vistos há menos que isto (horas).
-   */
+  /** A busca do site mostra os anúncios do banco vistos há menos que isto (horas). */
   SEARCH_DB_MAX_AGE_H: z.coerce.number().default(72),
-  /** Rotina de coleta de preços (docs/ARCHITECTURE.md §8.3). Desligada: o banco só recebe o que a busca consulta. */
+  /** Rotina de preços (docs/ARCHITECTURE.md §8.2): lê as páginas de categoria das lojas. Desligada: o banco só recebe o que a busca por texto trouxer. */
   ROUTINE_ENABLED: z
     .string()
     .optional()
     .transform((v) => v !== '0' && v !== 'false'),
-  /** Lojas que a rotina coleta sozinha. */
+  /** Lojas que a rotina lê sozinha. */
   ROUTINE_STORES: z
     .string()
     .default('s1,s2,s3')
@@ -111,34 +105,16 @@ const Env = z.object({
     .string()
     .default('s2,s3')
     .transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean)),
-  /**
-   * Modos da rotina (admin, aba Coleta): a cada tantos segundos (+ até 20% aleatório) a rotina faz
-   * uma coisa na loja: uma página da varredura, se houver e estiver na hora, ou um termo.
-   * Normal: a busca do site vai na hora. Reduzido e lento: entre duas consultas à loja, venham da
-   * rotina ou da busca do site, passa no mínimo o intervalo do modo.
-   */
+  /** Modos da rotina (admin, aba Coleta): segundos entre duas páginas de categoria na loja (+ até 20% aleatório). */
   ROUTINE_NORMAL_GAP_S: z.coerce.number().default(15),
   ROUTINE_REDUCED_GAP_S: z.coerce.number().default(20),
   ROUTINE_SLOW_GAP_S: z.coerce.number().default(60),
-  /** Texto livre pesquisado ("Buscar nas lojas" do filtro de texto): a rotina mantém o termo por estes dias depois da última busca. */
-  ROUTINE_TEXT_DAYS: z.coerce.number().default(7),
-  /** A rotina recoleta um termo quando a última coleta dele passou disto (horas). */
+  /** A rotina lê uma categoria de novo quando a última volta completa por ela passou disto (horas). */
   ROUTINE_REFRESH_H: z.coerce.number().default(12),
-  /** Páginas por loja por hora que a rotina pode usar (do total MAX_PAGES_PER_HOUR; o resto fica para a busca). */
+  /** Páginas por loja por hora que a rotina pode usar (do total MAX_PAGES_PER_HOUR; o resto fica para a busca por texto e as fichas). */
   ROUTINE_PAGES_PER_HOUR: z.coerce.number().default(12),
-  /** Termo que falhou (bloqueio, erro) só é tentado de novo depois disto. */
+  /** Categoria cuja página falhou (erro que não é bloqueio) só é tentada de novo depois disto. */
   ROUTINE_RETRY_MIN: z.coerce.number().default(60),
-  /**
-   * Varredura de categoria (lojas com STORE_Sx_SWEEP): lê a categoria inteira da loja, página
-   * por página, para todo produto à venda ter histórico (não só os que aparecem nos termos).
-   * Recomeça a categoria quando a última volta completa passou disto.
-   */
-  ROUTINE_SWEEP_REFRESH_H: z.coerce.number().default(24),
-  /**
-   * Páginas de varredura por loja por hora (saem de ROUTINE_PAGES_PER_HOUR). A varredura alterna com
-   * os termos (uma vez cada), então no máximo metade das vezes da rotina vai para ela.
-   */
-  ROUTINE_SWEEP_PAGES_PER_HOUR: z.coerce.number().default(20),
   /**
    * Rotina de fichas técnicas (separada da coleta): lê, em cada loja, uma página de produto do
    * catálogo de placa de vídeo, gabinete e cooler a cada SHEET_ROUTINE_SECONDS segundos. Cada ficha
@@ -149,21 +125,18 @@ const Env = z.object({
     .optional()
     .transform((v) => v === '1' || v === 'true'),
   SHEET_ROUTINE_SECONDS: z.coerce.number().int().default(180),
-  /** Teto de páginas por categoria numa volta (120 itens por página na S1, 36 na S2). */
+  /** Teto de páginas por caminho de categoria numa volta (120 itens por página na S1, 36 na S2, ~150 na S3). */
   ROUTINE_SWEEP_MAX_PAGES: z.coerce.number().default(40),
   /** Intervalo aleatório entre páginas da MESMA loja. */
   PAGE_DELAY_MIN_MS: z.coerce.number().default(5000),
   PAGE_DELAY_MAX_MS: z.coerce.number().default(12000),
   /** Páginas por loja por hora (janela deslizante). */
   MAX_PAGES_PER_HOUR: z.coerce.number().default(30),
-  /** 1 página de 120 itens por termo (termos já são específicos; a loja ordena pelos mais procurados). */
+  /** Busca por texto na S1: 1 página de 120 itens (a loja ordena pelos mais procurados). */
   MAX_PAGES_S1: z.coerce.number().default(1),
-  /**
-   * Páginas por termo na busca do site (abaixo do MAX_PAGES_* da loja): quem busca não espera o
-   * intervalo entre páginas; as seguintes ficam para a rotina e a varredura.
-   */
+  /** Páginas por texto na busca do site (abaixo do MAX_PAGES_* da loja): quem busca não espera o intervalo entre páginas. */
   SEARCH_MAX_PAGES: z.coerce.number().int().min(1).default(1),
-  /** 36 itens por página na S2: até 3 páginas por termo (para antes, quando a página quase não traz itens da categoria). */
+  /** Busca por texto na S2 (36 itens por página): até 3 páginas (para antes, quando a página quase não traz itens da categoria). */
   MAX_PAGES_S2: z.coerce.number().default(3),
 });
 

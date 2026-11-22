@@ -22,6 +22,8 @@ Recortes **anonimizados** de páginas reais de busca, usados pelos testes dos pa
 | `s2-product-gpu.html`, `s2-product-case.html` | página de produto, só a tabela de especificações | ficha técnica da S2 (comprimento, cooler e placa máximos, radiadores, part number) |
 | `s3-product-gpu.html`, `s3-product-case.html`, `s3-product-cooler.html` | página de produto, só o bloco "Especificações Técnicas" | ficha técnica da S3 (rótulo e valor em linhas separadas, dois-pontos no rótulo, altura marcada por "(A)", radiadores com barra) |
 | `s3-gpu.html` | busca "placa de video" | placa profissional descartada, GDDR ausente (DDR3), mesma placa da S1 |
+| `s3-category-cpu.html` | página de categoria "processadores" | cards sem `data-tss-*` (preço PIX no card, marca do título), em estoque primeiro, esgotados ("Todos vendidos", sem preço), botão "ver mais" (`#pdmore`) |
+| `s3-category-more.html` | "ver mais" da categoria "placas-mãe", aberto numa aba | resposta JSON (`more` com os cards, `bpg` vazio na última página) dentro do `<pre>` do Chrome |
 
 ## Regras
 

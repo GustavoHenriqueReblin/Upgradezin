@@ -134,3 +134,16 @@ describe('análise do PC importado', () => {
     expect(a.tips).toEqual([]);
   });
 });
+
+describe('placas novas na tabela (nov/2026)', () => {
+  it('RX 9050 e RX 7650 GRE têm índice, entre as vizinhas da TechPowerUp, e consumo', async () => {
+    const { GPU_POWER } = await import('./hardware.ts');
+    const { GPU_PCIE_X8 } = await import('./perf.ts');
+    expect(GPU_PERF['RX 9050']).toBeGreaterThan(GPU_PERF['RX 6600']!);
+    expect(GPU_PERF['RX 7650 GRE']).toBeGreaterThan(GPU_PERF['RX 7600']!);
+    expect(GPU_PERF['RX 7650 GRE']).toBeLessThan(GPU_PERF['RX 7600 XT']!);
+    expect([GPU_POWER['RX 9050'], GPU_POWER['RX 7650 GRE']]).toEqual([92, 170]);
+    expect(GPU_PCIE_X8.has('RX 7650 GRE')).toBe(true);
+    expect(GPU_PCIE_X8.has('RX 9050')).toBe(false); // PCIe 5.0 x16
+  });
+});

@@ -219,6 +219,13 @@ const MIGRATIONS: (string | Rebuild)[] = [
   ALTER TABLE listings ADD COLUMN group_key TEXT;
   CREATE INDEX listings_product ON listings (product_key);
   `,
+  // 12: saem os termos (a rotina lê as páginas de categoria das lojas; a busca do formulário responde
+  // pelo banco e só o texto livre vai às lojas, sem nada guardado por termo)
+  `
+  DROP TABLE listing_terms;
+  DROP TABLE term_runs;
+  DROP TABLE search_terms;
+  `,
 ];
 
 export type Db = DatabaseSync;

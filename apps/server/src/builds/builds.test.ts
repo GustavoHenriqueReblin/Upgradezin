@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Offer } from '@upgradezin/shared';
 import { openDb } from '../db/db.ts';
-import { ensureTerms, idOf, saveCollection } from '../prices/prices.ts';
+import { saveCollection } from '../prices/prices.ts';
 import { BUILD_ID, getSharedBuild, newBuildId, saveSharedBuild, SharedBuildSchema } from './builds.ts';
 
 const offer = (priceCash: number, collectedAt: string, patch: Partial<Offer> = {}): Offer => ({
@@ -46,14 +46,11 @@ describe('montagem compartilhada', () => {
     expect(getSharedBuild(db, id)).toMatchObject({ createdAt: '2026-11-19T10:05:00.000Z', build: { ram: { qty: 2, offers: [{ priceCash: 200 }] } } });
 
     // A rotina coletou o mesmo anúncio depois, com preço novo.
-    const ids = ensureTerms(db, [{ category: 'ram', term: 'DDR4 8GB' }], 'seed');
     saveCollection(db, {
       store: 's1',
       category: 'ram',
-      termId: idOf(ids, { category: 'ram', term: 'DDR4 8GB' }),
       offers: [offer(180, '2026-11-20T08:00:00.000Z')],
       at: '2026-11-20T08:00:00.000Z',
-      complete: true,
     });
     expect(getSharedBuild(db, id)?.build.ram?.offers[0]).toMatchObject({ priceCash: 180, collectedAt: '2026-11-20T08:00:00.000Z' });
 

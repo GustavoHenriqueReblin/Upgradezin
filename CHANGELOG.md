@@ -5,6 +5,10 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 ## [Não lançado]
 
 ### Adicionado
+- Tabela de desempenho: RX 9050 e RX 7650 GRE (índice pelas vizinhas na TechPowerUp, consumo e PCIe x8 da 7650 GRE).
+- Rotina de preços só pelas páginas de categoria das lojas, nas três lojas e em qualquer modo: lê a lista de cada categoria até acabar o que está em estoque (as lojas listam os em estoque primeiro) e recomeça a cada `ROUTINE_REFRESH_H`. Anúncio novo só entra em estoque; no fim de cada volta, o que estava em estoque e não apareceu passa a "sem estoque" (com ponto no histórico), e volta ao estoque sozinho na volta seguinte em que aparecer. Uma categoria pode ter mais de um caminho na loja (separados por espaço, em Lojas). A S3 ganhou leitor de página de categoria (os cards dela não trazem a marca: lida do título) e do "ver mais".
+- Admin, Coleta: "Varrer agora" lê uma categoria inteira numa loja na hora (serve para conferir um caminho novo). Cobertura: anúncios em estoque, volta em andamento e última volta completa por loja e categoria.
+
 - Mesmo produto em lojas diferentes: chave de produto por anúncio (mesmo part number, também achado no título ou no endereço de outra loja, sem o "NAC" que uma loja põe no fim) e de grupo (mais EAN, chave do título e assinatura de placa de vídeo: marca + chip + memória + linha). Nas placas de vídeo, os anúncios casados com outra loja foram de 24% para 35% (exato) e de 37% para 44% (grupo). A ficha técnica passa a valer para todos os anúncios do mesmo produto: 190 anúncios ganharam ficha de outra loja na hora, e a rotina não abre a página de produto já coberto. Admin, Produtos: status "de outra loja", de onde veio a ficha e os outros anúncios do mesmo produto. A busca agrupa com as mesmas regras (e deixa de juntar variantes como "Infinity 2" e "Infinity 3", "Ventus 2X" e "3X", DDR4 e DDR5).
 - Identificar Gargalo: cada dica de upgrade mostra as 5 melhores ofertas de agora. Processador e placa de vídeo ordenados por desempenho ganho por real (só os compatíveis: placa que cabe na fonte, processador aceito pela placa-mãe, com aviso quando pede BIOS nova), com o ganho estimado; memória, fonte e SSD, as mais baratas que servem. Tudo do banco, sem consultar loja.
 - Admin, cobertura: modelos de processador e placa de vídeo à venda que a tabela de desempenho não conhece.
@@ -26,11 +30,15 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 - Admin: todas as telas atualizam sozinhas, sem precisar trocar de aba (status, coleta, consultas, cobertura, produtos e rotina de fichas, termos, atividade, backups). Um canal ao vivo só para a página avisa quando uma consulta termina, uma loja começa ou termina uma página, entra ou sai de pausa, algo muda pelo admin ou alguém busca no site; a tela recarrega o que mostra. Também recarrega ao voltar para a aba do navegador e, por garantia, de tempos em tempos.
 
 ### Alterado
+- A busca do formulário responde só pelo banco (os anúncios que batem com os termos pelas specs); só o "Não achou? Buscar nas lojas" consulta as lojas (nas com busca ao vivo ligada), sem repetir o mesmo texto na mesma loja por `REVALIDATE_MIN`.
 - Admin: Consultas e Termos paginados no servidor, 50 por página, no mesmo padrão dos Produtos (total com os filtros, página anterior e próxima). O filtro "nunca coletado" dos Termos agora é feito no servidor, valendo para todas as páginas. A aba "Ao vivo" saiu; o canal ao vivo continua, atualizando as outras telas.
 - Varredura de categoria também na s2 (a página da categoria inteira, 36 itens por página): todo produto à venda nela passa a ter histórico, não só os que aparecem nos termos. Caminhos no admin (aba Lojas).
 - s2: até 3 páginas por termo na rotina (`MAX_PAGES_S2`, antes 1). A busca do site lê só a 1ª página de cada termo (`SEARCH_MAX_PAGES`): o intervalo antes da 2ª página deixava a S2 em ~16 s, quase sempre por poucos itens a mais; o resto vem do banco (rotina e varredura).
 - Varredura alterna com os termos (no máximo metade das vezes da rotina), até 20 páginas por hora por loja (`ROUTINE_SWEEP_PAGES_PER_HOUR`, antes 6) e 40 por categoria (`ROUTINE_SWEEP_MAX_PAGES`, antes 25).
 - O modo da loja passa a valer só para a rotina. Antes, no reduzido e no lento, a busca do site também esperava o intervalo do modo; agora isso é a "Busca ao vivo", independente do modo. A chave `slowlast:` do banco deixou de ser usada e é apagada ao subir.
+
+### Removido
+- Termos automáticos: a rotina não busca mais termos nas lojas (traziam kits, PCs montados e acessórios e só o topo de cada busca). Saem as tabelas de termos (migração 12), a aba Termos e o "coletar termo" do admin, e `ROUTINE_TEXT_DAYS`, `ROUTINE_SWEEP_REFRESH_H` e `ROUTINE_SWEEP_PAGES_PER_HOUR`.
 
 ## [0.3.0] - 2026-11-21
 

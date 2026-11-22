@@ -91,6 +91,31 @@ export function normalizeBrand(raw: string | undefined): string | undefined {
     .replace(/(^|[\s-])(\p{L})/gu, (_m, sep: string, c: string) => sep + c.toUpperCase());
 }
 
+/** Começo do título que diz o tipo do produto, antes da marca ("Placa de Vídeo", "Kit Fan com 3 Unidades"…). */
+const PRODUCT_TYPE =
+  /^(?:kit\s+(?:de\s+)?fans?(?:\s+com\s+\d+\s+unidades)?|placa[\s-]+m[aã]e|placa\s+de\s+v[ií]deo|processador|fonte(?:\s+de\s+alimenta[cç][aã]o)?|mem[oó]ria(?:\s+ram)?|ssd|gabinete|water\s*cooler|air\s*cooler|cooler(?!\s+master)(?:\s+para\s+processador)?|fan|ventoinha)(?=\s)\s*/i;
+/** Palavras entre o tipo e a marca ("Gabinete Gamer NZXT", "Memória DDR5 Corsair", "SSD M.2 NVMe Kingston"). */
+const FILLER = /^(?:gamer|ddr\d|m\.2|nvme|sata(?:\s+iii)?|para\s+pc)(?=\s)\s*/i;
+const MULTIWORD_BRANDS = Object.keys(BRAND_ALIASES).filter((k) => k.includes(' '));
+
+/**
+ * Marca lida do título, para a loja que não manda a marca em campo próprio: o que vem depois do
+ * tipo do produto ("Placa Mãe Asus TUF…" -> ASUS, "Gabinete Gamer NZXT H5…" -> NZXT,
+ * "Cooler para Processador Cooler Master…" -> Cooler Master). Sem tipo conhecido no começo: nenhuma.
+ */
+export function brandFromTitle(title: string): string | undefined {
+  let rest = title.trim();
+  const type = rest.match(PRODUCT_TYPE);
+  if (!type) return undefined;
+  rest = rest.slice(type[0].length);
+  for (let m = rest.match(FILLER); m; m = rest.match(FILLER)) rest = rest.slice(m[0].length);
+  const lower = stripAccents(rest).toLowerCase();
+  const multi = MULTIWORD_BRANDS.find((b) => lower.startsWith(b) && !/[\p{L}\p{N}]/u.test(lower.charAt(b.length)));
+  if (multi) return normalizeBrand(multi);
+  const word = rest.match(/^[\p{L}\p{N}][\p{L}\p{N}!-]*/u)?.[0];
+  return word ? normalizeBrand(word) : undefined;
+}
+
 const EFF_WORDS: Record<string, Efficiency> = {
   white: 'white',
   standard: 'white',

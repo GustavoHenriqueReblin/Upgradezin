@@ -234,6 +234,6 @@ export const s1: StoreAdapter = {
     const now = new Date().toISOString();
     const offers = cat.data.map((p) => mapS1Product(p, now, category)).filter((o): o is Offer => !!o);
     await resolveCoupons(offers, signal);
-    return { offers, totalPages: cat.meta.totalPagesCount || 1 };
+    return { offers, totalPages: cat.meta.totalPagesCount || 1, inStock: cat.data.filter((p) => p.available).length };
   },
 };

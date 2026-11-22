@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CategoryId, Offer, Specs, StoreId } from '@upgradezin/shared';
 import { openDb, type Db } from '../db/db.ts';
 import { recordAttempt } from '../prices/attempts.ts';
-import { ensureTerms, idOf, saveCollection } from '../prices/prices.ts';
+import { saveCollection } from '../prices/prices.ts';
 import { saveSheet } from '../prices/sheets.ts';
 import { listProducts, sheetStoreStatus } from './products.ts';
 
@@ -10,15 +10,14 @@ const offer = (store: StoreId, sku: string, title: string, specs: Specs = {}, ex
   ({ store, storeSku: sku, title, url: `https://${store}.example/${sku}`, priceCash: 1000, inStock: true, specs, modelKey: `m${sku}`, collectedAt: '', ...extra }) as Offer;
 
 function seen(db: Db, store: StoreId, category: CategoryId, offers: Offer[], at: string) {
-  const ids = ensureTerms(db, [{ category, term: 'teste' }], 'seed');
-  saveCollection(db, { store, category, termId: idOf(ids, { category, term: 'teste' }), offers, at, complete: true });
+  saveCollection(db, { store, category, offers, at });
 }
 
 const NOW = Date.parse('2026-11-21T12:00:00.000Z');
 
 function catalog() {
   const db = openDb(':memory:');
-  seen(db, 's1', 'gpu', [offer('s1', 'g1', 'Placa RTX 5060 Gigabyte', { gpuModel: 'RTX 5060' }), offer('s1', 'g2', 'Placa RX 9050', { gpuModel: 'RX 9050' })], '2026-11-21T10:00:00.000Z');
+  seen(db, 's1', 'gpu', [offer('s1', 'g1', 'Placa RTX 5060 Gigabyte', { gpuModel: 'RTX 5060' }), offer('s1', 'g2', 'Placa RX 9040', { gpuModel: 'RX 9040' })], '2026-11-21T10:00:00.000Z');
   seen(db, 's1', 'case', [offer('s1', 'k1', 'Gabinete Mid Tower', {}, { inStock: false })], '2026-11-21T09:00:00.000Z');
   seen(db, 's2', 'cpu', [offer('s2', 'p1', 'Processador Ryzen 5 5600 100%', { cpuBrand: 'amd', cpuLine: 'Ryzen 5', cpuModel: '5600' })], '2026-11-21T08:00:00.000Z');
   seen(db, 's2', 'cooler', [offer('s2', 'c1', 'Cooler antigo')], '2026-10-01T00:00:00.000Z'); // fora dos 14 dias
@@ -42,7 +41,7 @@ describe('produtos do catálogo (admin)', () => {
     ]);
     const g1 = all.items.find((p) => p.sku === 'g1')!;
     expect(g1).toMatchObject({ store: 's1', category: 'gpu', price: 1000, inStock: true, perf: 128, sheet: { specs: { gpuLength: 228 } }, sheetAt: '2026-11-21T11:00:00.000Z' });
-    expect(all.items[0]!.perf).toBeUndefined(); // RX 9050 fora da tabela
+    expect(all.items[0]!.perf).toBeUndefined(); // RX 9040 fora da tabela
     expect(all.items.find((p) => p.sku === 'p1')!.perf).toBe(100);
 
     const page2 = listProducts(db, { pageSize: 2, page: 2 });

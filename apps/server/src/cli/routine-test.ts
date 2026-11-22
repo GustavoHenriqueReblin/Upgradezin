@@ -1,39 +1,29 @@
 /**
- * Teste de rotina contra as lojas de verdade, pelo mesmo caminho do servidor:
- * collectTerm(origin 'routine') -> withStore (fila e intervalo da loja) -> adapter -> loadPage
- * (aba nova no Chrome da loja, fechada no fim). Grava no banco como a rotina grava.
+ * Teste da rotina contra as lojas de verdade, pelo mesmo caminho do servidor:
+ * collectSweepPage(origin 'routine') -> withStore (fila e intervalo da loja) -> adapter -> loadPage
+ * (aba nova no Chrome da loja, fechada no fim). Lê a 1ª página de cada categoria (o primeiro
+ * caminho configurado) e grava no banco como a rotina grava (a volta segue dali na rotina).
  *
- * Lojas em paralelo; dentro de cada loja, um termo por vez. Bloqueio para a loja (como a rotina:
- * a pausa vale e ela não segue com os outros termos).
+ * Lojas em paralelo; dentro de cada loja, uma categoria por vez. Bloqueio para a loja (como a
+ * rotina: a pausa vale e ela não segue com as outras categorias).
  *
- *   pnpm routine-test                              -> todas as lojas, as 7 categorias
+ *   pnpm routine-test                              -> todas as lojas, todas as categorias com página configurada
  *   pnpm routine-test --stores=s2,s3               -> só algumas lojas
  *   pnpm routine-test --categories=gpu,ssd         -> só algumas categorias
  *   pnpm routine-test --keep-open                  -> no fim, deixa os Chromes abertos até Ctrl+C
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { effectiveCash, GPU_ANY_QUERY, isFormTerm, STORES, type CategoryId, type StoreId } from '@upgradezin/shared';
+import { effectiveCash, ENABLED_CATEGORIES, STORES, type CategoryId, type StoreId } from '@upgradezin/shared';
 import { browserOpen, closeBrowser } from '../browser.ts';
 import { ExtSetupError } from '../browser-ext.ts';
 import { config } from '../config.ts';
 import { deleteMeta, metaByPrefix, setMeta } from '../db/db.ts';
 import { getDb } from '../db/instance.ts';
-import { type Backoff, backoffInfo, BlockedError, PageLimitError, registerSuccess, SearchRedirectError, useBackoffStorage } from '../pace.ts';
-import { collectTerm, withBrowserSession } from '../prices/collect.ts';
-import { ensureTerms } from '../prices/prices.ts';
-import { ACTIVE_STORES, storeConfig, useStoreStorage } from '../stores.ts';
-
-/** Um termo por categoria, todos gerados pelo formulário (os mesmos que a rotina coleta). */
-const TERMS: [CategoryId, string][] = [
-  ['motherboard', 'B550'],
-  ['cpu', 'Ryzen 5'],
-  ['gpu', GPU_ANY_QUERY],
-  ['ssd', 'SSD NVMe'],
-  ['psu', '750W'],
-  ['case', 'Gabinete'],
-  ['cooler', 'Air Cooler'],
-];
+import { type Backoff, backoffInfo, BlockedError, PageLimitError, registerSuccess, useBackoffStorage } from '../pace.ts';
+import { collectSweepPage, withBrowserSession } from '../prices/collect.ts';
+import { getMeta } from '../db/db.ts';
+import { ACTIVE_STORES, storeConfig, sweepPaths, useStoreStorage } from '../stores.ts';
 
 // ----- mesmo preparo do servidor (src/index.ts): lojas e pausas, do banco -----
 const db = getDb();
@@ -58,24 +48,20 @@ const wanted = list(flags.stores);
 const stores = (wanted ?? [...ACTIVE_STORES]).filter((s): s is StoreId => ACTIVE_STORES.includes(s as StoreId));
 for (const s of wanted ?? []) if (!stores.includes(s as StoreId)) console.error(`Loja ignorada: "${s}" (ativas: ${ACTIVE_STORES.join(', ')})`);
 const cats = list(flags.categories);
-for (const c of cats ?? []) if (!TERMS.some(([k]) => k === c)) console.error(`Categoria ignorada: "${c}"`);
-const terms = TERMS.filter(([c]) => !cats || cats.includes(c));
-for (const [c, t] of terms) if (!isFormTerm(c, t)) throw new Error(`Termo fora do formulário: ${c} "${t}"`);
-if (!stores.length || !terms.length) {
-  console.error(`Uso: pnpm routine-test [--stores=${STORES.join(',')}] [--categories=${TERMS.map(([c]) => c).join(',')}] [--keep-open]`);
+for (const c of cats ?? []) if (!(ENABLED_CATEGORIES as string[]).includes(c)) console.error(`Categoria ignorada: "${c}"`);
+const categories = ENABLED_CATEGORIES.filter((c) => !cats || cats.includes(c));
+if (!stores.length || !categories.length) {
+  console.error(`Uso: pnpm routine-test [--stores=${STORES.join(',')}] [--categories=${ENABLED_CATEGORIES.join(',')}] [--keep-open]`);
   process.exit(1);
 }
+// Rotina ligada no servidor ao mesmo tempo usaria o mesmo Chrome: avisa.
+if (getMeta(db, 'routine')?.includes('"enabled":true')) console.warn('Aviso: a rotina está ligada neste banco; com o servidor rodando, pare-o antes.');
 
-// Garante os termos no banco (a rotina coleta os termos guardados lá) e pega o id de cada um.
-ensureTerms(db, terms.map(([category, term]) => ({ category, term })), 'seed');
-const idOf = (category: CategoryId, term: string) =>
-  (db.prepare('SELECT id FROM search_terms WHERE category = ? AND lower(term) = lower(?)').get(category, term) as { id: number }).id;
-
-type Status = 'ok' | 'vazio' | 'bloqueada' | 'pausada' | 'limite' | 'redireciona' | 'erro' | 'pulada';
+type Status = 'ok' | 'vazio' | 'bloqueada' | 'pausada' | 'limite' | 'erro' | 'pulada';
 interface Row {
   store: StoreId;
   category: CategoryId;
-  term: string;
+  path: string;
   status: Status;
   count: number;
   ms: number;
@@ -91,28 +77,34 @@ const clock = () => `${((Date.now() - t0) / 1000).toFixed(1).padStart(6)}s`;
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 console.log(
-  `Teste de rotina: ${stores.join(', ')} × ${terms.length} categorias | ` +
+  `Teste de rotina: ${stores.join(', ')} × ${categories.length} categorias | ` +
     `pausa após bloqueio: ${config.BACKOFF_ENABLED ? 'ligada' : 'desligada'} | passo: ${config.BROWSER_STEP_MS} ms\n`,
 );
 
-/** Uma loja: os termos em sequência, como collectTerms() da rotina. */
+/** Uma loja: a 1ª página de cada categoria, em sequência. */
 async function runStore(store: StoreId) {
   const name = storeConfig(store).name;
   let stopped: Status | null = null;
-  for (const [category, term] of terms) {
-    const base = { store, category, term };
+  for (const category of categories) {
+    const path = sweepPaths(store, category)[0];
+    if (!path) continue;
+    const base = { store, category, path };
     if (ac.signal.aborted || stopped) {
       rows.push({ ...base, status: 'pulada', count: 0, ms: 0, detail: stopped ? `loja parou (${stopped})` : 'cancelado' });
       continue;
     }
     const start = Date.now();
-    console.log(`${clock()} [${name}] ${category} "${term}"…`);
+    console.log(`${clock()} [${name}] ${category} ${path}…`);
     try {
-      const offers = await collectTerm(store, { id: idOf(category, term), category, term }, ac.signal, { origin: 'routine' });
+      const r = await collectSweepPage(store, category, 0, 1, ac.signal, { origin: 'routine' });
       registerSuccess(store);
+      const offers = db
+        .prepare(`SELECT offer FROM listings WHERE store = ? AND category = ? ORDER BY last_seen_at DESC LIMIT ?`)
+        .all(store, category, r.saved)
+        .map((x) => JSON.parse((x as { offer: string }).offer) as import('@upgradezin/shared').Offer);
       const sale = offers.filter((o) => o.inStock && !o.marketplace && !o.openbox);
       const best = sale.sort((a, b) => effectiveCash(a) - effectiveCash(b))[0];
-      const row: Row = { ...base, status: offers.length ? 'ok' : 'vazio', count: offers.length, ms: Date.now() - start };
+      const row: Row = { ...base, status: r.read ? 'ok' : 'vazio', count: r.read, ms: Date.now() - start };
       if (best) row.cheapest = { title: best.title, price: effectiveCash(best) };
       rows.push(row);
       console.log(`${clock()} [${name}] ${category}: ${offers.length} ofertas em ${(row.ms / 1000).toFixed(1)}s${best ? ` | menor: ${brl(effectiveCash(best))} ${best.title.slice(0, 50)}` : ''}`);
@@ -122,13 +114,12 @@ async function runStore(store: StoreId) {
       let status: Status = 'erro';
       if (err instanceof BlockedError) status = err.paused ? 'pausada' : 'bloqueada';
       else if (err instanceof PageLimitError) status = 'limite';
-      else if (err instanceof SearchRedirectError) status = 'redireciona';
       rows.push({ ...base, status, count: 0, ms, detail: err instanceof BlockedError ? `${err.reason}: ${msg}` : msg });
       console.log(`${clock()} [${name}] ${category}: ${status.toUpperCase()} em ${(ms / 1000).toFixed(1)}s (${msg})`);
-      // Como a rotina: bloqueio, pausa ou limite param a loja; redirecionamento e erro seguem para o próximo termo.
+      // Como a rotina: bloqueio, pausa ou limite param a loja; erro segue para a próxima categoria.
       // Com BACKOFF_ENABLED=false, bloqueio não para: segue para a próxima categoria.
       if (status === 'pausada' || status === 'limite' || (status === 'bloqueada' && config.BACKOFF_ENABLED)) stopped = status;
-      // Extensão não instalada ou porta ocupada: os próximos termos falhariam igual.
+      // Extensão não instalada ou porta ocupada: as próximas falhariam igual.
       if (err instanceof ExtSetupError) stopped = 'erro';
     }
   }
@@ -142,7 +133,7 @@ try {
   console.log(`\n=== Resultado (${total}s) ===\n`);
   const w = Math.max(...stores.map((s) => storeConfig(s).name.length), 4);
   console.log(`${'loja'.padEnd(w)}  ${'categoria'.padEnd(12)} ${'status'.padEnd(12)} ${'ofertas'.padStart(7)} ${'tempo'.padStart(7)}  menor preço`);
-  for (const r of rows.sort((a, b) => a.store.localeCompare(b.store) || terms.findIndex(([c]) => c === a.category) - terms.findIndex(([c]) => c === b.category))) {
+  for (const r of rows.sort((a, b) => a.store.localeCompare(b.store) || categories.indexOf(a.category) - categories.indexOf(b.category))) {
     console.log(
       `${storeConfig(r.store).name.padEnd(w)}  ${r.category.padEnd(12)} ${r.status.padEnd(12)} ${String(r.count).padStart(7)} ${`${(r.ms / 1000).toFixed(1)}s`.padStart(7)}  ` +
         (r.cheapest ? `${brl(r.cheapest.price)} ${r.cheapest.title.slice(0, 45)}` : (r.detail ?? '').slice(0, 60)),

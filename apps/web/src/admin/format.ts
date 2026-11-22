@@ -67,8 +67,6 @@ export function mergeLines(r: MergeReport): string[] {
     [r.newListings, 'anúncio(s) novo(s)'],
     [r.newerListings, 'anúncio(s) com oferta mais recente'],
     [r.newPricePoints, 'ponto(s) de histórico de preço'],
-    [r.newTerms, 'termo(s) novo(s)'],
-    [r.newerRuns, 'coleta(s) por termo mais recente(s)'],
     [r.newerSheets, 'ficha(s) técnica(s)'],
   ]
     .filter(([n]) => (n as number) > 0)
@@ -79,8 +77,6 @@ export function mergeLines(r: MergeReport): string[] {
 /** Lojas em que a rotina roda de fato: as marcadas, se ela estiver ligada; senão, nenhuma. */
 export const routineStores = <T extends string>(r: { enabled: boolean; stores: T[] }): T[] => (r.enabled ? r.stores : []);
 
-/** Filtro de coleta da aba Termos: nunca coletado em nenhuma loja, ou em alguma delas. */
-export type NeverFilter = '' | 'none' | 'some';
 
 /** Contagem até `target`: "00:08:22 (22:32)"; passou da hora, "00:00:00". Hora entre parênteses no fuso local. */
 export function countdown(target: string | number, now = Date.now()): string {

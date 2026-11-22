@@ -1,19 +1,20 @@
 /**
- * Busca pelo terminal, sem UI. Sempre com termo: nunca a categoria inteira.
- *   pnpm scan 750W                         -> fontes de 750 W
- *   pnpm scan 750W,850W                    -> vários termos, um por vez em cada loja
+ * Busca pelo terminal, sem UI, como a do site: termos do formulário respondem pelo banco; um texto
+ * livre (fora do formulário) também vai às lojas.
+ *   pnpm scan 750W                         -> fontes de 750 W (banco)
+ *   pnpm scan 750W,850W                    -> vários termos
  *   pnpm scan B550 --category=motherboard  -> placas-mãe B550
- *   pnpm scan 750W --stores=s1             -> só algumas lojas (IDs)
+ *   pnpm scan "Rise Mode" --stores=s1      -> texto livre, só algumas lojas (IDs)
  *   pnpm scan 850W --json --top=20         -> imprime JSON / limita a lista
- *   pnpm scan --sweep                      -> confere os caminhos de varredura (admin, Lojas):
- *                                             1ª página de cada categoria, sem gravar
+ *   pnpm scan --sweep                      -> confere as páginas de categoria (admin, Lojas):
+ *                                             1ª página de cada caminho, sem gravar
  */
-import { effectiveCash, ENABLED_CATEGORIES, groupOffers, type CategoryId, type Offer, type StoreId } from '@upgradezin/shared';
+import { effectiveCash, ENABLED_CATEGORIES, groupOffers, isFormTerm, type CategoryId, type Offer, type StoreId } from '@upgradezin/shared';
 import { closeBrowser } from '../browser.ts';
 import { previewSweep } from '../prices/collect.ts';
 import { runSearch } from '../search.ts';
 import { getDb } from '../db/instance.ts';
-import { ACTIVE_STORES, storeConfig, useStoreStorage } from '../stores.ts';
+import { ACTIVE_STORES, storeConfig, sweepPaths, useStoreStorage } from '../stores.ts';
 
 // Lojas como o servidor usa (banco; na primeira vez, copiadas do .env).
 useStoreStorage(getDb());
@@ -41,14 +42,15 @@ if (flags.sweep) {
   const cats = flags.category ? [category] : ENABLED_CATEGORIES;
   for (const store of stores) {
     for (const cat of cats) {
-      const path = storeConfig(store).sweep[cat];
-      if (!path) continue;
-      try {
-        const r = await previewSweep(store, cat, ac.signal);
-        if (!r) console.log(`${store} ${cat}: a loja não tem varredura`);
-        else console.log(`${store} ${cat} ${path}: ${r.totalPages} páginas, ${r.offers.length} ofertas na 1ª (${r.offers.slice(0, 2).map((o) => o.title.slice(0, 40)).join(' | ')})`);
-      } catch (err) {
-        console.log(`${store} ${cat} ${path}: ERRO ${(err as Error).message}`);
+      const paths = sweepPaths(store, cat);
+      for (const [i, path] of paths.entries()) {
+        try {
+          const r = await previewSweep(store, cat, ac.signal, i);
+          if (!r) console.log(`${store} ${cat}: a loja não tem leitor de página de categoria`);
+          else console.log(`${store} ${cat} ${path}: ${r.totalPages} páginas, ${r.inStock} em estoque e ${r.offers.length} ofertas na 1ª (${r.offers.slice(0, 2).map((o) => o.title.slice(0, 40)).join(' | ')})`);
+        } catch (err) {
+          console.log(`${store} ${cat} ${path}: ERRO ${(err as Error).message}`);
+        }
       }
     }
   }
@@ -67,7 +69,7 @@ process.on('SIGINT', () => ac.abort());
 
 // O Chrome de cada loja fica aberto entre consultas: fecha no fim (senão o processo não termina).
 await runSearch(
-  { category, terms, stores },
+  { category, terms, stores, text: terms.some((t) => !isFormTerm(category, t)) },
   {
     onStatus: (e) =>
       console.error(

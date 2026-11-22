@@ -20,7 +20,9 @@ export const GPU_PERF: Record<string, number> = {
   'GTX 750 Ti': 18, 'GTX 750': 15, 'GT 1030': 14, 'GT 740': 8, 'GT 730': 6, 'GT 710': 4,
   // Antigas que ainda aparecem à venda (estoque velho e placas "para vídeo"): só para o PC importado.
   'GT 705': 3, 'GT 610': 3, 'GT 340': 3, 'GT 240': 3, 'GT 220': 2, 'GT 210': 1,
-  'RX 9070 XT': 240, 'RX 9070 GRE': 190, 'RX 9070': 215, 'RX 9060 XT': 145,
+  // RX 9050 (TechPowerUp: 4% acima da RX 6600, 2% abaixo da RX 5700 XT) e RX 7650 GRE (entre a RX 7600, 98%, e a 7600 XT, 104%).
+  'RX 9070 XT': 240, 'RX 9070 GRE': 190, 'RX 9070': 215, 'RX 9060 XT': 145, 'RX 9050': 96,
+  'RX 7650 GRE': 114,
   'RX 7900 XTX': 255, 'RX 7900 XT': 225, 'RX 7900 GRE': 195, 'RX 7800 XT': 180, 'RX 7700 XT': 155, 'RX 7600 XT': 118, 'RX 7600': 112,
   'RX 6950 XT': 205, 'RX 6900 XT': 195, 'RX 6800 XT': 185, 'RX 6800': 160, 'RX 6750 XT': 138, 'RX 6700 XT': 130, 'RX 6700': 118,
   'RX 6650 XT': 112, 'RX 6600 XT': 108, 'RX 6600': 95, 'RX 6500 XT': 40, 'RX 6400': 33,
@@ -109,7 +111,7 @@ export function cpuLinesAbove(socket: Socket, min: number): { family: CpuFamily;
  */
 export const GPU_PCIE_X8 = new Set([
   'RTX 5060 Ti', 'RTX 5060', 'RTX 5050', 'RTX 4060 Ti', 'RTX 4060', 'RTX 3050',
-  'RX 7600 XT', 'RX 7600', 'RX 6650 XT', 'RX 6600 XT', 'RX 6600', 'RX 6500 XT', 'RX 6400', 'RX 5500 XT',
+  'RX 7650 GRE', 'RX 7600 XT', 'RX 7600', 'RX 6650 XT', 'RX 6600 XT', 'RX 6600', 'RX 6500 XT', 'RX 6400', 'RX 5500 XT',
   'Arc B580', 'Arc B570', 'Arc A380', 'Arc A310',
 ]);
 

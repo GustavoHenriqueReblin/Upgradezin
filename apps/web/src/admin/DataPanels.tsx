@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { CATEGORY_DEFS, ENABLED_CATEGORIES, type AdminPage, type AdminStoreConfig, type AdminTerm, type CoverageRow, type PerfGap, type StoreAttempt, type TimelineBucket } from '@upgradezin/shared';
-import { ArrowUp, Trash2 } from 'lucide-react';
+import { CATEGORY_DEFS, type AdminPage, type AdminStoreConfig, type CoverageRow, type PerfGap, type StoreAttempt, type TimelineBucket } from '@upgradezin/shared';
 import { AdminError, adminApi } from './api.ts';
 import { useLiveReload, type LiveKind } from './live.ts';
 import { Pager } from './Pager.tsx';
-import { attemptResult, attemptWhat, formatDuration, formatWhen, originText, statusText, type NeverFilter } from './format.ts';
+import { attemptResult, attemptWhat, formatDuration, formatWhen, originText, statusText } from './format.ts';
 
 type Props = { onUnauthorized: () => void };
 
@@ -144,7 +143,7 @@ function Timeline({ buckets, names }: { buckets: TimelineBucket[]; names: Map<st
   );
 }
 
-/** Cobertura por loja e categoria: anúncios, frescor, termos coletados. */
+/** Cobertura por loja e categoria: anúncios (em estoque), frescor e a leitura da categoria pela rotina. */
 export function CoveragePanel({ onUnauthorized }: Props) {
   const names = useStoreNames(onUnauthorized);
   const { data, error } = useAdmin<CoverageRow[]>('/coverage', onUnauthorized, ['attempt', 'admin'], 3_000);
@@ -152,20 +151,27 @@ export function CoveragePanel({ onUnauthorized }: Props) {
   const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
   return (
     <Box title="Cobertura por loja e categoria">
-      <Table head={['Loja', 'Categoria', 'Anúncios', 'Vistos em 24 h', 'Vistos em 7 dias', 'Termos coletados', 'Fichas lidas', 'Última coleta boa']}>
+      <Table head={['Loja', 'Categoria', 'Anúncios', 'Em estoque', 'Vistos em 24 h', 'Vistos em 7 dias', 'Página da categoria', 'Fichas lidas', 'Último visto']}>
         {data.map((r) => (
           <tr key={`${r.store}|${r.category}`} className="border-t border-zinc-100 dark:border-zinc-800">
             <Td>{names.get(r.store) ?? r.store}</Td>
             <Td>{CATEGORY_DEFS[r.category]?.name ?? r.category}</Td>
             <Td className="tabular-nums">{r.listings}</Td>
+            <Td className="tabular-nums">{r.inStock}</Td>
             <Td className="tabular-nums">
               {r.seen24h} <span className="text-zinc-500">({pct(r.seen24h, r.listings)}%)</span>
             </Td>
             <Td className="tabular-nums">
               {r.seen7d} <span className="text-zinc-500">({pct(r.seen7d, r.listings)}%)</span>
             </Td>
-            <Td className={`tabular-nums ${r.termsOk < r.terms ? 'text-amber-600 dark:text-amber-400' : ''}`}>
-              {r.termsOk} de {r.terms}
+            <Td className={r.paths ? '' : 'text-amber-600 dark:text-amber-400'}>
+              {!r.paths
+                ? 'não configurada'
+                : r.sweeping
+                  ? `lendo: ${r.paths > 1 ? `caminho ${r.sweeping.path}, ` : ''}pág. ${r.sweeping.page}`
+                  : r.sweptAt
+                    ? `volta completa ${formatWhen(r.sweptAt)}`
+                    : 'ainda não lida'}
             </Td>
             <Td className="tabular-nums">
               {r.sheets === null ? (
@@ -181,8 +187,9 @@ export function CoveragePanel({ onUnauthorized }: Props) {
         ))}
       </Table>
       <p className="mt-2 text-xs text-zinc-500">
-        Termos coletados em amarelo: a loja ainda não teve coleta boa de todos os termos da categoria (comum enquanto a rotina ainda não deu a volta nos termos). Fichas lidas: medidas físicas da página do
-        produto (placa de vídeo, gabinete, cooler), lidas uma vez por produto pela rotina, aos poucos.
+        Página da categoria: a rotina lê a lista da categoria na loja (configurada em Lojas) até acabar o que está em estoque; no fim de cada volta, o que estava em estoque e não apareceu passa a "sem
+        estoque". "Não configurada": a loja não tem caminho para essa categoria. Fichas lidas: medidas físicas da página do produto (placa de vídeo, gabinete, cooler), lidas uma vez por produto pela rotina
+        de fichas, aos poucos.
       </p>
     </Box>
   );
@@ -225,106 +232,6 @@ export function PerfGapsPanel({ onUnauthorized }: Props) {
   );
 }
 
-const ORIGIN_LABEL: Record<AdminTerm['origin'], string> = { seed: 'formulário', user: 'pesquisado', text: 'texto livre' };
-
-/** Termos da rotina: última coleta por loja, paginado; apagar pesquisados e dar prioridade. */
-export function TermsPanel({ onUnauthorized }: Props) {
-  const names = useStoreNames(onUnauthorized);
-  const [category, setCategory] = useState('');
-  const [origin, setOrigin] = useState('');
-  const [q, setQ] = useState('');
-  const [never, setNever] = useState<NeverFilter>('');
-  const [page, setPage] = useState(1);
-  const [message, setMessage] = useState<string | null>(null);
-  // Mudar um filtro volta para a 1ª página.
-  const filter = <T,>(set: (v: T) => void) => (v: T) => (set(v), setPage(1));
-  const query = new URLSearchParams({ page: String(page), ...(category ? { category } : {}), ...(origin ? { origin } : {}), ...(never ? { never } : {}), ...(q.trim() ? { q: q.trim() } : {}) });
-  const { data, reload } = useAdmin<AdminPage<AdminTerm>>(`/terms?${query}`, onUnauthorized, ['attempt', 'admin'], 2_000);
-  const stores = [...names.keys()];
-  const shown = data?.items;
-
-  const act = async (fn: () => Promise<unknown>, ok: string) => {
-    try {
-      await fn();
-      setMessage(ok);
-      reload();
-    } catch (err) {
-      if (err instanceof AdminError && err.status === 401) return onUnauthorized();
-      setMessage(err instanceof AdminError && Array.isArray(err.data.errors) ? (err.data.errors as string[]).join(' ') : 'Não foi possível agora.');
-    }
-  };
-
-  return (
-    <Box
-      title={
-        <span className="flex flex-wrap items-center gap-2">
-          Termos
-          <select className={select} value={category} onChange={(e) => filter(setCategory)(e.target.value)}>
-            <option value="">todas as categorias</option>
-            {ENABLED_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {CATEGORY_DEFS[c].name}
-              </option>
-            ))}
-          </select>
-          <select className={select} value={origin} onChange={(e) => filter(setOrigin)(e.target.value)}>
-            <option value="">qualquer origem</option>
-            {(['seed', 'user', 'text'] as const).map((o) => (
-              <option key={o} value={o}>
-                {ORIGIN_LABEL[o]}
-              </option>
-            ))}
-          </select>
-          <select className={select} value={never} onChange={(e) => filter(setNever)(e.target.value as NeverFilter)}>
-            <option value="">qualquer coleta</option>
-            <option value="none">nunca coletado em nenhuma loja</option>
-            <option value="some">nunca coletado em alguma loja</option>
-          </select>
-          <input className={select} placeholder="Procurar termo" value={q} onChange={(e) => filter(setQ)(e.target.value)} maxLength={60} />
-          {data && <span className="text-sm font-normal text-zinc-500">{data.total.toLocaleString('pt-BR')} termo(s)</span>}
-        </span>
-      }
-    >
-      {message && <p className="mb-2 text-sm text-zinc-600 dark:text-zinc-300">{message}</p>}
-      {!shown ? (
-        <p className="text-sm text-zinc-500">Carregando…</p>
-      ) : (
-        <Table head={['Categoria', 'Termo', 'Origem', 'Último pedido', ...stores.map((s) => names.get(s) ?? s), '']}>
-          {shown.map((t) => (
-            <tr key={t.id} className="border-t border-zinc-100 dark:border-zinc-800">
-              <Td>{CATEGORY_DEFS[t.category]?.name ?? t.category}</Td>
-              <Td className="font-medium">{t.term}</Td>
-              <Td>{ORIGIN_LABEL[t.origin]}</Td>
-              <Td>{t.lastRequestedAt ? formatWhen(t.lastRequestedAt) : '—'}</Td>
-              {stores.map((s) => {
-                const r = t.runs.find((x) => x.store === s);
-                return (
-                  <Td key={s} className={!r ? 'text-zinc-400' : r.status === 'ok' ? '' : 'text-red-600 dark:text-red-400'}>
-                    {!r ? 'nunca' : r.lastOkAt ? `${formatWhen(r.lastOkAt)} (${r.count})` : `nunca (${r.status === 'blocked' ? 'bloqueio' : r.status === 'error' ? 'erro' : r.status})`}
-                  </Td>
-                );
-              })}
-              <Td>
-                <span className="flex gap-1">
-                  <IconBtn title="Dar prioridade na rotina" onClick={() => act(() => adminApi(`/terms/${t.id}/prioritize`, { method: 'POST' }), `"${t.term}" vai primeiro na rotina.`)}>
-                    <ArrowUp className="h-3.5 w-3.5" />
-                  </IconBtn>
-                  {t.origin !== 'seed' && (
-                    <IconBtn title="Apagar termo" onClick={() => confirm(`Apagar "${t.term}"?`) && act(() => adminApi(`/terms/${t.id}`, { method: 'DELETE' }), `"${t.term}" apagado.`)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </IconBtn>
-                  )}
-                </span>
-              </Td>
-            </tr>
-          ))}
-        </Table>
-      )}
-      {data && <Pager page={data.page} pageSize={data.pageSize} total={data.total} onPage={setPage} />}
-    </Box>
-  );
-}
-
 export function Box({ title, children }: { title: ReactNode; children: ReactNode }) {
   return (
     <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
@@ -354,9 +261,3 @@ export function Table({ head, children }: { head: string[]; children: ReactNode 
 }
 
 export const Td = ({ children, className = '' }: { children: ReactNode; className?: string }) => <td className={`py-1.5 pr-3 align-top ${className}`}>{children}</td>;
-
-const IconBtn = ({ children, ...rest }: { children: ReactNode } & React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-  <button type="button" {...rest} className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
-    {children}
-  </button>
-);

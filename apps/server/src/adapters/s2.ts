@@ -221,10 +221,10 @@ const pageUrl = (base: string, page: number) => {
 
 export const s2: StoreAdapter = {
   id: 's2',
-  async search({ category, q, path, signal, maxPages, onPage, onNeedsHuman }) {
-    // Termo que a busca já redirecionou: abre direto o destino (a página da categoria, aberta direto,
-    // traz a lista normalmente; só chegando pelo redirecionamento da busca é que vem a "manutenção").
-    const base = path ? storeConfig('s2').url + path : searchUrl('s2', category, q);
+  async search({ category, q, signal, maxPages, onPage, onNeedsHuman }) {
+    // Texto igual ao nome de uma categoria: a loja redireciona para a página dela (SearchRedirectError).
+    // O que a página da categoria tem a rotina já lê: a busca por texto fica com o banco.
+    const base = searchUrl('s2', category, q);
     const offers: Offer[] = [];
     const limit = Math.min(config.MAX_PAGES_S2, maxPages ?? Infinity);
     let total = 1;
@@ -252,6 +252,10 @@ export const s2: StoreAdapter = {
   async sweepPage({ category, url, page, signal }) {
     const { items, totalPages } = await readS2Page(pageUrl(url, page), signal);
     const now = new Date().toISOString();
-    return { offers: items.map((it) => mapS2Item(it, now, category)).filter((o): o is Offer => !!o), totalPages };
+    return {
+      offers: items.map((it) => mapS2Item(it, now, category)).filter((o): o is Offer => !!o),
+      totalPages,
+      inStock: items.filter((it) => it.stock_status === 'IN_STOCK').length,
+    };
   },
 };

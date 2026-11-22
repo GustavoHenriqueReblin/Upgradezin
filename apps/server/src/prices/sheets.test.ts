@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CategoryId, Offer, StoreId } from '@upgradezin/shared';
 import { openDb, type Db } from '../db/db.ts';
-import { ensureTerms, idOf, saveCollection } from './prices.ts';
+import { saveCollection } from './prices.ts';
 import { getSheet, nextSheets, saveSheet, sheetCounts } from './sheets.ts';
 
 const offer = (store: StoreId, sku: string, inStock = true): Offer =>
@@ -9,8 +9,7 @@ const offer = (store: StoreId, sku: string, inStock = true): Offer =>
 
 /** Grava anúncios de uma categoria numa loja, vistos em `at`. */
 function seen(db: Db, store: StoreId, category: CategoryId, offers: Offer[], at: string) {
-  const ids = ensureTerms(db, [{ category, term: 'teste' }], 'seed');
-  saveCollection(db, { store, category, termId: idOf(ids, { category, term: 'teste' }), offers, at, complete: true });
+  saveCollection(db, { store, category, offers, at });
 }
 
 const NOW = '2026-11-21T12:00:00.000Z';

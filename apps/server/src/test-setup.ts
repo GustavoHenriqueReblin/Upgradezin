@@ -16,6 +16,7 @@ Object.assign(process.env, {
   STORE_S3_NAME: 'Loja S3',
   STORE_S3_URL: 'https://www.s3.example',
   STORE_S3_SEARCH: '/busca?str={q+}',
+  STORE_S3_SWEEP: 'cpu:/hardware/processadores',
   // Cor sem # (no .env, # sem aspas é comentário) e uma inválida.
   STORE_S1_COLOR: 'ff6500',
   STORE_S2_COLOR: 'vermelho',

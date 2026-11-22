@@ -12,7 +12,7 @@ import './config.ts'; // carrega o .env antes de ler as variáveis
  *   STORE_S1_CATEGORIES=psu:caminho/fontes,motherboard:caminho/placas   (opcional)
  *   STORE_S1_COLOR="#22c55e"                          (opcional: cor da loja na tela; no .env, # sem aspas vira comentário)
  *   STORE_S1_COLOR="#ffc300,#e30613"                  (duas ou três cores, separadas por vírgula: a bolinha vira degradê)
- *   STORE_S1_SWEEP=psu:/caminho/fontes,ssd:/caminho/ssd (opcional: URL da página de cada categoria, para a varredura da rotina)
+ *   STORE_S1_SWEEP=psu:/caminho/fontes,cooler:/caminho/air /caminho/water (página de cada categoria, lida pela rotina de preços; mais de uma: separadas por espaço)
  * Loja sem NAME, URL ou SEARCH fica desligada. Testes e `pnpm scan` sem banco usam o .env direto.
  */
 export interface StoreConfig {
@@ -28,7 +28,10 @@ export interface StoreConfig {
   categories: Partial<Record<CategoryId, string>>;
   /** Cores na tela (#rrggbb): uma (lisa) ou 2–3 (degradê na bolinha). */
   colors: string[];
-  /** Caminho da página de cada categoria no site (começa com /), para a varredura da rotina. */
+  /**
+   * Página de cada categoria no site (começa com /), lida pela rotina de preços. Um ou mais
+   * caminhos separados por espaço (lista da categoria dividida em mais de uma página na loja).
+   */
   sweep: Partial<Record<CategoryId, string>>;
 }
 
@@ -47,6 +50,8 @@ const isCategory = (c: string): c is CategoryId => (CATEGORIES as readonly strin
 /** Caminho dentro do próprio site (/...), nunca outra origem. */
 const isSitePath = (v: string) => /^\/[^/]/.test(v);
 const MARKER = /\{(q|q\+|slug)\}/;
+/** "/a  /b" -> ['/a', '/b']. */
+const pathList = (v: string) => v.split(/\s+/).filter(Boolean);
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
 /**
@@ -66,7 +71,11 @@ function fromEnv(id: StoreId): StoreConfig | null {
   const search = env('SEARCH');
   if (!name || !url || !search) return null;
   const categories = Object.fromEntries(Object.entries(categoryMap(env('CATEGORIES'))).map(([k, v]) => [k, v.toLowerCase()]));
-  const sweep = Object.fromEntries(Object.entries(categoryMap(env('SWEEP'))).filter(([, v]) => isSitePath(v)));
+  const sweep = Object.fromEntries(
+    Object.entries(categoryMap(env('SWEEP')))
+      .map(([k, v]) => [k, pathList(v).filter(isSitePath).join(' ')])
+      .filter(([, v]) => v),
+  );
   return { id, enabled: true, name, url, search, categories, colors: parseColors(env('COLOR')), sweep };
 }
 
@@ -98,11 +107,11 @@ export function validateStoreInput(id: StoreId, input: AdminStoreInput): { confi
   }
   const sweep: StoreConfig['sweep'] = {};
   for (const [k, v] of Object.entries(input.sweep)) {
-    const path = v.trim();
-    if (!path) continue;
-    if (!isCategory(k) || !isSitePath(path) || path.length > 300 || CONTROL.test(path) || /\s/.test(path))
-      errors.push(`Varredura: "${k}" precisa de um caminho do site começando com /.`);
-    else sweep[k] = path;
+    const paths = pathList(v);
+    if (!paths.length) continue;
+    if (!isCategory(k) || paths.length > 10 || paths.some((p) => !isSitePath(p) || p.length > 300 || CONTROL.test(p)))
+      errors.push(`Página da categoria: "${k}" precisa de caminhos do site começando com /, separados por espaço (até 10).`);
+    else sweep[k] = paths.join(' ');
   }
   const colors = parseColors(input.colors);
   if (input.colors.trim() && !colors.length) errors.push('Cor: 1 a 3 cores #rrggbb separadas por vírgula.');
@@ -202,6 +211,11 @@ export function storeConfig(id: StoreId): StoreConfig {
   const c = configs.get(id);
   if (!c?.enabled) throw new Error(`Loja ${id} não configurada`);
   return c;
+}
+
+/** Caminhos da página de uma categoria na loja (lidos pela rotina de preços, um depois do outro); vazio: a loja não tem. */
+export function sweepPaths(id: StoreId, category: CategoryId): string[] {
+  return pathList(storeConfig(id).sweep[category] ?? '');
 }
 
 /** URL completa da busca na loja para um termo. */

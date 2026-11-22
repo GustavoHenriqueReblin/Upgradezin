@@ -31,7 +31,10 @@ export interface AdminStoreConfig {
   search: string;
   /** Caminho da categoria na loja, para o adapter filtrar (categoria do app -> caminho). */
   categories: Record<string, string>;
-  /** Página de cada categoria no site (começa com /), para a varredura da rotina. */
+  /**
+   * Página de cada categoria no site (começa com /), lida pela rotina de preços: um ou mais caminhos
+   * separados por espaço (ex. "/hardware/coolers/air-cooler /hardware/coolers/water-cooler").
+   */
   sweep: Record<string, string>;
   /** Cores (#rrggbb): uma lisa, ou 2–3 em degradê. */
   colors: string[];
@@ -49,13 +52,14 @@ export interface AdminStoreInput {
   colors: string;
 }
 
+/** term: busca por texto ("Não achou? Buscar nas lojas"); sweep: página de categoria; sheet: ficha técnica. */
 export type AttemptKind = 'term' | 'sweep' | 'sheet';
-/** De onde veio a consulta: busca do site, rotina ou "coletar agora" do admin. */
+/** De onde veio a consulta: busca do site, rotina ou "varrer agora" do admin. */
 export type AttemptOrigin = 'search' | 'routine' | 'admin';
 /** "partial": leu parte e parou (bloqueio ou limite no meio); "limit": limite de páginas por hora. */
 export type AttemptStatus = 'ok' | 'partial' | 'blocked' | 'limit' | 'error';
 
-/** Uma consulta a uma loja (termo, página de varredura ou ficha técnica). */
+/** Uma consulta a uma loja (busca por texto, página de categoria ou ficha técnica). */
 export interface StoreAttempt {
   id: number;
   store: StoreId;
@@ -64,7 +68,7 @@ export interface StoreAttempt {
   kind: AttemptKind;
   origin: AttemptOrigin;
   category?: CategoryId;
-  /** Termo, ou o código do produto na ficha técnica. */
+  /** Texto buscado, ou o código do produto na ficha técnica. */
   term?: string;
   page?: number;
   status: AttemptStatus;
@@ -76,9 +80,9 @@ export interface StoreAttempt {
 }
 
 /**
- * Ritmo da rotina numa loja: ela coleta uma coisa (um termo ou uma página da varredura) a cada
- * `seconds[modo]` (editável no admin; padrão ROUTINE_NORMAL_GAP_S / _REDUCED_ / _SLOW_). Só a
- * rotina: a busca do site vai na hora ou não vai, conforme `live` da loja.
+ * Ritmo da rotina numa loja: ela lê uma página de categoria a cada `seconds[modo]` (editável no
+ * admin; padrão ROUTINE_NORMAL_GAP_S / _REDUCED_ / _SLOW_). Só a rotina: a busca por texto vai à
+ * loja na hora ou não vai, conforme `live` da loja.
  */
 export const ROUTINE_MODES = ['normal', 'reduced', 'slow'] as const;
 export type RoutineMode = (typeof ROUTINE_MODES)[number];
@@ -93,7 +97,7 @@ export interface RoutineSettings {
   stores: StoreId[];
   /** Modo da rotina em cada loja (só o intervalo da rotina). */
   modes: Record<StoreId, RoutineMode>;
-  /** Busca ao vivo: a loja é consultada na hora quando alguém pesquisa no site. Desligada: a busca mostra só o banco. */
+  /** Busca ao vivo: o "Não achou? Buscar nas lojas" consulta a loja na hora. Desligada: só o banco. */
   live: Record<StoreId, boolean>;
   /** Segundos entre uma coleta da rotina e a próxima, em cada modo. */
   seconds: Record<RoutineMode, number>;
@@ -149,13 +153,13 @@ export interface AdminStoreState {
   inRoutine: boolean;
   /** Modo da loja na rotina. */
   mode: RoutineMode;
-  /** Consultada na hora quando alguém pesquisa no site. */
+  /** Consultada na hora pelo "Não achou? Buscar nas lojas". */
   live: boolean;
   /** Coletando para a rotina agora. */
   busy: boolean;
   /**
    * Fila da loja agora: consulta em andamento (rotina, busca do site ou admin) e quantas esperam
-   * a vez. `priority`: busca do site, "coletar agora" e ficha técnica (passam na frente); `routine`: rotina.
+   * a vez. `priority`: busca por texto, "varrer agora" e ficha técnica (passam na frente); `routine`: rotina.
    */
   queue: { running: boolean; priority: number; routine: number };
   /** Pausa valendo agora (bloqueio ou manual, reason "paused"). step -1: pausa manual sem bloqueio antes. */
@@ -175,17 +179,23 @@ export interface AdminStoreState {
   last24h: Partial<Record<AttemptStatus, number>>;
 }
 
-/** Cobertura de uma loja numa categoria: quantos anúncios, quão frescos, quantos termos coletados. */
+/** Cobertura de uma loja numa categoria: quantos anúncios, quão frescos, e a leitura da categoria na loja. */
 export interface CoverageRow {
   store: StoreId;
   category: CategoryId;
   listings: number;
+  /** Anúncios em estoque na última oferta vista. */
+  inStock: number;
   /** Anúncios vistos nas últimas 24 h e 7 dias. */
   seen24h: number;
   seen7d: number;
-  /** Termos da categoria (sem a varredura) e quantos já tiveram coleta boa nessa loja. */
-  terms: number;
-  termsOk: number;
+  /** Caminhos de categoria configurados na loja (0: a rotina não lê esta categoria nesta loja). */
+  paths: number;
+  /** Volta em andamento: caminho (1, 2…) e página que a rotina lê agora; null sem volta em andamento. */
+  sweeping: { path: number; page: number } | null;
+  /** Fim da última volta completa. */
+  sweptAt: string | null;
+  /** Último anúncio visto (de qualquer coleta). */
   lastOkAt: string | null;
   /** Anúncios com ficha técnica lida (placa de vídeo, gabinete, cooler); null nas outras categorias. */
   sheets: number | null;
@@ -238,7 +248,7 @@ export interface AdminProduct {
   siblings?: { store: StoreId; sku: string; title: string; url: string }[];
 }
 
-/** Uma página de uma tabela do admin (produtos, consultas, termos): os itens, o total com os filtros e onde está. */
+/** Uma página de uma tabela do admin (produtos, consultas): os itens, o total com os filtros e onde está. */
 export interface AdminPage<T> {
   items: T[];
   total: number;
@@ -289,18 +299,6 @@ export interface SheetRoutineStatus extends SheetRoutineSettings {
   progress: SheetStoreStatus[];
 }
 
-/** Um termo da rotina, com a última coleta em cada loja. */
-export interface AdminTerm {
-  id: number;
-  category: CategoryId;
-  term: string;
-  /** seed: do formulário; user: pesquisado pelo formulário; text: texto livre pesquisado. */
-  origin: 'seed' | 'user' | 'text';
-  createdAt: string;
-  lastRequestedAt: string | null;
-  runs: { store: StoreId; lastOkAt: string | null; lastTryAt: string; status: string; count: number }[];
-}
-
 /** Consultas por hora numa loja (linha do tempo de bloqueios). */
 export interface TimelineBucket {
   store: StoreId;
@@ -347,7 +345,5 @@ export interface MergeReport {
   newListings: number;
   newerListings: number;
   newPricePoints: number;
-  newTerms: number;
-  newerRuns: number;
   newerSheets: number;
 }

@@ -19,8 +19,9 @@ export interface SearchTerm {
 }
 
 /**
- * Todos os termos que a tela de busca pode gerar (apps/web/src/searchPlan.ts): a rotina
- * de coleta mantém os preços deles no banco. Mudou o formulário, muda aqui.
+ * Todos os termos que a tela de busca pode gerar (apps/web/src/searchPlan.ts). Não vão às lojas:
+ * a busca mostra os anúncios do banco (lidos das páginas de categoria) que batem com eles pelas
+ * specs (termMatches). Mudou o formulário, muda aqui.
  */
 export function allSearchTerms(): SearchTerm[] {
   const out: SearchTerm[] = [];
@@ -39,8 +40,8 @@ export function allSearchTerms(): SearchTerm[] {
 let formTerms: Map<string, Set<string>> | undefined;
 
 /**
- * Texto livre aceito como termo de busca ("Buscar nas lojas" do filtro de texto): de 3 a 60
- * caracteres, só letras, números, espaço e - + . / (vai para a URL de busca da loja).
+ * Texto livre aceito na busca nas lojas ("Não achou? Buscar nas lojas" do filtro de texto): de 3 a
+ * 60 caracteres, só letras, números, espaço e - + . / (vai para a URL de busca da loja).
  */
 export const isTextTerm = (term: string): boolean => /^[\p{L}\p{N}][\p{L}\p{N} +./-]{2,59}$/u.test(term.trim());
 
@@ -58,9 +59,8 @@ export function isFormTerm(category: CategoryId, term: string): boolean {
 
 /**
  * O anúncio é do que o termo procura, pelas specs lidas do título (não pelo texto): "AM4" =
- * encaixe AM4, "Ryzen 7" = linha Ryzen 7, "750W" = 750 W, "DDR4 16GB" = DDR4 de 16 GB… A busca
- * do site usa isto para juntar ao resultado de um termo os anúncios que o banco já tem de outras
- * coletas (outros termos, varredura de categoria). Termo fora do formulário: false.
+ * encaixe AM4, "Ryzen 7" = linha Ryzen 7, "750W" = 750 W, "DDR4 16GB" = DDR4 de 16 GB… É assim
+ * que a busca do site escolhe, no banco, os anúncios de cada termo. Termo fora do formulário: false.
  */
 export function termMatches(category: CategoryId, term: string, specs: Specs): boolean {
   const t = term.trim().toLowerCase();

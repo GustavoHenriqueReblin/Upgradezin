@@ -4,12 +4,12 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { z } from 'zod';
 import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, pickUpgrades, STORES, type CategoryId, type Offer, type SheetRoutineStatus, type SpecSheet, type StoreId } from '@upgradezin/shared';
-import { collectNow, readSheetNow, stopAdminJobs, storesState } from './admin/actions.ts';
+import { readSheetNow, stopAdminJobs, storesState, sweepNow } from './admin/actions.ts';
 import { listProducts, sheetStoreStatus } from './admin/products.ts';
 import { AdminAuth, MIN_PASSWORD } from './admin/auth.ts';
 import { ActivityLog } from './admin/activity.ts';
 import { Backups, MergeUploads } from './admin/backup.ts';
-import { attemptTimeline, coverage, deleteTerm, listTerms, perfGaps, prioritizeTerm } from './admin/data.ts';
+import { attemptTimeline, coverage, perfGaps } from './admin/data.ts';
 import { listAttempts, onAttempt, pageAttempts } from './prices/attempts.ts';
 import { registerAdmin } from './admin/routes.ts';
 import { serverStatus } from './admin/status.ts';
@@ -30,7 +30,7 @@ import { routineInfo, routineSettings, setRoutineSettings, startRoutine, stopRou
 import { runSearch, stopBackgroundSearches, storedList } from './search.ts';
 import { onCollected } from './prices/events.ts';
 import { clientIp, forceLimiter, registerSecurity, searchStreams, shareLimiter, sheetLimiter, textLimiter, watchStreams } from './security.ts';
-import { ACTIVE_STORES, adminStores, publicStores, saveStoreConfig, storeConfig, useStoreStorage } from './stores.ts';
+import { ACTIVE_STORES, adminStores, publicStores, saveStoreConfig, storeConfig, sweepPaths, useStoreStorage } from './stores.ts';
 
 /** Versão do app (package.json da raiz; ver CHANGELOG.md). */
 const VERSION: string = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')).version;
@@ -58,15 +58,14 @@ const SearchQuery = z.object({
     .string()
     .optional()
     .transform((v) => v === '1'),
-  /** "1": a busca traz um texto livre ("Buscar nas lojas" do filtro de texto). */
+  /** "1": a busca traz um texto livre ("Não achou? Buscar nas lojas" do filtro de texto). */
   text: z
     .string()
     .optional()
     .transform((v) => v === '1'),
 }).superRefine((v, ctx) => {
-  // Só os termos que o formulário gera: termo inventado chamado direto na API não consulta
-  // as lojas nem entra na fila da rotina. Exceção: com text=1, um texto livre (isTextTerm),
-  // limitado por pessoa por hora na busca (TEXT_SEARCHES_PER_HOUR).
+  // Só os termos que o formulário gera (respondidos pelo banco). Exceção: com text=1, um texto livre
+  // (isTextTerm), que vai às lojas, limitado por pessoa por hora (TEXT_SEARCHES_PER_HOUR).
   const free = v.terms.filter((t) => !isFormTerm(v.category, t));
   const ok = v.text && free.length <= 1 && free.every(isTextTerm);
   if (!ok) for (const t of free) ctx.addIssue({ code: 'custom', path: ['terms'], message: `Termo não aceito: ${t.slice(0, 40)}` });
@@ -119,7 +118,7 @@ if (AdminAuth.isConfigured(config.ADMIN_USER, config.ADMIN_PASSWORD)) {
       storesState: () => storesState(getDb()),
       unpause: clearBackoff,
       pause: (id, minutes) => void pauseStore(id, minutes),
-      collect: (id, category, term) => collectNow(getDb(), id, category, term),
+      sweep: (id, category) => sweepNow(getDb(), id, category),
       routine: routineInfo,
       setRoutine: (s) => (setRoutineSettings(s), routineInfo()),
     },
@@ -130,11 +129,8 @@ if (AdminAuth.isConfigured(config.ADMIN_USER, config.ADMIN_PASSWORD)) {
       readSheet: (store, sku) => readSheetNow(getDb(), store, sku),
     },
     data: {
-      coverage: () => coverage(getDb()),
+      coverage: () => coverage(getDb(), (store, category) => (ACTIVE_STORES.includes(store) ? sweepPaths(store, category).length : 0)),
       perfGaps: () => perfGaps(getDb()),
-      terms: (f) => listTerms(getDb(), f, ACTIVE_STORES),
-      deleteTerm: (id) => deleteTerm(getDb(), id),
-      prioritizeTerm: (id) => prioritizeTerm(getDb(), id),
       attempts: (f) => pageAttempts(getDb(), f),
       timeline: (hours) => attemptTimeline(getDb(), hours),
     },

@@ -1,13 +1,9 @@
 import type { CategoryId, Offer, StoreId } from '@upgradezin/shared';
 
+/** Busca por texto na loja ("Não achou? Buscar nas lojas"). */
 export interface SearchContext {
   category: CategoryId;
   q: string;
-  /**
-   * Caminho no site para abrir no lugar da busca (ex. "/hardware/cooler-processador"): o destino
-   * para onde a busca da loja já redirecionou esse termo antes. Só nas lojas que redirecionam.
-   */
-  path?: string;
   signal: AbortSignal;
   /** Teto de páginas desta consulta (abaixo do MAX_PAGES_* da loja). A busca do site usa SEARCH_MAX_PAGES. */
   maxPages?: number;
@@ -19,17 +15,28 @@ export interface SearchContext {
 
 export interface SweepContext {
   category: CategoryId;
-  /** URL da página da categoria no site (STORE_Sx_SWEEP). */
+  /** URL da página da categoria no site (configuração da loja, "Página da categoria"). */
   url: string;
   page: number;
   signal: AbortSignal;
 }
 
+/** Uma página da categoria: as ofertas lidas, quantas páginas a lista tem e quantos itens da página estão em estoque. */
+export interface SweepPage {
+  offers: Offer[];
+  totalPages: number;
+  /**
+   * Itens em estoque na página, contados antes de filtrar pela categoria do app (acessório, item sem
+   * preço). As lojas listam os em estoque primeiro: página sem nenhum = fim do que está à venda.
+   */
+  inStock: number;
+}
+
 export interface StoreAdapter {
   id: StoreId;
   search(ctx: SearchContext): Promise<Offer[]>;
-  /** Uma página da categoria inteira (varredura da rotina). Só nas lojas que suportam. */
-  sweepPage?(ctx: SweepContext): Promise<{ offers: Offer[]; totalPages: number }>;
+  /** Uma página da categoria (rotina de preços). */
+  sweepPage?(ctx: SweepContext): Promise<SweepPage>;
   /**
    * HTML da ficha técnica da página de um produto (null: a página não tem). `url` é o endereço do
    * anúncio guardado no banco (a S2 monta a página pelo nome do produto, não pelo código).

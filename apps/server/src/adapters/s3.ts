@@ -1,13 +1,15 @@
-import { matchesCategory, mpnFromTitle, normalizeBrand, normalizeListing, parseBRL, parseCouponText, type CategoryId, type Offer } from '@upgradezin/shared';
+import { brandFromTitle, matchesCategory, mpnFromTitle, normalizeBrand, normalizeListing, parseBRL, parseCouponText, type CategoryId, type Offer } from '@upgradezin/shared';
 import { parseHTML } from 'linkedom';
-import { loadPage } from '../browser.ts';
+import { loadPage, saveDebugHtml } from '../browser.ts';
 import { takePage } from '../pace.ts';
 import { searchUrl, storeConfig } from '../stores.ts';
 import type { StoreAdapter } from './types.ts';
 
 /**
- * Loja S3: HTML renderizado no servidor, até 300 resultados numa página.
- * Cada card tem atributos data-tss-* (preço PIX, marca, estoque).
+ * Loja S3: HTML renderizado no servidor. Na busca, até 300 resultados numa página, e cada card tem
+ * atributos data-tss-* (preço PIX, marca, estoque). Na página de categoria, os cards não têm esses
+ * atributos (preço, estoque e nome vêm do próprio card, a marca do título), os em estoque vêm
+ * primeiro e o resto da lista chega pelo "ver mais" (JSON, ver s3MoreUrl).
  * Lida no Chrome da loja como as outras (loadPage).
  */
 
@@ -53,6 +55,65 @@ function readS3Cards(els: Element[]): S3Card[] {
       coupon: el.querySelector('.cupomL')?.textContent?.trim() ?? '',
     };
   });
+}
+
+/**
+ * Cards da página de categoria e do "ver mais" (sem data-tss-*): nome e endereço no link do nome,
+ * preço PIX em ".product-item__new-price", esgotado com ".tbt_esgotado" (e sem preço), marca do título.
+ */
+export function parseS3ListCards(html: string): S3Card[] {
+  // A página inteira, ou só os cards (o "more" do JSON).
+  const { document } = parseHTML(/<html[\s>]/i.test(html) ? html : `<!doctype html><html><body>${html}</body></html>`);
+  const els = Array.from(document.querySelectorAll('.product-item')) as unknown as Element[];
+  return els
+    .filter((el) => el.querySelector('a.product-item__name'))
+    .map((el) => {
+      const a = el.querySelector<HTMLAnchorElement>('a.product-item__name')!;
+      const href = a.getAttribute('href') ?? '';
+      const title = a.getAttribute('title') ?? a.textContent?.trim() ?? '';
+      const price = parseBRL(el.querySelector('.product-item__new-price span')?.textContent);
+      const soldOut = !!el.querySelector('.tbt_esgotado');
+      const juros = el.querySelectorAll('.product-item__juros span');
+      return {
+        id: href.match(/\/produto\/(\d+)/)?.[1] ?? '',
+        brand: brandFromTitle(title) ?? '',
+        price: price && !soldOut ? String(price) : '',
+        stock: price && !soldOut ? '1' : '0',
+        title,
+        href,
+        img: el.querySelector('img')?.getAttribute('src') ?? '',
+        oldPrice: el.querySelector('.product-item__old-price span')?.textContent?.trim() ?? '',
+        instCount: juros[0]?.textContent ?? '',
+        instValue: juros[1]?.textContent ?? '',
+        coupon: el.querySelector('.cupomL')?.textContent?.trim() ?? '',
+      };
+    });
+}
+
+/**
+ * Página N (2 em diante) da categoria: o mesmo pedido do botão "ver mais" da loja (app, url, more e
+ * filter[marca|order|pg|str]), por GET. Responde JSON: { more: HTML dos cards, bpg: o botão da página
+ * seguinte, que some na última }.
+ */
+export function s3MoreUrl(categoryUrl: string, page: number): string {
+  const url = new URL(categoryUrl);
+  const q = new URLSearchParams({ app: 'true', url: url.pathname, more: 'true', 'filter[marca]': '', 'filter[order]': '', 'filter[pg]': String(page), 'filter[str]': '' });
+  return `${url.origin}${url.pathname}?${q}`;
+}
+
+/** Há página seguinte: o botão "ver mais" da loja (#pdmore) está no HTML. */
+const hasMore = (html: string) => /id="pdmore"/.test(html);
+
+/** JSON do "ver mais" aberto numa aba (o Chrome mostra o texto num <pre>). null se não é JSON. */
+export function parseS3More(html: string): { more: string; bpg: string } | null {
+  const { document } = parseHTML(html);
+  const text = (document.querySelector('pre')?.textContent ?? document.body?.textContent ?? html).trim();
+  try {
+    const data = JSON.parse(text.startsWith('{') ? text : text.slice(text.indexOf('{')));
+    return typeof data?.more === 'string' ? { more: data.more, bpg: typeof data.bpg === 'string' ? data.bpg : '' } : null;
+  } catch {
+    return null;
+  }
 }
 
 export function mapS3Card(c: S3Card, collectedAt: string, category: CategoryId): Offer | null {
@@ -116,6 +177,36 @@ export const s3: StoreAdapter = {
     const offers = cards.map((c) => mapS3Card(c, now, category)).filter((o): o is Offer => !!o);
     onPage?.({ page: 1, total: 1, found: offers.length, offers });
     return offers;
+  },
+  /**
+   * Página da categoria: a 1ª é a própria página (~150 cards); as seguintes, o "ver mais" (JSON).
+   * Os em estoque vêm primeiro.
+   */
+  async sweepPage({ category, url, page, signal }) {
+    takePage('s3');
+    let cardsHtml: string;
+    let more: boolean;
+    if (page === 1) {
+      const { html } = await loadPage('s3', url, { signal, waitFor: '.product-item' });
+      cardsHtml = html;
+      more = hasMore(html);
+    } else {
+      const { html } = await loadPage('s3', s3MoreUrl(url, page), { signal });
+      const data = parseS3More(html);
+      if (!data) {
+        await saveDebugHtml('s3', html, `ver-mais-${category}-${page}`);
+        throw new Error('S3: o "ver mais" da categoria não respondeu JSON');
+      }
+      cardsHtml = data.more;
+      more = hasMore(data.bpg);
+    }
+    const cards = parseS3ListCards(cardsHtml);
+    const now = new Date().toISOString();
+    return {
+      offers: cards.map((c) => mapS3Card(c, now, category)).filter((o): o is Offer => !!o),
+      totalPages: more ? page + 1 : page,
+      inStock: cards.filter((c) => c.stock === '1').length,
+    };
   },
   /** Ficha técnica pela página do produto (/produto/<código>: a loja completa o endereço). */
   async productSheet({ sku }, signal) {

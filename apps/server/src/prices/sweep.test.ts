@@ -1,17 +1,19 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Offer } from '@upgradezin/shared';
 import { s1 } from '../adapters/s1.ts';
+import { s2 } from '../adapters/s2.ts';
+import { mapS3Card, parseS3ListCards, parseS3More, s3, s3MoreUrl } from '../adapters/s3.ts';
 import { fixture } from '../adapters/fixtures.ts';
 import { usePageLoader } from '../browser.ts';
 import { openDb } from '../db/db.ts';
 import { getDb } from '../db/instance.ts';
 import { useBackoffStorage } from '../pace.ts';
-import { routineNextAt, setRoutineSettings, stopRoutine, tick, useRoutineStorage } from './routine.ts';
-import { storeConfig, useStoreStorage } from '../stores.ts';
-import { dueTerms, ensureTerms, priceHistory } from './prices.ts';
-import { nextSweep, recordSweepFailure, recordSweepPage, sweepState } from './sweep.ts';
+import { routineNextAt, setRoutineSettings, stopRoutine, sweepPathCounts, tick, useRoutineStorage } from './routine.ts';
+import { storeConfig, sweepPaths, useStoreStorage } from '../stores.ts';
+import { priceHistory, saveCollection } from './prices.ts';
+import { nextSweep, recordSweepFailure, recordSweepPage, restartSweep, sweepState, type SweepPageRun } from './sweep.ts';
 
-const offer = (sku: string, priceCash: number): Offer => ({
+const offer = (sku: string, priceCash: number, patch: Partial<Offer> = {}): Offer => ({
   store: 's1',
   storeSku: sku,
   title: `Fonte Teste ${sku} 750W`,
@@ -24,70 +26,115 @@ const offer = (sku: string, priceCash: number): Offer => ({
   specs: { watts: 750 },
   modelKey: `psu:teste-${sku}`,
   collectedAt: '2026-11-19T10:00:00.000Z',
+  ...patch,
 });
 
 const H = 3_600_000;
 const T0 = Date.parse('2026-11-20T00:00:00.000Z');
 const iso = (ms: number) => new Date(ms).toISOString();
-const page = (db: ReturnType<typeof openDb>, category: 'psu' | 'cpu', p: number, totalPages: number, offers: Offer[], at: number, maxPages = 25) =>
-  recordSweepPage(db, { store: 's1', category, page: p, totalPages, maxPages, offers, at: iso(at) });
+type Db = ReturnType<typeof openDb>;
+/** Uma página lida: por padrão, um caminho só, teto alto e a página com itens em estoque. */
+const page = (db: Db, category: 'psu' | 'cpu', p: number, totalPages: number, offers: Offer[], at: number, more: Partial<SweepPageRun> = {}) =>
+  recordSweepPage(db, { store: 's1', category, path: 0, paths: 1, page: p, totalPages, maxPages: 25, inStock: 10, offers, at: iso(at), ...more });
+const inStockOf = (db: Db, sku: string) => (JSON.parse((db.prepare('SELECT offer FROM listings WHERE store_sku = ?').get(sku) as { offer: string }).offer) as Offer).inStock;
 
-describe('varredura de categoria', () => {
+describe('rotina de preços pelas páginas de categoria', () => {
   it('lê a volta página por página e só recomeça depois do intervalo', () => {
     const db = openDb(':memory:');
-    const next = (at: number) => nextSweep(db, 's1', ['psu'], at, 24 * H, H);
-    expect(next(T0)).toEqual({ category: 'psu', page: 1 });
+    const next = (at: number) => nextSweep(db, 's1', { psu: 1 }, at, 24 * H, H);
+    expect(next(T0)).toEqual({ category: 'psu', path: 0, page: 1 });
     page(db, 'psu', 1, 3, [offer('1', 400)], T0);
-    expect(next(T0)).toEqual({ category: 'psu', page: 2 });
+    expect(next(T0)).toEqual({ category: 'psu', path: 0, page: 2 });
     page(db, 'psu', 2, 3, [offer('2', 500)], T0 + 1);
-    page(db, 'psu', 3, 3, [offer('3', 600)], T0 + 2);
+    expect(page(db, 'psu', 3, 3, [offer('3', 600)], T0 + 2)).toMatchObject({ listEnded: true, roundDone: true });
     expect(sweepState(db, 's1', 'psu')).toEqual({ page: 1, doneAt: iso(T0 + 2) });
     expect(next(T0 + 23 * H)).toBeNull();
-    expect(next(T0 + 25 * H)).toEqual({ category: 'psu', page: 1 });
+    expect(next(T0 + 25 * H)).toEqual({ category: 'psu', path: 0, page: 1 });
   });
 
-  it('para no teto de páginas mesmo com mais páginas na loja', () => {
+  it('a lista acaba na primeira página sem nada em estoque (as lojas listam os em estoque primeiro)', () => {
     const db = openDb(':memory:');
-    page(db, 'psu', 1, 40, [], T0, 2);
-    page(db, 'psu', 2, 40, [], T0 + 1, 2);
+    page(db, 'psu', 1, 20, [offer('1', 400)], T0);
+    expect(page(db, 'psu', 2, 20, [], T0 + 1, { inStock: 0 })).toMatchObject({ roundDone: true });
     expect(sweepState(db, 's1', 'psu').doneAt).toBe(iso(T0 + 1));
   });
 
-  it('ordem: volta em andamento, depois nunca varrida, depois a mais antiga', () => {
+  it('só cria anúncio do que está em estoque; o esgotado só atualiza o anúncio que já existe', () => {
+    const db = openDb(':memory:');
+    saveCollection(db, { store: 's1', category: 'psu', offers: [offer('velho', 300)], at: iso(T0 - H) });
+    const r = page(db, 'psu', 1, 1, [offer('novo', 400), offer('esgotado-novo', 500, { inStock: false }), offer('velho', 300, { inStock: false })], T0);
+    expect(r.saved).toBe(2);
+    expect(db.prepare('SELECT store_sku FROM listings ORDER BY store_sku').all().map((x) => (x as { store_sku: string }).store_sku)).toEqual(['novo', 'velho']);
+    expect(inStockOf(db, 'velho')).toBe(false);
+  });
+
+  it('fim da volta: o que estava em estoque e não apareceu nela vira "sem estoque"; voltou ao estoque, a volta seguinte grava de novo', () => {
+    const db = openDb(':memory:');
+    page(db, 'psu', 1, 1, [offer('a', 400), offer('b', 500)], T0);
+    expect(inStockOf(db, 'b')).toBe(true);
+    // Volta seguinte: o "b" não está mais entre os em estoque.
+    expect(page(db, 'psu', 1, 1, [offer('a', 390)], T0 + 25 * H)).toMatchObject({ roundDone: true, outOfStock: 1 });
+    expect(inStockOf(db, 'b')).toBe(false);
+    expect(inStockOf(db, 'a')).toBe(true);
+    page(db, 'psu', 1, 1, [offer('a', 390), offer('b', 450)], T0 + 50 * H);
+    expect(inStockOf(db, 'b')).toBe(true);
+    expect(priceHistory(db, 's1', 'b').map((p) => [p.priceCash, p.inStock])).toEqual([[500, true], [500, false], [450, true]]);
+  });
+
+  it('vários caminhos na mesma categoria: um depois do outro; o fim da volta só vem no último, e conta o que todos viram', () => {
+    const db = openDb(':memory:');
+    const two = { paths: 2 };
+    page(db, 'psu', 1, 2, [offer('a', 400)], T0, two);
+    page(db, 'psu', 2, 2, [offer('b', 500)], T0 + 1, two);
+    expect(sweepState(db, 's1', 'psu')).toMatchObject({ path: 1, page: 1, startedAt: iso(T0) });
+    expect(nextSweep(db, 's1', { psu: 2 }, T0 + 2, 24 * H, H)).toEqual({ category: 'psu', path: 1, page: 1 });
+    expect(page(db, 'psu', 1, 1, [offer('c', 600)], T0 + 2, { ...two, path: 1 })).toMatchObject({ roundDone: true, outOfStock: 0 });
+    expect(['a', 'b', 'c'].map((sku) => inStockOf(db, sku))).toEqual([true, true, true]);
+    // Caminho tirado da configuração no meio da volta: recomeça do primeiro.
+    page(db, 'psu', 1, 1, [offer('a', 400)], T0 + 30 * H, two);
+    expect(nextSweep(db, 's1', { psu: 1 }, T0 + 30 * H, 24 * H, H)).toEqual({ category: 'psu', path: 0, page: 1 });
+  });
+
+  it('teto de páginas ainda com itens em estoque: termina a volta sem marcar nada como esgotado (o resto não foi lido)', () => {
+    const db = openDb(':memory:');
+    page(db, 'psu', 1, 1, [offer('a', 400), offer('b', 500)], T0);
+    page(db, 'psu', 1, 40, [], T0 + 25 * H, { maxPages: 2 });
+    expect(page(db, 'psu', 2, 40, [], T0 + 25 * H + 1, { maxPages: 2 })).toMatchObject({ roundDone: true, outOfStock: 0 });
+    expect(inStockOf(db, 'a')).toBe(true);
+  });
+
+  it('ordem: volta em andamento, depois nunca lida, depois a mais antiga; "varrer agora" recomeça do começo', () => {
     const db = openDb(':memory:');
     page(db, 'cpu', 1, 1, [], T0); // cpu completa em T0
-    expect(nextSweep(db, 's1', ['cpu', 'psu'], T0 + 30 * H, 24 * H, H)?.category).toBe('psu'); // psu nunca varrida
+    expect(nextSweep(db, 's1', { cpu: 1, psu: 1 }, T0 + 30 * H, 24 * H, H)?.category).toBe('psu'); // psu nunca lida
     page(db, 'psu', 1, 2, [], T0 + 30 * H); // psu em andamento
-    expect(nextSweep(db, 's1', ['cpu', 'psu'], T0 + 30 * H, 24 * H, H)).toEqual({ category: 'psu', page: 2 });
+    expect(nextSweep(db, 's1', { cpu: 1, psu: 1 }, T0 + 30 * H, 24 * H, H)).toEqual({ category: 'psu', path: 0, page: 2 });
+    restartSweep(db, 's1', 'cpu');
+    expect(sweepState(db, 's1', 'cpu')).toEqual({ page: 1 });
+    expect(nextSweep(db, 's1', { cpu: 1 }, T0 + 1, 24 * H, H)).toEqual({ category: 'cpu', path: 0, page: 1 });
   });
 
   it('falha: a categoria espera e retoma da mesma página', () => {
     const db = openDb(':memory:');
     page(db, 'psu', 1, 3, [], T0);
     recordSweepFailure(db, 's1', 'psu', iso(T0));
-    expect(nextSweep(db, 's1', ['psu'], T0 + 0.5 * H, 24 * H, H)).toBeNull();
-    expect(nextSweep(db, 's1', ['psu'], T0 + 2 * H, 24 * H, H)).toEqual({ category: 'psu', page: 2 });
-  });
-
-  it('cada página grava histórico do anúncio, e o termo da varredura fica fora da fila de termos', () => {
-    const db = openDb(':memory:');
-    ensureTerms(db, [{ category: 'psu', term: '750W' }], 'seed');
-    page(db, 'psu', 1, 1, [offer('9', 400)], T0);
-    page(db, 'psu', 1, 1, [offer('9', 380)], T0 + 25 * H);
-    expect(priceHistory(db, 's1', '9').map((p) => p.priceCash)).toEqual([400, 380]);
-    expect(dueTerms(db, 's1', iso(T0 + 100 * H), iso(T0 + 100 * H), 10).map((t) => t.term)).toEqual(['750W']);
+    expect(nextSweep(db, 's1', { psu: 1 }, T0 + 0.5 * H, 24 * H, H)).toBeNull();
+    expect(nextSweep(db, 's1', { psu: 1 }, T0 + 2 * H, 24 * H, H)).toEqual({ category: 'psu', path: 0, page: 2 });
   });
 });
 
-describe('varredura: configuração e adapter da S1', () => {
+describe('páginas de categoria: configuração e adapters', () => {
   afterEach(() => usePageLoader(null));
 
-  it('STORE_S1_SWEEP só aceita caminho do próprio site e categoria conhecida', () => {
+  it('só caminho do próprio site e categoria conhecida; vários caminhos separados por espaço', () => {
     expect(storeConfig('s1').sweep).toEqual({ cpu: '/hardware/processadores', psu: '/hardware/fontes' });
-    expect(storeConfig('s2').sweep).toEqual({});
+    expect(sweepPaths('s1', 'cpu')).toEqual(['/hardware/processadores']);
+    expect(sweepPaths('s1', 'gpu')).toEqual([]);
+    expect(sweepPathCounts('s1')).toEqual({ cpu: 1, psu: 1 });
+    expect(sweepPathCounts('s2')).toEqual({});
   });
 
-  it('lê a página da categoria com paginação e devolve o total de páginas', async () => {
+  it('S1: página da categoria com paginação, total de páginas e quantos em estoque', async () => {
     const urls: string[] = [];
     usePageLoader(async (_store, url) => {
       urls.push(url);
@@ -97,7 +144,42 @@ describe('varredura: configuração e adapter da S1', () => {
     expect(urls[0]).toMatch(/^https:\/\/www\.s1\.example\/hardware\/processadores\?page_number=3&page_size=120/);
     expect(r.totalPages).toBeGreaterThanOrEqual(1);
     expect(r.offers.length).toBeGreaterThan(0);
+    expect(r.inStock).toBeGreaterThan(0);
     expect(r.offers.every((o) => o.store === 's1' && o.specs.cpuLine)).toBe(true);
+  });
+
+  it('S2: conta os em estoque da página (os sem estoque não contam)', async () => {
+    usePageLoader(async (_store, url) => ({ html: fixture('s2-psu.html'), url, title: '' }));
+    const r = await s2.sweepPage!({ category: 'psu', url: 'https://www.s2.example/hardware/fonte', page: 1, signal: new AbortController().signal });
+    expect(r.inStock).toBe(4); // 5 itens na página, 1 OUT_OF_STOCK
+  });
+
+  it('S3: cards da página de categoria (sem data-tss-*): preço, esgotado, marca do título; o "ver mais" é o JSON da página seguinte', async () => {
+    const cards = parseS3ListCards(fixture('s3-category-cpu.html'));
+    expect(cards.map((c) => c.stock)).toEqual(['1', '1', '1', '0', '0']);
+    expect(cards[0]).toMatchObject({ id: '20813', brand: 'AMD', price: '1199.99' });
+    const o = mapS3Card(cards[0]!, '2026-11-21T00:00:00.000Z', 'cpu')!;
+    expect(o).toMatchObject({ store: 's3', storeSku: '20813', brand: 'AMD', priceCash: 1199.99, inStock: true, url: 'https://www.s3.example/produto/20813/processador-amd-ryzen-7-5700x-34ghz-46ghz-turbo-8-cores-16-threads-am4-sem-cooler-100-100000926wof' });
+    expect(o.specs.cpuLine).toBe('Ryzen 7');
+    expect(mapS3Card(cards[3]!, '2026-11-21T00:00:00.000Z', 'cpu')).toBeNull(); // esgotado não tem preço
+    expect(s3MoreUrl('https://www.s3.example/hardware/placas-mae', 2)).toBe(
+      'https://www.s3.example/hardware/placas-mae?app=true&url=%2Fhardware%2Fplacas-mae&more=true&filter%5Bmarca%5D=&filter%5Border%5D=&filter%5Bpg%5D=2&filter%5Bstr%5D=',
+    );
+    expect(parseS3More('<html><body>Página normal</body></html>')).toBeNull();
+
+    const urls: string[] = [];
+    usePageLoader(async (_store, url) => {
+      urls.push(url);
+      return { html: fixture(url.includes('more=true') ? 's3-category-more.html' : 's3-category-cpu.html'), url, title: '' };
+    });
+    const signal = new AbortController().signal;
+    const p1 = await s3.sweepPage!({ category: 'cpu', url: 'https://www.s3.example/hardware/processadores', page: 1, signal });
+    expect(p1).toMatchObject({ totalPages: 2, inStock: 3 }); // tem o botão "ver mais"
+    expect(p1.offers).toHaveLength(3);
+    const p2 = await s3.sweepPage!({ category: 'motherboard', url: 'https://www.s3.example/hardware/placas-mae', page: 2, signal });
+    expect(p2).toMatchObject({ totalPages: 2, inStock: 2 }); // última: sem o botão
+    expect(p2.offers.map((x) => x.brand)).toEqual(['MSI', 'ASRock']);
+    expect(urls[1]).toContain('filter%5Bpg%5D=2');
   });
 });
 
@@ -137,13 +219,13 @@ describe('ficha técnica guardada', () => {
   });
 });
 
-describe('varredura na rotina', () => {
+describe('rotina de preços', () => {
   afterEach(() => {
     usePageLoader(null);
     stopRoutine();
   });
 
-  it('alterna com os termos: varredura, termo, varredura, termo', async () => {
+  it('cada vez da loja lê uma página de categoria (nunca uma busca), em qualquer modo', async () => {
     useStoreStorage(getDb());
     useBackoffStorage([], () => {});
     useRoutineStorage(null, () => {});
@@ -152,14 +234,12 @@ describe('varredura na rotina', () => {
       urls.push(url);
       return { html: fixture('s1-cpu.html'), url, title: '' };
     });
-    setRoutineSettings({ enabled: true, stores: ['s1'], modes: { s1: 'normal' } });
-    const kinds: string[] = [];
-    for (let i = 0; i < 4; i++) {
+    setRoutineSettings({ enabled: true, stores: ['s1'], modes: { s1: 'reduced' } });
+    for (let i = 0; i < 3; i++) {
       const before = urls.length;
       await tick(routineNextAt('s1')!);
-      const url = urls[before]!; // primeira página aberta nesta vez (a busca da S1 pode abrir um produto depois)
-      kinds.push(url.includes('/busca/') ? 'termo' : url.includes('/hardware/') ? 'varredura' : url);
+      expect(urls[before]).toContain('/hardware/'); // primeira página aberta nesta vez (a S1 pode abrir um produto depois, pelo cupom)
     }
-    expect(kinds).toEqual(['varredura', 'termo', 'varredura', 'termo']);
+    expect(urls.some((u) => u.includes('/busca/'))).toBe(false);
   });
 });

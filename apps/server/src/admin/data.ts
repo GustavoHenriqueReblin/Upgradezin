@@ -1,7 +1,7 @@
-import { cpuPerf, gpuPerf, type AdminPage, type AdminTerm, type CategoryId, type CoverageRow, type Offer, type PerfGap, type StoreId, type TimelineBucket } from '@upgradezin/shared';
+import { cpuPerf, ENABLED_CATEGORIES, gpuPerf, STORES, type CategoryId, type CoverageRow, type Offer, type PerfGap, type StoreId, type TimelineBucket } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
-import { pageOf } from './paging.ts';
 import { SHEET_CATEGORIES, sheetCounts } from '../prices/sheets.ts';
+import { inProgress, sweepState } from '../prices/sweep.ts';
 
 /**
  * Processadores e placas de vídeo vistos nas lojas nos últimos `days` dias que a tabela de desempenho
@@ -25,126 +25,48 @@ export function perfGaps(db: Db, now = Date.now(), days = 14): PerfGap[] {
   return [...gaps.values()].sort((a, b) => b.listings - a.listings);
 }
 
-/** Cobertura por loja e categoria: anúncios, frescor e termos coletados. */
-export function coverage(db: Db, now = Date.now()): CoverageRow[] {
+/**
+ * Cobertura por loja e categoria: anúncios (e quantos em estoque), frescor e a leitura da categoria
+ * pela rotina (caminhos configurados, volta em andamento, última volta completa). `paths`: quantos
+ * caminhos de categoria cada loja tem em cada categoria (0 ou ausente: a rotina não lê). Aparece
+ * também a categoria configurada que ainda não tem anúncio.
+ */
+export function coverage(db: Db, paths: (store: StoreId, category: CategoryId) => number, now = Date.now()): CoverageRow[] {
   const iso = (ms: number) => new Date(ms).toISOString();
   const listings = db
     .prepare(
-      `SELECT store, category, count(*) AS listings, sum(last_seen_at >= ?) AS seen24h, sum(last_seen_at >= ?) AS seen7d
+      `SELECT store, category, count(*) AS listings, sum(json_extract(offer, '$.inStock') = 1) AS inStock,
+         sum(last_seen_at >= ?) AS seen24h, sum(last_seen_at >= ?) AS seen7d, max(last_seen_at) AS last
        FROM listings GROUP BY store, category`,
     )
-    .all(iso(now - 86_400_000), iso(now - 7 * 86_400_000)) as { store: StoreId; category: CategoryId; listings: number; seen24h: number; seen7d: number }[];
-  const terms = db
-    .prepare(
-      `SELECT st.category, tr.store, count(*) AS ok, max(tr.last_ok_at) AS last FROM search_terms st
-       JOIN term_runs tr ON tr.term_id = st.id AND tr.last_ok_at IS NOT NULL
-       WHERE st.origin != 'sweep' GROUP BY st.category, tr.store`,
-    )
-    .all() as { category: CategoryId; store: StoreId; ok: number; last: string }[];
-  const totals = new Map(
-    (db.prepare(`SELECT category, count(*) AS n FROM search_terms WHERE origin != 'sweep' GROUP BY category`).all() as { category: string; n: number }[]).map((r) => [r.category, r.n]),
-  );
-  // Última coleta boa de qualquer tipo (termo ou varredura) por loja e categoria.
-  const lastAny = new Map(
-    (
-      db
-        .prepare(`SELECT st.category, tr.store, max(tr.last_ok_at) AS last FROM term_runs tr JOIN search_terms st ON st.id = tr.term_id GROUP BY st.category, tr.store`)
-        .all() as { category: string; store: string; last: string | null }[]
-    ).map((r) => [`${r.store}|${r.category}`, r.last]),
-  );
-  const okBy = new Map(terms.map((t) => [`${t.store}|${t.category}`, t]));
+    .all(iso(now - 86_400_000), iso(now - 7 * 86_400_000)) as { store: StoreId; category: CategoryId; listings: number; inStock: number; seen24h: number; seen7d: number; last: string }[];
+  const byKey = new Map(listings.map((l) => [`${l.store}|${l.category}`, l]));
+  // Categoria com caminho configurado e ainda sem anúncio também aparece (a rotina ainda não leu).
+  const keys = new Set(byKey.keys());
+  for (const store of STORES) for (const category of ENABLED_CATEGORIES) if (paths(store, category) > 0) keys.add(`${store}|${category}`);
   const sheets = sheetCounts(db);
-  return listings
-    .map((l) => {
-      const key = `${l.store}|${l.category}`;
+  return [...keys]
+    .map((key) => {
+      const [store, category] = key.split('|') as [StoreId, CategoryId];
+      const l = byKey.get(key);
+      const s = sweepState(db, store, category);
+      const n = paths(store, category);
       return {
-        store: l.store,
-        category: l.category,
-        listings: l.listings,
-        seen24h: l.seen24h ?? 0,
-        seen7d: l.seen7d ?? 0,
-        terms: totals.get(l.category) ?? 0,
-        termsOk: okBy.get(key)?.ok ?? 0,
-        lastOkAt: lastAny.get(key) ?? null,
+        store,
+        category,
+        listings: l?.listings ?? 0,
+        inStock: l?.inStock ?? 0,
+        seen24h: l?.seen24h ?? 0,
+        seen7d: l?.seen7d ?? 0,
+        paths: n,
+        sweeping: n && inProgress(s) ? { path: (s.path ?? 0) + 1, page: s.page } : null,
+        sweptAt: s.doneAt ?? null,
+        lastOkAt: l?.last ?? null,
         // Fichas técnicas lidas: só nas categorias com ficha física.
-        sheets: SHEET_CATEGORIES.includes(l.category) ? (sheets.get(key) ?? 0) : null,
+        sheets: SHEET_CATEGORIES.includes(category) ? (sheets.get(key) ?? 0) : null,
       };
     })
     .sort((a, b) => a.store.localeCompare(b.store) || a.category.localeCompare(b.category));
-}
-
-/** Termos (sem a varredura), com a última coleta em cada loja. Filtros por categoria, origem e texto. */
-/**
- * Termos da rotina para o admin, paginados (por categoria e termo), com a última coleta em cada loja.
- * `never`: nunca coletado em nenhuma das `stores` ('none') ou em alguma delas ('some').
- */
-export function listTerms(
-  db: Db,
-  f: { category?: CategoryId; origin?: AdminTerm['origin']; q?: string; never?: 'none' | 'some'; page?: number; pageSize?: number } = {},
-  stores: readonly StoreId[] = [],
-): AdminPage<AdminTerm> {
-  const { page, pageSize, offset } = pageOf(f);
-  const where = [`origin != 'sweep'`];
-  const args: (string | number)[] = [];
-  if (f.category) where.push('category = ?'), args.push(f.category);
-  if (f.origin) where.push('origin = ?'), args.push(f.origin);
-  // % e _ do texto são literais (escapados com !), não curingas.
-  if (f.q) where.push(`lower(term) LIKE ? ESCAPE '!'`), args.push(`%${f.q.toLowerCase().replace(/[!%_]/g, (c) => `!${c}`)}%`);
-  if (f.never && stores.length) {
-    // Em quantas das lojas o termo já teve coleta boa.
-    const okIn = `(SELECT count(DISTINCT r.store) FROM term_runs r WHERE r.term_id = search_terms.id AND r.last_ok_at IS NOT NULL AND r.store IN (${stores.map(() => '?').join(', ')}))`;
-    where.push(f.never === 'none' ? `${okIn} = 0` : `${okIn} < ?`);
-    args.push(...stores);
-    if (f.never === 'some') args.push(stores.length);
-  }
-  const sql = where.join(' AND ');
-  const total = (db.prepare(`SELECT count(*) AS n FROM search_terms WHERE ${sql}`).get(...args) as { n: number }).n;
-  const rows = db
-    .prepare(`SELECT id, category, term, origin, created_at, last_requested_at FROM search_terms WHERE ${sql} ORDER BY category, lower(term), id LIMIT ? OFFSET ?`)
-    .all(...args, pageSize, offset) as { id: number; category: CategoryId; term: string; origin: AdminTerm['origin']; created_at: string; last_requested_at: string | null }[];
-  // Coletas por loja só dos termos desta página.
-  const ids = rows.map((r) => r.id);
-  const runs = (ids.length ? db.prepare(`SELECT term_id, store, last_ok_at, last_try_at, status, count FROM term_runs WHERE term_id IN (${ids.map(() => '?').join(', ')})`).all(...ids) : []) as {
-    term_id: number;
-    store: StoreId;
-    last_ok_at: string | null;
-    last_try_at: string;
-    status: string;
-    count: number;
-  }[];
-  const byTerm = new Map<number, AdminTerm['runs']>();
-  for (const r of runs) {
-    const list = byTerm.get(r.term_id) ?? [];
-    list.push({ store: r.store, lastOkAt: r.last_ok_at, lastTryAt: r.last_try_at, status: r.status, count: r.count });
-    byTerm.set(r.term_id, list);
-  }
-  const items = rows.map((r): AdminTerm => ({
-    id: r.id,
-    category: r.category,
-    term: r.term,
-    origin: r.origin,
-    createdAt: r.created_at,
-    lastRequestedAt: r.last_requested_at,
-    runs: (byTerm.get(r.id) ?? []).sort((a, b) => a.store.localeCompare(b.store)),
-  }));
-  return { items, total, page, pageSize };
-}
-
-/**
- * Apaga um termo pesquisado (texto livre ou do formulário marcado como pesquisado). Os do
- * formulário (seed) voltariam na próxima subida da rotina: não são apagados.
- */
-export function deleteTerm(db: Db, id: number): 'deleted' | 'not-found' | 'seed' {
-  const row = db.prepare('SELECT origin FROM search_terms WHERE id = ?').get(id) as { origin: string } | undefined;
-  if (!row || row.origin === 'sweep') return 'not-found';
-  if (row.origin === 'seed') return 'seed';
-  db.prepare('DELETE FROM search_terms WHERE id = ?').run(id);
-  return 'deleted';
-}
-
-/** Dá prioridade ao termo na rotina: conta como pedido agora (a rotina pega primeiro). */
-export function prioritizeTerm(db: Db, id: number, now = new Date().toISOString()): boolean {
-  return db.prepare(`UPDATE search_terms SET last_requested_at = ? WHERE id = ? AND origin != 'sweep'`).run(now, id).changes > 0;
 }
 
 /** Consultas por hora de cada loja nas últimas `hours` horas (ok, bloqueio, outro). */

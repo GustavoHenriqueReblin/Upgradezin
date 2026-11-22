@@ -5,7 +5,7 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import type { Offer } from '@upgradezin/shared';
 import { describe, expect, it } from 'vitest';
 import { openDb } from '../db/db.ts';
-import { ensureTerms, idOf, priceHistory, readResult, saveCollection } from '../prices/prices.ts';
+import { priceHistory, saveCollection } from '../prices/prices.ts';
 import { Concurrency, Limiter } from '../security.ts';
 import { ActivityLog, personOf } from './activity.ts';
 import { applyMerge, Backups, MergeUploads, previewMerge } from './backup.ts';
@@ -51,7 +51,7 @@ describe('backups', () => {
   it('cria cópia comprimida que abre como banco, lista, acha pelo nome e apaga', async () => {
     const dir = tmp();
     const db = openDb(join(dir, 'app.db'));
-    ensureTerms(db, [{ category: 'gpu', term: 'NVIDIA GeForce' }], 'seed');
+    db.prepare("INSERT INTO meta (key, value) VALUES ('teste', 'NVIDIA GeForce')").run();
     const backups = new Backups(join(dir, 'backups'));
     const b = await backups.create(db, 'manual');
     expect(b.name).toMatch(/^manual-\d{4}-\d{2}-\d{2}-\d{6}\.db\.gz$/);
@@ -59,7 +59,7 @@ describe('backups', () => {
     // O conteúdo é um banco SQLite de verdade, com os dados.
     const restored = join(dir, 'restaurado.db');
     writeFileSync(restored, gunzipSync(readFileSync(backups.path(b.name)!)));
-    expect(openDb(restored).prepare('SELECT term FROM search_terms').all()).toEqual([{ term: 'NVIDIA GeForce' }]);
+    expect(openDb(restored).prepare("SELECT value FROM meta WHERE key = 'teste'").all()).toEqual([{ value: 'NVIDIA GeForce' }]);
     expect(backups.remove(b.name)).toBe(true);
     expect(backups.list()).toEqual([]);
   });
@@ -89,32 +89,29 @@ describe('envio para merge', () => {
 });
 
 describe('merge', () => {
-  it('traz o que só a fonte tem: anúncios, histórico, termos, coletas; oferta mais recente vale; não duplica', () => {
+  it('traz o que só a fonte tem: anúncios e histórico; oferta mais recente vale; não duplica', () => {
     const dir = tmp();
     const target = openDb(join(dir, 'server.db'));
     const srcPath = join(dir, 'local.db');
     const source = openDb(srcPath);
-    const T = { category: 'gpu' as const, term: 'NVIDIA GeForce' };
 
     // Servidor: anúncio 1 visto às 10h a R$ 1000.
-    const tIds = ensureTerms(target, [T], 'seed');
-    saveCollection(target, { store: 's2', category: 'gpu', termId: idOf(tIds, T), offers: [offer('1', 1000)], at: '2026-11-20T10:00:00.000Z', complete: true });
-    // Local: o mesmo anúncio às 12h a R$ 900, um anúncio novo, e um termo que o servidor não tem.
-    const sIds = ensureTerms(source, [T, { category: 'gpu', term: 'Zotac RTX 3050' }], 'seed');
-    saveCollection(source, { store: 's2', category: 'gpu', termId: idOf(sIds, T), offers: [offer('1', 900), offer('2', 1500)], at: '2026-11-20T12:00:00.000Z', complete: true });
+    saveCollection(target, { store: 's2', category: 'gpu', offers: [offer('1', 1000)], at: '2026-11-20T10:00:00.000Z' });
+    // Local: o mesmo anúncio às 12h a R$ 900 e um anúncio novo.
+    saveCollection(source, { store: 's2', category: 'gpu', offers: [offer('1', 900), offer('2', 1500)], at: '2026-11-20T12:00:00.000Z' });
     source.close();
 
-    expect(previewMerge(target, srcPath)).toEqual({ newListings: 1, newerListings: 1, newPricePoints: 2, newTerms: 1, newerRuns: 1, newerSheets: 0 });
+    expect(previewMerge(target, srcPath)).toEqual({ newListings: 1, newerListings: 1, newPricePoints: 2, newerSheets: 0 });
     expect(applyMerge(target, srcPath)).toMatchObject({ newListings: 1, newPricePoints: 2 });
 
-    const tId = idOf(ensureTerms(target, [T], 'seed'), T);
-    const result = readResult(target, 's2', tId);
-    expect(result.at).toBe('2026-11-20T12:00:00.000Z'); // coleta mais recente vale
-    expect(result.offers.map((o) => [o.storeSku, o.priceCash]).sort()).toEqual([['1', 900], ['2', 1500]]);
+    const rows = target.prepare('SELECT store_sku, offer, last_seen_at FROM listings ORDER BY store_sku').all() as { store_sku: string; offer: string; last_seen_at: string }[];
+    expect(rows.map((r) => [r.store_sku, JSON.parse(r.offer).priceCash, r.last_seen_at])).toEqual([
+      ['1', 900, '2026-11-20T12:00:00.000Z'], // oferta mais recente vale
+      ['2', 1500, '2026-11-20T12:00:00.000Z'],
+    ]);
     expect(priceHistory(target, 's2', '1').map((p) => p.priceCash)).toEqual([1000, 900]); // histórico das duas
-    expect(target.prepare('SELECT count(*) AS n FROM search_terms').get()).toEqual({ n: 2 });
     // De novo: nada mais a trazer.
-    expect(previewMerge(target, srcPath)).toEqual({ newListings: 0, newerListings: 0, newPricePoints: 0, newTerms: 0, newerRuns: 0, newerSheets: 0 });
+    expect(previewMerge(target, srcPath)).toEqual({ newListings: 0, newerListings: 0, newPricePoints: 0, newerSheets: 0 });
   });
 
   it('banco em outra migração: recusa sem mexer', () => {

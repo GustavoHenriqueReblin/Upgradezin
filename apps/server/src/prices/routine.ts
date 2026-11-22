@@ -1,33 +1,31 @@
-import { allSearchTerms, ENABLED_CATEGORIES, MODE_SECONDS_MAX, MODE_SECONDS_MIN, ROUTINE_MODES, STORES, type CategoryId, type RoutineInfo, type RoutineInput, type RoutineMode, type RoutineSettings, type StoreId } from '@upgradezin/shared';
+import { ENABLED_CATEGORIES, MODE_SECONDS_MAX, MODE_SECONDS_MIN, ROUTINE_MODES, STORES, type CategoryId, type RoutineInfo, type RoutineInput, type RoutineMode, type RoutineSettings, type StoreId } from '@upgradezin/shared';
 import { config } from '../config.ts';
 import { getDb } from '../db/instance.ts';
-import { backoffInfo, BlockedError, PageLimitError, pageLimitUntil, pagesUsed, registerSuccess, SearchRedirectError } from '../pace.ts';
-import { ACTIVE_STORES, storeConfig } from '../stores.ts';
-import { canSweep, collectSweepPage, collectTerm, withBrowserSession } from './collect.ts';
-import { dueTerms, ensureTerms } from './prices.ts';
+import { backoffInfo, BlockedError, PageLimitError, pageLimitUntil, pagesUsed, registerSuccess } from '../pace.ts';
+import { ACTIVE_STORES, sweepPaths } from '../stores.ts';
+import { canSweep, collectSweepPage, withBrowserSession } from './collect.ts';
 import { nextSweep } from './sweep.ts';
 
 /**
- * Rotina de coleta: atualiza no banco os termos mais desatualizados de cada loja, dentro de
- * ROUTINE_PAGES_PER_HOUR (o resto do limite por hora fica para a busca do site). Mesmas regras
- * da busca: uma consulta por vez por loja, e loja bloqueada fica parada até o fim da pausa.
- * Na fila da loja, a busca do site passa na frente da rotina.
+ * Rotina de preços: lê as páginas de categoria de cada loja (sweep.ts), só o que está em estoque,
+ * e recomeça cada categoria ROUTINE_REFRESH_H horas depois da última volta completa. Dentro de
+ * ROUTINE_PAGES_PER_HOUR (o resto do limite por hora fica para a busca por texto e as fichas). Uma
+ * consulta por vez por loja, e loja bloqueada fica parada até o fim da pausa; na fila da loja, a
+ * busca por texto e o admin passam na frente da rotina.
  *
- * Cada loja tem seu modo (admin) e sua própria agenda: os segundos do modo (editáveis no admin;
- * padrão ROUTINE_NORMAL_GAP_S / _REDUCED_ / _SLOW_), + até 20% aleatório, depois de cada coisa
- * que a rotina faz: uma página da varredura (só no normal, loja com varredura, se estiver na hora
- * e houver orçamento) ou um termo, com as categorias espalhadas (dueTerms), em rodízio (turn).
- * As fichas técnicas têm rotina própria (sheet-routine.ts).
- * O modo é só da rotina. A busca do site é outra chave por loja (`live`): ligada, vai na hora.
+ * Cada loja tem seu modo (admin) e sua própria agenda: depois de cada página, espera os segundos do
+ * modo (editáveis no admin; padrão ROUTINE_NORMAL_GAP_S / _REDUCED_ / _SLOW_) + até 20% aleatório.
+ * As fichas técnicas têm rotina própria (sheet-routine.ts). A busca por texto é outra chave por
+ * loja (`live`): ligada, o "Não achou? Buscar nas lojas" vai à loja na hora.
  */
 
-/** Páginas que um termo pode gastar (a S1 abre a página de um produto para ler o cupom). */
-const PAGES_PER_TERM = 2;
+/** Páginas que uma página de categoria pode gastar (a S1 abre a página de um produto para ler o cupom). */
+const PAGES_PER_TURN = 2;
 /** De quanto em quanto tempo a agenda é conferida (curto: os modos são de segundos). */
 const CHECK_MS = 2_000;
 /** Primeira consulta depois de ligar. */
 const FIRST_MS = 10_000;
-/** Sem termo para coletar (ou loja em pausa), confere de novo depois disto. */
+/** Nada para ler agora (todas as categorias lidas há pouco, ou loja em pausa): confere de novo depois disto. */
 const IDLE_MS = 60_000;
 
 let timer: NodeJS.Timeout | undefined;
@@ -128,7 +126,6 @@ export function routineInfo(): RoutineInfo {
 export function startRoutine(): void {
   if (timer || !settings.enabled || !routineStores().length) return;
   if (ac.signal.aborted) ac = new AbortController();
-  ensureTerms(getDb(), allSearchTerms(), 'seed');
   const first = Date.now() + FIRST_MS;
   for (const s of STORES) nextAt.set(s, first);
   timer = setInterval(() => void tick(), CHECK_MS);
@@ -136,7 +133,6 @@ export function startRoutine(): void {
 
 export function stopRoutine(): void {
   clearInterval(timer);
-  lastJob.clear(); // ao religar, o rodízio recomeça pela varredura
   timer = undefined;
   nextAt.clear();
   ac.abort();
@@ -163,106 +159,43 @@ export async function tick(now = Date.now()): Promise<void> {
 /** Lojas ligadas que estão na rotina (admin; antes, ROUTINE_STORES). */
 const routineStores = (): StoreId[] => (settings.enabled ? ACTIVE_STORES.filter((s) => settings.stores.includes(s)) : []);
 
-const hasBudget = (store: StoreId) => pagesUsed(store) + PAGES_PER_TERM <= config.ROUTINE_PAGES_PER_HOUR;
+const hasBudget = (store: StoreId) => pagesUsed(store) + PAGES_PER_TURN <= config.ROUTINE_PAGES_PER_HOUR;
 
 /** Intervalo do modo: os segundos do modo mais até 20% aleatório (ms). */
 export const modeDelay = (gapS: number, rand = Math.random()) => Math.round(gapS * 1000 * (1 + rand / 5));
 
-/** Categorias que a rotina varre numa loja (adapter que sabe e caminhos de varredura na configuração). */
-export const sweepCategories = (store: StoreId): CategoryId[] =>
-  canSweep(store) ? ENABLED_CATEGORIES.filter((c) => storeConfig(store).sweep[c]) : [];
+/** Quantos caminhos de categoria cada categoria tem numa loja (as sem caminho ficam de fora). */
+export function sweepPathCounts(store: StoreId): Partial<Record<CategoryId, number>> {
+  if (!canSweep(store)) return {};
+  const out: Partial<Record<CategoryId, number>> = {};
+  for (const c of ENABLED_CATEGORIES) {
+    const n = sweepPaths(store, c).length;
+    if (n) out[c] = n;
+  }
+  return out;
+}
 
-/**
- * O que a rotina faz em cada vez, em rodízio: uma página da varredura, um termo. Começa pelo
- * seguinte ao da vez anterior e pula o que não tem nada a fazer (ou está sem orçamento na hora).
- * Assim os termos nunca ficam parados atrás da varredura.
- */
-type Job = 'sweep' | 'term';
-const JOBS: Job[] = ['sweep', 'term'];
-const lastJob = new Map<StoreId, Job>();
-
-/** Páginas de varredura por loja na última hora (orçamento próprio, dentro do da rotina). */
-const sweepLog = new Map<StoreId, number[]>();
-const sweepPagesLastHour = (store: StoreId) => {
-  const log = (sweepLog.get(store) ?? []).filter((t) => Date.now() - t < 3_600_000);
-  sweepLog.set(store, log);
-  return log.length;
-};
-
-/**
- * Uma página da varredura, se a loja varre, há categoria na hora e sobra orçamento na hora
- * (ROUTINE_SWEEP_PAGES_PER_HOUR). Retoma de onde parou. Devolve se foi à loja.
- */
+/** Uma página de categoria da loja, se alguma está na hora. Retoma de onde parou. Devolve se foi à loja. */
 async function sweepOne(store: StoreId, signal: AbortSignal): Promise<boolean> {
-  const cats = sweepCategories(store);
-  if (!cats.length || sweepPagesLastHour(store) >= config.ROUTINE_SWEEP_PAGES_PER_HOUR) return false;
-  const next = nextSweep(getDb(), store, cats, Date.now(), config.ROUTINE_SWEEP_REFRESH_H * 3_600_000, config.ROUTINE_RETRY_MIN * 60_000);
+  const next = nextSweep(getDb(), store, sweepPathCounts(store), Date.now(), config.ROUTINE_REFRESH_H * 3_600_000, config.ROUTINE_RETRY_MIN * 60_000);
   if (!next) return false;
-  sweepLog.get(store)!.push(Date.now());
   try {
-    const n = await collectSweepPage(store, next.category, next.page, signal);
+    const r = await collectSweepPage(store, next.category, next.path, next.page, signal);
     registerSuccess(store);
-    console.info(`[varredura ${store}] ${next.category} pág ${next.page}: ${n} ofertas`);
+    const end = r.roundDone ? `; volta completa${r.outOfStock ? `, ${r.outOfStock} sem estoque agora` : ''}` : r.listEnded ? '; fim do caminho' : '';
+    console.info(`[rotina ${store}] ${next.category} caminho ${next.path + 1} pág ${next.page}: ${r.read} ofertas (${r.saved} gravadas)${end}`);
   } catch (err) {
-    if (!signal.aborted && !(err instanceof BlockedError) && !(err instanceof PageLimitError)) console.error(`[varredura ${store}] ${next.category} pág ${next.page}:`, err);
+    if (!signal.aborted && !(err instanceof BlockedError) && !(err instanceof PageLimitError)) console.error(`[rotina ${store}] ${next.category} pág ${next.page}:`, err);
   }
   return true;
 }
 
-/** Um termo devido da loja (o mais atrasado, com as categorias espalhadas). Devolve se foi à loja. */
-async function termOne(store: StoreId, signal: AbortSignal): Promise<boolean> {
-  const now = Date.now();
-  const iso = (ms: number) => new Date(ms).toISOString();
-  const due = dueTerms(
-    getDb(),
-    store,
-    iso(now - config.ROUTINE_REFRESH_H * 3_600_000),
-    iso(now - config.ROUTINE_RETRY_MIN * 60_000),
-    1,
-    iso(now - config.ROUTINE_TEXT_DAYS * 86_400_000),
-  );
-  if (!due.length) return false;
-  await collectOne(store, due[0]!, signal);
-  return true;
-}
-
-/**
- * A vez de uma loja: uma coisa só (página da varredura ou termo, em rodízio) e marca a próxima
- * vez para o intervalo do modo depois que ela terminar. Varredura só no modo normal: no reduzido e
- * no lento, cada vez vai para um termo.
- */
+/** A vez de uma loja: uma página de categoria e marca a próxima vez para o intervalo do modo depois que ela terminar. */
 async function turn(store: StoreId, signal: AbortSignal): Promise<void> {
-  const gap = modeDelay(settings.seconds[settings.modes[store]]);
   if (backoffInfo(store) || pageLimitUntil(store) || !hasBudget(store)) {
     nextAt.set(store, Date.now() + IDLE_MS);
     return;
   }
-  const jobs: Job[] = settings.modes[store] === 'normal' ? JOBS : ['term'];
-  const start = (jobs.indexOf(lastJob.get(store) ?? 'term') + 1) % jobs.length;
-  for (let i = 0; i < jobs.length; i++) {
-    const job = jobs[(start + i) % jobs.length]!;
-    const did = job === 'sweep' ? await sweepOne(store, signal) : await termOne(store, signal);
-    if (did) {
-      lastJob.set(store, job);
-      nextAt.set(store, Date.now() + gap);
-      return;
-    }
-  }
-  nextAt.set(store, Date.now() + IDLE_MS); // nada a fazer: confere de novo depois
-}
-
-async function collectOne(store: StoreId, t: ReturnType<typeof dueTerms>[number], signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return;
-  try {
-    const offers = await collectTerm(store, t, signal, { origin: 'routine' });
-    registerSuccess(store);
-    console.info(`[rotina ${store}] ${t.category} "${t.term}": ${offers.length} ofertas`);
-  } catch (err) {
-    if (signal.aborted || err instanceof BlockedError || err instanceof PageLimitError) return; // a loja descansa; volta depois da pausa
-    if (err instanceof SearchRedirectError) {
-      console.info(`[rotina ${store}] ${t.category} "${t.term}": a busca redireciona para ${err.to}; na próxima vez vai direto lá`);
-      return;
-    }
-    console.error(`[rotina ${store}] ${t.category} "${t.term}":`, err);
-  }
+  const did = await sweepOne(store, signal);
+  nextAt.set(store, Date.now() + (did ? modeDelay(settings.seconds[settings.modes[store]]) : IDLE_MS));
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractPsuSpecs, isDesktopPsu, parseBRL } from './normalize.ts';
+import { brandFromTitle, extractPsuSpecs, isDesktopPsu, parseBRL } from './normalize.ts';
 import { groupOffers, modelKeyFromTitle } from './group.ts';
 import type { Offer } from './types.ts';
 
@@ -124,5 +124,25 @@ describe('groupOffers por part number', () => {
   it('código curto ou sem dígito não agrupa', () => {
     const g = groupOffers([base({ store: 's1', modelKey: 'a', mpn: 'AB1' }), base({ store: 's2', modelKey: 'b', mpn: 'AB1' })]);
     expect(g).toHaveLength(2);
+  });
+});
+
+describe('marca lida do título', () => {
+  it('o que vem depois do tipo do produto (títulos como os da S3, nov/2026)', () => {
+    expect(brandFromTitle('Placa Mãe Asus TUF Gaming B760M-PLUS II, Chipset B760, Intel LGA 1700, mATX, DDR5')).toBe('ASUS');
+    expect(brandFromTitle('Placa de Vídeo MSI NVIDIA GeForce RTX 5060 Ventus 2X OC, 8GB, GDDR7')).toBe('MSI');
+    expect(brandFromTitle('Processador AMD Ryzen 7 5700X 3.4GHz (4.6GHz Turbo), 8-Cores 16-Threads, AM4')).toBe('AMD');
+    expect(brandFromTitle('Fonte FSP Vita GM 850W, 80 Plus Gold, PFC Ativo')).toBe('FSP');
+    expect(brandFromTitle('Memória DDR5 Corsair Vengeance, 16GB, 5200MHz, Black')).toBe('Corsair');
+    expect(brandFromTitle('SSD Kingston A400, 960GB, Sata III')).toBe('Kingston');
+    expect(brandFromTitle('Gabinete Gamer NZXT H5 Flow RGB, Mid Tower, Vidro Temperado')).toBe('NZXT');
+    expect(brandFromTitle('Kit Fan com 3 Unidades Montech RX120 Pro, ARGB, 120mm')).toBe('Montech');
+    expect(brandFromTitle('Cooler para Processador DeepCool Gammaxx GTE V2, LED RGB, 120mm')).toBe('DeepCool');
+    expect(brandFromTitle('Cooler para Processador Cooler Master Hyper 212, 120mm')).toBe('Cooler Master');
+    expect(brandFromTitle('Water Cooler Rise Mode Gamer Black, 240mm')).toBe('Rise Mode');
+  });
+  it('sem tipo conhecido no começo: nenhuma', () => {
+    expect(brandFromTitle('Monitor Gamer Gigabyte GS24F14, 23.8 Pol')).toBeUndefined();
+    expect(brandFromTitle('Placa Mãe')).toBeUndefined();
   });
 });

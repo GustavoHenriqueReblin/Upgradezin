@@ -6,8 +6,12 @@ import { attemptCounts, lastAttempt, listAttempts, onAttempt, pageAttempts, reco
 import { attemptOutcome } from '../prices/collect.ts';
 import { isLive, modeDelay, routineInfo, routineNextAt, routineSettings, setRoutineSettings, stopRoutine, tick, useRoutineStorage } from '../prices/routine.ts';
 import { useStoreStorage } from '../stores.ts';
-import { collectNow, readSheetNow, storesState } from './actions.ts';
-import { ensureTerms, idOf, saveCollection } from '../prices/prices.ts';
+import { readSheetNow, storesState, sweepNow } from './actions.ts';
+import { usePageLoader } from '../browser.ts';
+import { fixture } from '../adapters/fixtures.ts';
+import { getDb } from '../db/instance.ts';
+import { sweepState } from '../prices/sweep.ts';
+import { saveCollection } from '../prices/prices.ts';
 
 describe('pausa manual e tirar pausa', () => {
   it('pausa sem bloqueio antes: próximo bloqueio começa em 15 min (não sobe a escada)', () => {
@@ -159,44 +163,58 @@ describe('rotina pelo admin', () => {
   });
 });
 
-describe('coletar agora e painel das lojas', () => {
-  it('recusa loja em pausa, termo inválido e categoria desligada, sem ir à loja', () => {
+describe('varrer agora e painel das lojas', () => {
+  it('recusa loja em pausa, categoria sem página na loja e loja desconhecida, sem ir à loja', () => {
     const db = openDb(':memory:');
     useStoreStorage(db);
     useBackoffStorage([], () => {});
     pauseStore('s1', 60);
-    expect(collectNow(db, 's1', 'psu', '750W')).toMatchObject({ ok: false, error: expect.stringContaining('pausa') });
+    expect(sweepNow(db, 's1', 'cpu')).toMatchObject({ ok: false, error: expect.stringContaining('pausa') });
     clearBackoff('s1');
-    expect(collectNow(db, 's1', 'psu', '<x>')).toMatchObject({ ok: false, error: expect.stringContaining('Termo inválido') });
-    expect(collectNow(db, 's9' as 's1', 'psu', '750W')).toMatchObject({ ok: false });
-    expect(db.prepare('SELECT count(*) AS n FROM search_terms').get()).toEqual({ n: 0 });
+    expect(sweepNow(db, 's1', 'gpu')).toMatchObject({ ok: false, error: expect.stringContaining('Sem página') });
+    expect(sweepNow(db, 's9' as 's1', 'cpu')).toMatchObject({ ok: false });
+  });
+
+  it('lê a categoria inteira do começo, na frente da rotina; a mesma categoria não roda duas vezes ao mesmo tempo', async () => {
+    const db = getDb();
+    useStoreStorage(db);
+    useBackoffStorage([], () => {});
+    const urls: string[] = [];
+    usePageLoader(async (_store, url) => {
+      urls.push(url);
+      return { html: fixture('s1-cpu.html'), url, title: '' };
+    });
+    try {
+      expect(sweepNow(db, 's1', 'cpu')).toMatchObject({ ok: true });
+      expect(sweepNow(db, 's1', 'cpu')).toMatchObject({ ok: false, error: expect.stringContaining('já está sendo lida') });
+      for (let i = 0; i < 300 && !sweepState(db, 's1', 'cpu').doneAt; i++) await new Promise((r) => setTimeout(r, 10));
+      expect(sweepState(db, 's1', 'cpu').doneAt).toBeTruthy();
+      expect(urls[0]).toContain('/hardware/processadores?page_number=1');
+      expect(listAttempts(db, { limit: 5 }).some((a) => a.kind === 'sweep' && a.origin === 'admin')).toBe(true);
+    } finally {
+      usePageLoader(null);
+    }
   });
 
   it('"Ler ficha": recusa produto fora do catálogo, categoria sem ficha física e loja em pausa', () => {
     const db = openDb(':memory:');
     useStoreStorage(db);
     useBackoffStorage([], () => {});
-    const ids = ensureTerms(db, [{ category: 'cpu', term: 'Ryzen 5' }], 'seed');
     saveCollection(db, {
       store: 's1',
       category: 'cpu',
-      termId: idOf(ids, { category: 'cpu', term: 'Ryzen 5' }),
       offers: [{ store: 's1', storeSku: 'p1', title: 'Ryzen 5 5600', url: 'https://www.s1.example/produto/p1', priceCash: 800, inStock: true, specs: {}, modelKey: 'p1', collectedAt: '' } as never],
       at: new Date().toISOString(),
-      complete: true,
     });
     expect(readSheetNow(db, 's1', 'nao-existe')).toMatchObject({ ok: false, error: expect.stringContaining('não encontrado') });
     expect(readSheetNow(db, 's1', 'p1')).toMatchObject({ ok: false, error: expect.stringContaining('ficha física') });
     expect(readSheetNow(db, 's9' as 's1', 'p1')).toMatchObject({ ok: false });
     pauseStore('s1', 60);
-    const ids2 = ensureTerms(db, [{ category: 'gpu', term: 'RTX' }], 'seed');
     saveCollection(db, {
       store: 's1',
       category: 'gpu',
-      termId: idOf(ids2, { category: 'gpu', term: 'RTX' }),
       offers: [{ store: 's1', storeSku: 'g1', title: 'RTX 5060', url: 'https://www.s1.example/produto/g1', priceCash: 2000, inStock: true, specs: {}, modelKey: 'g1', collectedAt: '' } as never],
       at: new Date().toISOString(),
-      complete: true,
     });
     expect(readSheetNow(db, 's1', 'g1')).toMatchObject({ ok: false, error: expect.stringContaining('pausa') });
     clearBackoff('s1');

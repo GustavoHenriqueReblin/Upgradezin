@@ -1,4 +1,4 @@
-import { ADMIN_PAGE_SIZE_MAX, CATEGORIES, STORES, type AdminPage, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type AdminTerm, type CategoryId, type CoverageRow, type PerfGap, type AdminProductFilter, type AdminProductPage, type SheetRoutineStatus, type SheetRoutineInput, SHEET_SECONDS_MIN, SHEET_SECONDS_MAX, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, ROUTINE_MODES, MODE_SECONDS_MIN, MODE_SECONDS_MAX } from '@upgradezin/shared';
+import { ADMIN_PAGE_SIZE_MAX, CATEGORIES, STORES, type AdminPage, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type CategoryId, type CoverageRow, type PerfGap, type AdminProductFilter, type AdminProductPage, type SheetRoutineStatus, type SheetRoutineInput, SHEET_SECONDS_MIN, SHEET_SECONDS_MAX, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, ROUTINE_MODES, MODE_SECONDS_MIN, MODE_SECONDS_MAX } from '@upgradezin/shared';
 import { createReadStream } from 'node:fs';
 import { emitChange, onChange } from '../changes.ts';
 import type { ActivityInfo } from '@upgradezin/shared';
@@ -23,7 +23,8 @@ export interface AdminDeps {
     storesState: () => AdminStoreState[];
     unpause: (id: StoreId) => boolean;
     pause: (id: StoreId, minutes: number) => void;
-    collect: (id: StoreId, category: CategoryId, term: string) => CollectNowResult;
+    /** "Varrer agora": lê a categoria inteira na loja agora. */
+    sweep: (id: StoreId, category: CategoryId) => CollectNowResult;
     routine: () => RoutineInfo;
     setRoutine: (s: RoutineInput) => RoutineInfo;
   };
@@ -36,9 +37,6 @@ export interface AdminDeps {
   data: {
     coverage: () => CoverageRow[];
     perfGaps: () => PerfGap[];
-    terms: (f: { category?: CategoryId; origin?: AdminTerm['origin']; q?: string; never?: 'none' | 'some'; page?: number; pageSize?: number }) => AdminPage<AdminTerm>;
-    deleteTerm: (id: number) => 'deleted' | 'not-found' | 'seed';
-    prioritizeTerm: (id: number) => boolean;
     attempts: (f: { store?: StoreId; status?: StoreAttempt['status']; origin?: StoreAttempt['origin']; page?: number; pageSize?: number }) => AdminPage<StoreAttempt>;
     timeline: (hours: number) => TimelineBucket[];
   };
@@ -52,18 +50,11 @@ export interface AdminDeps {
 /** Banco enviado para merge: até este tamanho. */
 const MERGE_MAX_BYTES = 300 * 1024 * 1024;
 
-/** Paginação das tabelas do admin (produtos, consultas, termos). */
+/** Paginação das tabelas do admin (produtos, consultas). */
 const Paging = {
   page: z.coerce.number().int().min(1).max(100_000).optional(),
   pageSize: z.coerce.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).optional(),
 };
-const TermsQuery = z.object({
-  category: z.enum(CATEGORIES).optional(),
-  origin: z.enum(['seed', 'user', 'text']).optional(),
-  q: z.string().max(60).optional(),
-  never: z.enum(['none', 'some']).optional(),
-  ...Paging,
-});
 const AttemptsQuery = z.object({
   store: z.enum(STORES).optional(),
   status: z.enum(['ok', 'partial', 'blocked', 'limit', 'error']).optional(),
@@ -79,10 +70,9 @@ const ProductsQuery = z.object({
   ...Paging,
 });
 const TimelineQuery = z.object({ hours: z.coerce.number().int().min(1).max(720).default(48) });
-const IdParam = z.coerce.number().int().positive();
 
 const Pause = z.object({ minutes: z.number().int().min(5).max(7 * 24 * 60) });
-const Collect = z.object({ category: z.enum(CATEGORIES), term: z.string().max(100) });
+const Sweep = z.object({ category: z.enum(CATEGORIES) });
 const Routine = z.object({ enabled: z.boolean(), stores: z.array(z.enum(STORES)).max(STORES.length),
   modes: z.partialRecord(z.enum(STORES), z.enum(ROUTINE_MODES)).optional(),
   live: z.partialRecord(z.enum(STORES), z.boolean()).optional(),
@@ -98,13 +88,15 @@ const SheetRoutine = z.object({
 const storeParam = (id: string): StoreId | null => ((STORES as readonly string[]).includes(id) ? (id as StoreId) : null);
 
 const PathMap = z.partialRecord(z.enum(CATEGORIES), z.string().max(300)).default({});
+/** Página de cada categoria: até 10 caminhos separados por espaço. */
+const SweepMap = z.partialRecord(z.enum(CATEGORIES), z.string().max(3100)).default({});
 const StoreBody = z.object({
   enabled: z.boolean(),
   name: z.string().max(200),
   url: z.string().max(300),
   search: z.string().max(300),
   categories: PathMap,
-  sweep: PathMap,
+  sweep: SweepMap,
   colors: z.string().max(100).default(''),
 });
 
@@ -186,14 +178,14 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
         req.log.info({ store: id, minutes: body.data.minutes }, 'admin: loja pausada');
         return { ok: true };
       });
-      admin.post<{ Params: { id: string } }>('/stores/:id/collect', async (req, reply) => {
+      admin.post<{ Params: { id: string } }>('/stores/:id/sweep', async (req, reply) => {
         const id = storeParam(req.params.id);
-        const body = Collect.safeParse(req.body);
+        const body = Sweep.safeParse(req.body);
         if (!id) return reply.code(404).send({ error: 'not-found' });
-        if (!body.success) return reply.code(400).send({ error: 'invalid', errors: ['Categoria e termo obrigatórios.'] });
-        const r = deps.ops.collect(id, body.data.category, body.data.term);
+        if (!body.success) return reply.code(400).send({ error: 'invalid', errors: ['Categoria obrigatória.'] });
+        const r = deps.ops.sweep(id, body.data.category);
         if (!r.ok) return reply.code(409).send({ error: 'rejected', errors: [r.error] });
-        req.log.info({ store: id, ...body.data }, 'admin: coletar agora');
+        req.log.info({ store: id, ...body.data }, 'admin: varrer agora');
         return r;
       });
 
@@ -218,27 +210,9 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
         return r;
       });
 
-      // Dados: cobertura, termos, consultas (registro e linha do tempo).
+      // Dados: cobertura, consultas (registro e linha do tempo).
       admin.get('/coverage', async () => deps.data.coverage());
       admin.get('/perf-gaps', async () => deps.data.perfGaps());
-      admin.get('/terms', async (req, reply) => {
-        const q = TermsQuery.safeParse(req.query);
-        return q.success ? deps.data.terms(q.data) : reply.code(400).send({ error: 'invalid' });
-      });
-      admin.delete<{ Params: { id: string } }>('/terms/:id', async (req, reply) => {
-        const id = IdParam.safeParse(req.params.id);
-        if (!id.success) return reply.code(404).send({ error: 'not-found' });
-        const r = deps.data.deleteTerm(id.data);
-        if (r === 'seed') return reply.code(409).send({ error: 'rejected', errors: ['Termo do formulário: a rotina o recriaria; não dá para apagar.'] });
-        if (r === 'not-found') return reply.code(404).send({ error: 'not-found' });
-        req.log.info({ term: id.data }, 'admin: termo apagado');
-        return { ok: true };
-      });
-      admin.post<{ Params: { id: string } }>('/terms/:id/prioritize', async (req, reply) => {
-        const id = IdParam.safeParse(req.params.id);
-        if (!id.success || !deps.data.prioritizeTerm(id.data)) return reply.code(404).send({ error: 'not-found' });
-        return { ok: true };
-      });
       admin.get('/attempts', async (req, reply) => {
         const q = AttemptsQuery.safeParse(req.query);
         return q.success ? deps.data.attempts(q.data) : reply.code(400).send({ error: 'invalid' });

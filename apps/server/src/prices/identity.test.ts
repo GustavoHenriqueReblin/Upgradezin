@@ -3,7 +3,7 @@ import type { Offer, Specs, StoreId } from '@upgradezin/shared';
 import { openDb, type Db } from '../db/db.ts';
 import { listProducts, sheetStoreStatus } from '../admin/products.ts';
 import { rebuildAllProductKeys, rebuildProductKeys, startProductKeys } from './identity.ts';
-import { ensureTerms, idOf, saveCollection } from './prices.ts';
+import { saveCollection } from './prices.ts';
 import { nextSheets, productSheet, saveSheet } from './sheets.ts';
 
 afterEach(() => vi.useRealTimers());
@@ -13,8 +13,7 @@ const offer = (store: StoreId, sku: string, title: string, mpn?: string, specs: 
 
 const NOW = new Date().toISOString();
 function collect(db: Db, store: StoreId, offers: Offer[], category: 'gpu' | 'case' = 'gpu') {
-  const ids = ensureTerms(db, [{ category, term: 'teste' }], 'seed');
-  saveCollection(db, { store, category, termId: idOf(ids, { category, term: 'teste' }), offers, at: NOW, complete: true });
+  saveCollection(db, { store, category, offers, at: NOW });
 }
 
 const keyOf = (db: Db, store: StoreId, sku: string) => db.prepare('SELECT product_key AS p, group_key AS g FROM listings WHERE store = ? AND store_sku = ?').get(store, sku) as { p: string | null; g: string | null };

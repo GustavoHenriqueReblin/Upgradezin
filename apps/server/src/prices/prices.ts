@@ -1,47 +1,11 @@
-import { effectiveCash, termMatches, type CategoryId, type ListingHistory, type Offer, type PricePoint, type SearchTerm, type StoreId } from '@upgradezin/shared';
+import { effectiveCash, stripAccents, termMatches, type CategoryId, type ListingHistory, type Offer, type PricePoint, type StoreId } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
 import { emitCollected } from './events.ts';
 
 /**
- * Preços no banco (docs/ARCHITECTURE.md §8.3): a rotina e a busca gravam aqui o
- * resultado de cada termo em cada loja; o site lê daqui.
+ * Preços no banco (docs/ARCHITECTURE.md §8.3): a rotina grava aqui cada página de categoria lida
+ * nas lojas, e a busca por texto o que trouxer; o site lê daqui.
  */
-
-const termKey = (t: SearchTerm) => `${t.category}|${t.term.toLowerCase()}`;
-
-/**
- * Garante os termos no banco e devolve o id de cada um (chave "categoria|termo").
- * origin "user": alguém pesquisou agora (o termo passa a ter prioridade na rotina).
- * origin "text": texto livre pesquisado (ex. "Zotac RTX 3050 Twin Edge OC"); conta como pedido, mas um
- * termo que já existia não muda de origem, e a rotina só mantém um termo "text" enquanto alguém
- * pesquisa (ROUTINE_TEXT_DAYS), para a lista dela não crescer sem fim.
- */
-export function ensureTerms(db: Db, terms: SearchTerm[], origin: 'seed' | 'user' | 'text', now = new Date().toISOString()): Map<string, number> {
-  const ins = db.prepare(
-    'INSERT INTO search_terms (category, term, origin, created_at, last_requested_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
-  );
-  const sel = db.prepare('SELECT id FROM search_terms WHERE category = ? AND lower(term) = lower(?)');
-  const touch = db.prepare("UPDATE search_terms SET origin = 'user', last_requested_at = ? WHERE id = ?");
-  const requested = db.prepare('UPDATE search_terms SET last_requested_at = ? WHERE id = ?');
-  const ids = new Map<string, number>();
-  db.exec('BEGIN');
-  try {
-    for (const t of terms) {
-      ins.run(t.category, t.term, origin, now, origin === 'seed' ? null : now);
-      const id = (sel.get(t.category, t.term) as { id: number }).id;
-      if (origin === 'user') touch.run(now, id);
-      else if (origin === 'text') requested.run(now, id);
-      ids.set(termKey(t), id);
-    }
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
-  return ids;
-}
-
-export const idOf = (ids: Map<string, number>, t: SearchTerm) => ids.get(termKey(t))!;
 
 interface LastPoint {
   price_cash: number;
@@ -52,14 +16,11 @@ interface LastPoint {
 }
 
 /**
- * Grava a coleta de um termo numa loja. complete=false: a loja parou no meio (bloqueio,
- * limite); as ofertas lidas entram, mas o termo continua precisando de uma coleta completa.
+ * Grava ofertas lidas numa loja: o anúncio (a última oferta vista) e um ponto de histórico quando
+ * preço, cupom, oferta ou estoque mudam.
  */
-export function saveCollection(
-  db: Db,
-  run: { store: StoreId; category: CategoryId; termId: number; offers: Offer[]; at: string; complete: boolean },
-): void {
-  const { store, category, termId, offers, at, complete } = run;
+export function saveCollection(db: Db, run: { store: StoreId; category: CategoryId; offers: Offer[]; at: string }): void {
+  const { store, category, offers, at } = run;
   const findListing = db.prepare('SELECT id FROM listings WHERE store = ? AND store_sku = ?');
   const insListing = db.prepare(`
     INSERT INTO listings (store, store_sku, category, title, url, model_key, ean, mpn, offer, first_seen_at, last_seen_at)
@@ -67,9 +28,6 @@ export function saveCollection(
   const updListing = db.prepare(`
     UPDATE listings SET category = ?, title = ?, url = ?, model_key = ?, ean = ?, mpn = ?, offer = ?, last_seen_at = ?
     WHERE id = ?`);
-  const linkTerm = db.prepare(`
-    INSERT INTO listing_terms (listing_id, term_id, last_seen_at) VALUES (?, ?, ?)
-    ON CONFLICT (term_id, listing_id) DO UPDATE SET last_seen_at = excluded.last_seen_at`);
   const lastPoint = db.prepare(
     'SELECT price_cash, price_card, coupon, promo, in_stock FROM price_points WHERE listing_id = ? ORDER BY at DESC LIMIT 1',
   );
@@ -88,7 +46,6 @@ export function saveCollection(
       } else {
         updListing.run(category, o.title, o.url, o.modelKey, o.ean ?? null, o.mpn ?? null, json, at, id);
       }
-      linkTerm.run(id, termId, at);
 
       const point: LastPoint = {
         price_cash: o.priceCash,
@@ -107,15 +64,6 @@ export function saveCollection(
         prev.in_stock !== point.in_stock;
       if (changed) insPoint.run(id, at, point.price_cash, point.price_card, effectiveCash(o), point.coupon, point.promo, point.in_stock);
     }
-    db.prepare(`
-      INSERT INTO term_runs (term_id, store, last_try_at, last_ok_at, status, count) VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT (term_id, store) DO UPDATE SET
-        last_try_at = excluded.last_try_at,
-        last_ok_at = coalesce(excluded.last_ok_at, term_runs.last_ok_at),
-        status = excluded.status,
-        count = CASE WHEN excluded.last_ok_at IS NULL THEN term_runs.count ELSE excluded.count END`).run(
-      termId, store, at, complete ? at : null, complete ? 'ok' : 'partial', offers.length,
-    );
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');
@@ -125,48 +73,45 @@ export function saveCollection(
   if (offers.length) emitCollected({ store, category, at });
 }
 
+/** O anúncio já está no banco (a rotina só cria anúncio novo para o que está em estoque). */
+export function hasListing(db: Db, store: StoreId, sku: string): boolean {
+  return !!db.prepare('SELECT 1 FROM listings WHERE store = ? AND store_sku = ?').get(store, sku);
+}
+
 /**
- * Tentativa sem resultado: registra para a rotina não insistir logo em seguida. "redirect": a busca
- * da loja leva o termo para outra página (ex. a da categoria), sem lista de produtos; guarda o
- * destino (`redirectPath`), que as próximas coletas desse termo nessa loja abrem direto.
+ * Fim de uma volta completa pela categoria (até acabar o que está em estoque): o que estava em
+ * estoque e não apareceu desde `seenBefore` saiu de estoque (ou da loja). A oferta guardada passa a
+ * dizer "sem estoque", com um ponto de histórico. Se voltar, a próxima volta o encontra entre os em
+ * estoque e grava de novo. Devolve quantos mudaram.
  */
-export function markFailedRun(db: Db, store: StoreId, termId: number, at: string, status: 'blocked' | 'error' | 'redirect', redirectPath?: string): void {
-  db.prepare(`
-    INSERT INTO term_runs (term_id, store, last_try_at, status, redirect_path) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT (term_id, store) DO UPDATE SET last_try_at = excluded.last_try_at, status = excluded.status,
-      redirect_path = coalesce(excluded.redirect_path, term_runs.redirect_path)`).run(termId, store, at, status, redirectPath ?? null);
-}
-
-/** Destino para onde a busca da loja já redirecionou o termo (abrir direto no lugar da busca). */
-export function redirectPathOf(db: Db, store: StoreId, termId: number): string | null {
-  const r = db.prepare('SELECT redirect_path FROM term_runs WHERE term_id = ? AND store = ?').get(termId, store) as { redirect_path: string | null } | undefined;
-  return r?.redirect_path ?? null;
-}
-
-export interface StoredResult {
-  /** Fim da última coleta completa; sem ela, o termo ainda não tem resultado nesta loja. */
-  at?: string;
-  offers: Offer[];
-}
-
-/** Resultado de um termo numa loja: os anúncios vistos desde a última coleta completa. */
-export function readResult(db: Db, store: StoreId, termId: number): StoredResult {
-  const run = db.prepare('SELECT last_ok_at FROM term_runs WHERE term_id = ? AND store = ?').get(termId, store) as
-    | { last_ok_at: string | null }
-    | undefined;
-  if (!run?.last_ok_at) return { offers: [] };
+export function markOutOfStock(db: Db, store: StoreId, category: CategoryId, seenBefore: string, at: string): number {
   const rows = db
-    .prepare(`
-      SELECT l.offer FROM listing_terms lt JOIN listings l ON l.id = lt.listing_id
-      WHERE lt.term_id = ? AND l.store = ? AND lt.last_seen_at >= ?`)
-    .all(termId, store, run.last_ok_at) as { offer: string }[];
-  return { at: run.last_ok_at, offers: rows.map((r) => JSON.parse(r.offer) as Offer) };
+    .prepare(`SELECT id, offer FROM listings WHERE store = ? AND category = ? AND last_seen_at < ? AND json_extract(offer, '$.inStock') = 1`)
+    .all(store, category, seenBefore) as { id: number; offer: string }[];
+  if (!rows.length) return 0;
+  const upd = db.prepare('UPDATE listings SET offer = ? WHERE id = ?');
+  const insPoint = db.prepare(`
+    INSERT OR REPLACE INTO price_points (listing_id, at, price_cash, price_card, effective_cash, coupon, promo, in_stock)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 0)`);
+  db.exec('BEGIN');
+  try {
+    for (const r of rows) {
+      const o = { ...(JSON.parse(r.offer) as Offer), inStock: false };
+      upd.run(JSON.stringify(o), r.id);
+      insPoint.run(r.id, at, o.priceCash, o.priceCard ?? null, effectiveCash(o), o.coupon ? JSON.stringify(o.coupon) : null, o.promo ? JSON.stringify(o.promo) : null);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  emitCollected({ store, category, at });
+  return rows.length;
 }
 
 /**
- * Anúncios da loja na categoria, vistos desde `seenSince`, que batem com algum dos termos pelas
- * specs (termMatches), venham da coleta que vierem. Completa o resultado de um termo com o que
- * outras coletas já trouxeram.
+ * Anúncios da loja na categoria, vistos desde `seenSince`, que batem com algum dos termos do
+ * formulário pelas specs (termMatches). É o resultado da busca do site.
  */
 export function matchingListings(db: Db, store: StoreId, category: CategoryId, terms: string[], seenSince: string): Offer[] {
   const rows = db
@@ -178,6 +123,21 @@ export function matchingListings(db: Db, store: StoreId, category: CategoryId, t
     if (terms.some((t) => termMatches(category, t, o.specs))) out.push(o);
   }
   return out;
+}
+
+const fold = (s: string) => stripAccents(s).toLowerCase();
+
+/**
+ * Anúncios da loja na categoria, vistos desde `seenSince`, com todas as palavras do texto no título
+ * (sem acento nem maiúsculas): o texto livre da busca, no que o banco já tem.
+ */
+export function titleMatches(db: Db, store: StoreId, category: CategoryId, text: string, seenSince: string): Offer[] {
+  const words = fold(text).split(/[\s,]+/).filter(Boolean);
+  if (!words.length) return [];
+  const rows = db
+    .prepare('SELECT title, offer FROM listings WHERE store = ? AND category = ? AND last_seen_at >= ?')
+    .all(store, category, seenSince) as { title: string; offer: string }[];
+  return rows.filter((r) => words.every((w) => fold(r.title).includes(w))).map((r) => JSON.parse(r.offer) as Offer);
 }
 
 /** Ofertas da categoria em todas as lojas, vistas desde `seenSince` (a última oferta de cada anúncio). */
@@ -198,42 +158,6 @@ export function listingBrands(db: Db, category: CategoryId, seenSince: string): 
     .map((r) => r.brand)
     .filter((b) => b && !['Outros', 'Genérica'].includes(b))
     .sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
-}
-
-export interface DueTerm extends SearchTerm {
-  id: number;
-}
-
-/**
- * Termos que a rotina deve coletar numa loja, espalhando a coleta pelas categorias em vez de ir
- * termo a termo. Primeiro o que alguém pesquisou e não foi coletado depois disso, o pedido mais
- * recente antes; depois a categoria há mais tempo sem coleta nessa loja (nunca coletada antes);
- * dentro dela, o termo nunca coletado, depois o mais antigo. Como a busca junta os anúncios
- * pelas specs, uma coleta já serve a todos os termos da categoria que batem com ela.
- * Fica de fora o que foi coletado depois de `okBefore` ou tentado (e falhou) depois de
- * `tryBefore` e o texto livre que ninguém pesquisa desde `textSince`. Termo que a loja acabou de
- * redirecionar não espera `tryBefore`: a próxima vez já abre o destino direto.
- */
-export function dueTerms(db: Db, store: StoreId, okBefore: string, tryBefore: string, limit: number, textSince = ''): DueTerm[] {
-  return db
-    .prepare(`
-      WITH cat AS (
-        SELECT st.category, max(tr.last_ok_at) AS last FROM search_terms st
-        LEFT JOIN term_runs tr ON tr.term_id = st.id AND tr.store = ?
-        WHERE st.origin != 'sweep' GROUP BY st.category
-      )
-      SELECT st.id, st.category, st.term FROM search_terms st
-      JOIN cat ON cat.category = st.category
-      LEFT JOIN term_runs tr ON tr.term_id = st.id AND tr.store = ?
-      WHERE st.origin != 'sweep' AND (st.origin != 'text' OR st.last_requested_at >= ?)
-        AND (tr.last_ok_at IS NULL OR tr.last_ok_at < ?) AND (tr.last_try_at IS NULL OR tr.last_try_at < ? OR tr.status = 'redirect')
-      ORDER BY (st.last_requested_at IS NOT NULL AND (tr.last_ok_at IS NULL OR st.last_requested_at > tr.last_ok_at)) DESC,
-        -- Entre os pesquisados, o pedido mais recente primeiro: é quem está com a tela aberta esperando
-        -- (nos logs, 44 pedidos acumulados no dia deixavam o de agora horas atrás de um cooler pedido de manhã).
-        CASE WHEN tr.last_ok_at IS NULL OR st.last_requested_at > tr.last_ok_at THEN st.last_requested_at END DESC,
-        cat.last IS NOT NULL, cat.last, tr.last_ok_at IS NOT NULL, tr.last_ok_at, st.id
-      LIMIT ?`)
-    .all(store, store, textSince, okBefore, tryBefore, limit) as unknown as DueTerm[];
 }
 
 /** Histórico de preço de um anúncio (um ponto a cada mudança). */

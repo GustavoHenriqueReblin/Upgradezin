@@ -2,22 +2,27 @@ import type { Offer } from '@upgradezin/shared';
 import { describe, expect, it } from 'vitest';
 import { openDb } from '../db/db.ts';
 import { recordAttempt } from '../prices/attempts.ts';
-import { ensureTerms, idOf, saveCollection } from '../prices/prices.ts';
-import { attemptTimeline, coverage, deleteTerm, listTerms, perfGaps, prioritizeTerm } from './data.ts';
+import { saveCollection } from '../prices/prices.ts';
+import { recordSweepPage } from '../prices/sweep.ts';
+import { attemptTimeline, coverage, perfGaps } from './data.ts';
 
 const offer = (sku: string, store: Offer['store'] = 's2'): Offer =>
   ({ store, storeSku: sku, title: `Placa ${sku}`, url: `https://x.example/${sku}`, priceCash: 1000, inStock: true, specs: {}, modelKey: `m${sku}`, collectedAt: '' }) as Offer;
 
 describe('cobertura', () => {
-  it('anúncios por loja e categoria, frescor e termos coletados', () => {
+  it('anúncios por loja e categoria, em estoque, frescor e a leitura da categoria (volta em andamento, última completa)', () => {
     const db = openDb(':memory:');
-    const T = [{ category: 'gpu' as const, term: 'NVIDIA GeForce' }, { category: 'gpu' as const, term: 'AMD Radeon' }];
-    const ids = ensureTerms(db, T, 'seed');
     const now = Date.parse('2026-11-20T20:00:00.000Z');
-    saveCollection(db, { store: 's2', category: 'gpu', termId: idOf(ids, T[0]!), offers: [offer('1'), offer('2')], at: '2026-11-20T19:00:00.000Z', complete: true });
-    saveCollection(db, { store: 's2', category: 'gpu', termId: idOf(ids, T[1]!), offers: [offer('3')], at: '2026-11-10T19:00:00.000Z', complete: true });
-    expect(coverage(db, now)).toEqual([
-      { store: 's2', category: 'gpu', listings: 3, seen24h: 2, seen7d: 2, terms: 2, termsOk: 2, lastOkAt: '2026-11-20T19:00:00.000Z', sheets: 0 },
+    saveCollection(db, { store: 's2', category: 'gpu', offers: [offer('1'), { ...offer('2'), inStock: false }], at: '2026-11-20T19:00:00.000Z' });
+    saveCollection(db, { store: 's2', category: 'gpu', offers: [offer('3')], at: '2026-11-10T19:00:00.000Z' });
+    // Placa de vídeo: uma volta completa; processador: na página 2 do 1º caminho e ainda sem anúncio.
+    recordSweepPage(db, { store: 's2', category: 'gpu', path: 0, paths: 1, page: 1, totalPages: 1, maxPages: 40, inStock: 0, offers: [], at: '2026-11-20T18:30:00.000Z' });
+    recordSweepPage(db, { store: 's2', category: 'cpu', path: 0, paths: 2, page: 1, totalPages: 5, maxPages: 40, inStock: 30, offers: [], at: '2026-11-20T19:40:00.000Z' });
+    const paths = (store: string, category: string) => (store === 's2' && (category === 'gpu' || category === 'cpu') ? (category === 'cpu' ? 2 : 1) : 0);
+    expect(coverage(db, paths, now)).toEqual([
+      { store: 's2', category: 'cpu', listings: 0, inStock: 0, seen24h: 0, seen7d: 0, paths: 2, sweeping: { path: 1, page: 2 }, sweptAt: null, lastOkAt: null, sheets: null },
+      // O fim da volta (18h30) marcou o "3", visto antes dela, como sem estoque; o "1" foi visto depois.
+      { store: 's2', category: 'gpu', listings: 3, inStock: 1, seen24h: 2, seen7d: 2, paths: 1, sweeping: null, sweptAt: '2026-11-20T18:30:00.000Z', lastOkAt: '2026-11-20T19:00:00.000Z', sheets: 0 },
     ]);
   });
 });
@@ -25,65 +30,15 @@ describe('cobertura', () => {
 describe('modelos sem índice de desempenho', () => {
   it('lista os processadores e placas à venda que a tabela não conhece, do mais anunciado ao menos', () => {
     const db = openDb(':memory:');
-    const ids = ensureTerms(db, [{ category: 'gpu', term: 'AMD Radeon' }], 'seed');
-    const termId = idOf(ids, { category: 'gpu', term: 'AMD Radeon' });
     const gpu = (sku: string, gpuModel?: string) => ({ ...offer(sku), title: `Placa ${gpuModel ?? 'genérica'}`, specs: gpuModel ? { gpuModel } : {} });
     const now = Date.parse('2026-11-20T20:00:00.000Z');
-    saveCollection(db, { store: 's2', category: 'gpu', termId, offers: [gpu('1', 'RX 9050'), gpu('2', 'RX 9050'), gpu('3', 'RTX 3060'), gpu('4')], at: '2026-11-20T19:00:00.000Z', complete: true });
+    saveCollection(db, { store: 's2', category: 'gpu', offers: [gpu('1', 'RX 9040'), gpu('2', 'RX 9040'), gpu('3', 'RTX 3060'), gpu('4')], at: '2026-11-20T19:00:00.000Z' });
     // Visto há mais de 14 dias: não conta.
-    saveCollection(db, { store: 's2', category: 'gpu', termId, offers: [gpu('5', 'RX 7650 GRE')], at: '2026-10-01T19:00:00.000Z', complete: false });
+    saveCollection(db, { store: 's2', category: 'gpu', offers: [gpu('5', 'RX 7650 GRE')], at: '2026-10-01T19:00:00.000Z' });
     expect(perfGaps(db, now)).toEqual([
-      { category: 'gpu', model: 'RX 9050', listings: 2, example: 'Placa RX 9050', store: 's2' },
+      { category: 'gpu', model: 'RX 9040', listings: 2, example: 'Placa RX 9040', store: 's2' },
       { category: 'gpu', model: '', listings: 1, example: 'Placa genérica', store: 's2' },
     ]);
-  });
-});
-
-describe('termos', () => {
-  it('lista com a última coleta por loja, filtra, apaga só pesquisados e dá prioridade', () => {
-    const db = openDb(':memory:');
-    const seed = ensureTerms(db, [{ category: 'gpu', term: 'NVIDIA GeForce' }], 'seed');
-    ensureTerms(db, [{ category: 'gpu', term: 'Zotac RTX 3050 100%' }], 'text', '2026-11-20T10:00:00.000Z');
-    saveCollection(db, { store: 's1', category: 'gpu', termId: idOf(seed, { category: 'gpu', term: 'NVIDIA GeForce' }), offers: [offer('1', 's1')], at: '2026-11-20T11:00:00.000Z', complete: true });
-
-    const all = listTerms(db).items;
-    expect(all.map((t) => [t.term, t.origin])).toEqual([
-      ['NVIDIA GeForce', 'seed'],
-      ['Zotac RTX 3050 100%', 'text'],
-    ]);
-    expect(all[0]!.runs).toEqual([{ store: 's1', lastOkAt: '2026-11-20T11:00:00.000Z', lastTryAt: '2026-11-20T11:00:00.000Z', status: 'ok', count: 1 }]);
-    const terms = (f: Parameters<typeof listTerms>[1]) => listTerms(db, f, ['s1', 's2']).items.map((t) => t.term);
-    expect(terms({ origin: 'text' })).toEqual(['Zotac RTX 3050 100%']);
-    expect(terms({ q: 'zotac' })).toHaveLength(1);
-    expect(terms({ q: '100%' })).toHaveLength(1); // % é literal, não curinga
-    expect(terms({ q: '%' })).toHaveLength(1);
-    expect(terms({ category: 'cpu' })).toEqual([]);
-    // Nunca coletado: em nenhuma das lojas (o de texto livre) ou em alguma (os dois: nenhum na s2).
-    expect(terms({ never: 'none' })).toEqual(['Zotac RTX 3050 100%']);
-    expect(terms({ never: 'some' })).toEqual(['NVIDIA GeForce', 'Zotac RTX 3050 100%']);
-    expect(listTerms(db, { never: 'some' }, ['s1']).items.map((t) => t.term)).toEqual(['Zotac RTX 3050 100%']); // só a s1: o seed já coletou
-
-    const [s, t] = all;
-    expect(prioritizeTerm(db, s!.id, '2026-11-20T21:00:00.000Z')).toBe(true);
-    expect(listTerms(db).items[0]!.lastRequestedAt).toBe('2026-11-20T21:00:00.000Z');
-    expect(deleteTerm(db, s!.id)).toBe('seed');
-    expect(deleteTerm(db, t!.id)).toBe('deleted');
-    expect(deleteTerm(db, t!.id)).toBe('not-found');
-    expect(prioritizeTerm(db, 999)).toBe(false);
-  });
-
-  it('paginado: total dos filtros, 50 por página por padrão, na ordem de categoria e termo', () => {
-    const db = openDb(':memory:');
-    ensureTerms(db, Array.from({ length: 120 }, (_, i) => ({ category: 'psu' as const, term: `Fonte ${String(i).padStart(3, '0')}W` })), 'text');
-    const p1 = listTerms(db);
-    expect(p1).toMatchObject({ total: 120, page: 1, pageSize: 50 });
-    expect(p1.items).toHaveLength(50);
-    expect(p1.items[0]!.term).toBe('Fonte 000W');
-    const p3 = listTerms(db, { page: 3 });
-    expect(p3.items.map((t) => t.term)).toEqual(Array.from({ length: 20 }, (_, i) => `Fonte ${100 + i}W`));
-    expect(listTerms(db, { page: 2, pageSize: 10 }).items[0]!.term).toBe('Fonte 010W');
-    expect(listTerms(db, { pageSize: 500 }).pageSize).toBe(200); // teto
-    expect(listTerms(db, { page: 9 }).items).toEqual([]); // depois do fim: vazio, com o total
   });
 });
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { CATEGORY_DEFS, ENABLED_CATEGORIES, MODE_SECONDS_MAX, MODE_SECONDS_MIN, ROUTINE_MODES, type AdminStoreState, type CategoryId, type RoutineInfo, type RoutineInput, type RoutineMode, type StoreAttempt, type StoreId } from '@upgradezin/shared';
-import { Pause, Play, Search } from 'lucide-react';
+import { Pause, Play, RefreshCw } from 'lucide-react';
 import { AdminError, adminApi } from './api.ts';
 import { attemptLabel, countdown, formatWhen, MODE_LABEL, modeHint, pauseLabel, queueLabel, routineStores, shortDuration } from './format.ts';
 import { useLiveReload } from './live.ts';
@@ -13,7 +13,7 @@ const PAUSES = [
   { label: '24 h', minutes: 1440 },
 ];
 
-/** Coleta: rotina (ligada, lojas) e o painel de cada loja (pausa, páginas, últimas consultas, ações). */
+/** Coleta: rotina de preços (ligada, lojas) e o painel de cada loja (pausa, páginas, últimas consultas, "varrer agora"). */
 export function CollectPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [states, setStates] = useState<AdminStoreState[] | null>(null);
   const [routine, setRoutine] = useState<RoutineInfo | null>(null);
@@ -60,17 +60,17 @@ export function CollectPanel({ onUnauthorized }: { onUnauthorized: () => void })
     save({ stores: on ? [...active, id] : active.filter((x) => x !== id) }, `${name}: ${on ? 'entrou na' : 'saiu da'} rotina.`);
   const setMode = (id: StoreId, name: string, mode: RoutineMode) => save({ modes: { [id]: mode } }, `${name}: rotina no modo ${MODE_LABEL[mode].toLowerCase()}.`);
   const setLive = (id: StoreId, name: string, live: boolean) =>
-    save({ live: { [id]: live } }, live ? `${name}: consultada na hora quando alguém busca no site.` : `${name}: a busca do site mostra só o banco.`);
+    save({ live: { [id]: live } }, live ? `${name}: "Não achou? Buscar nas lojas" consulta a loja na hora.` : `${name}: a busca por texto mostra só o banco.`);
 
   return (
     <div className="space-y-4">
       {message && <p className={`rounded-lg px-3 py-2 text-sm ${message.ok ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-red-500/10 text-red-700 dark:text-red-300'}`}>{message.text}</p>}
 
       <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 className="font-semibold">Rotina de coleta</h2>
+        <h2 className="font-semibold">Rotina de preços</h2>
         <p className="mt-0.5 text-sm text-zinc-500">
-          Rotina: em cada loja ligada, o servidor atualiza preços e histórico sozinho, no ritmo do modo. Busca ao vivo: quando alguém pesquisa no site, a loja é consultada na hora (na frente da rotina);
-          desmarcada, a busca mostra só o que o banco tem. As duas são independentes e valem na hora.
+          Rotina: em cada loja ligada, o servidor lê as páginas de categoria (configuradas em Lojas), só o que está em estoque, uma página a cada intervalo do modo; a busca do site mostra o que ela
+          gravou. Busca ao vivo: o "Não achou? Buscar nas lojas" consulta a loja na hora (na frente da rotina); desmarcada, mostra só o banco. As duas são independentes e valem na hora.
         </p>
 
         <ul className="mt-3 divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -83,7 +83,7 @@ export function CollectPanel({ onUnauthorized }: { onUnauthorized: () => void })
                   <span className="ml-2 text-xs text-zinc-500">{modeHint(mode, routine.seconds)}</span>
                 </span>
                 <span className="flex flex-wrap items-center gap-4">
-                  <label className="flex items-center gap-1.5 text-sm" title="Consultar esta loja na hora quando alguém pesquisa no site">
+                  <label className="flex items-center gap-1.5 text-sm" title="Buscar o texto nesta loja na hora (Não achou? Buscar nas lojas)">
                     <input type="checkbox" checked={routine.live[s.id]} disabled={!s.enabled} onChange={(e) => setLive(s.id, s.name, e.target.checked)} className="h-4 w-4 accent-accent-500" />
                     Busca ao vivo
                   </label>
@@ -113,7 +113,7 @@ export function CollectPanel({ onUnauthorized }: { onUnauthorized: () => void })
 
         <div className="mt-1 border-t border-zinc-200 pt-3 text-xs text-zinc-500 dark:border-zinc-800">
           {!active.length ? (
-            'Nenhuma loja ligada: as lojas só são consultadas quando alguém busca no site ou em "Coletar".'
+            'Nenhuma loja ligada: as lojas só são consultadas pela busca por texto ou em "Varrer agora".'
           ) : (
             <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
               {routine.busy && (
@@ -151,7 +151,7 @@ function ModeSeconds({ seconds, onSave }: { seconds: Record<RoutineMode, number>
         if (valid && changed) onSave(parsed);
       }}
     >
-      <span className="w-full text-xs text-zinc-500">Intervalo da rotina em cada modo, em segundos ({MODE_SECONDS_MIN} a {MODE_SECONDS_MAX}). Não afeta a busca do site.</span>
+      <span className="w-full text-xs text-zinc-500">Segundos entre duas páginas de categoria em cada modo ({MODE_SECONDS_MIN} a {MODE_SECONDS_MAX}). Não afeta a busca por texto.</span>
       {ROUTINE_MODES.map((m) => (
         <label key={m} className="flex flex-col gap-1 text-xs text-zinc-500">
           {MODE_LABEL[m]}
@@ -178,7 +178,6 @@ function ModeSeconds({ seconds, onSave }: { seconds: Record<RoutineMode, number>
 
 function StoreCard({ s, act }: { s: AdminStoreState; act: (fn: () => Promise<unknown>, ok: string) => Promise<void> }) {
   const [category, setCategory] = useState<CategoryId>('gpu');
-  const [term, setTerm] = useState('');
   const counts = s.last24h;
   const total = Object.values(counts).reduce((a, b) => a + (b ?? 0), 0);
 
@@ -197,7 +196,7 @@ function StoreCard({ s, act }: { s: AdminStoreState; act: (fn: () => Promise<unk
           {s.pagesUsed} de {s.pagesPerHour} <span className="text-zinc-500">(rotina até {s.routinePagesPerHour})</span>
         </Row>
         <Row k="Rotina">{s.inRoutine ? `sim, modo ${MODE_LABEL[s.mode].toLowerCase()}` : 'não'}</Row>
-        <Row k="Busca ao vivo">{s.live ? 'sim, na hora' : 'não (só o banco)'}</Row>
+        <Row k="Busca por texto">{s.live ? 'sim, na hora' : 'não (só o banco)'}</Row>
         <Row k="Fila">
           <span className="inline-flex items-center gap-1.5">
             {s.queue.running && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" aria-hidden />}
@@ -230,10 +229,9 @@ function StoreCard({ s, act }: { s: AdminStoreState; act: (fn: () => Promise<unk
         className="mt-3 flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!term.trim()) return;
           void act(
-            () => adminApi<{ startsAt: string }>(`/stores/${s.id}/collect`, { method: 'POST', body: { category, term } }),
-            `${s.name}: "${term.trim()}" na fila. O resultado aparece em Consultas.`,
+            () => adminApi<{ startsAt: string }>(`/stores/${s.id}/sweep`, { method: 'POST', body: { category } }),
+            `${s.name}: ${CATEGORY_DEFS[category].name.toLowerCase()} sendo lida do começo, na frente da rotina. As páginas aparecem em Consultas; a volta, em Cobertura.`,
           );
         }}
       >
@@ -244,15 +242,8 @@ function StoreCard({ s, act }: { s: AdminStoreState; act: (fn: () => Promise<unk
             </option>
           ))}
         </select>
-        <input
-          value={term}
-          onChange={(e) => setTerm(e.target.value)}
-          placeholder="Termo (ex. RTX 3050)"
-          maxLength={60}
-          className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-        />
-        <Btn type="submit" disabled={!s.enabled || !!s.pause}>
-          <Search className="h-3.5 w-3.5" /> Coletar
+        <Btn type="submit" disabled={!s.enabled || !!s.pause} title="Lê a categoria inteira nesta loja agora (até acabar o que está em estoque)">
+          <RefreshCw className="h-3.5 w-3.5" /> Varrer agora
         </Btn>
       </form>
     </Box>

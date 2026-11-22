@@ -1,10 +1,11 @@
-import type { Offer, SearchParams, StoreId, StoreStatusEvent } from '@upgradezin/shared';
+import { isFormTerm, type CategoryId, type Offer, type SearchParams, type StoreId, type StoreStatusEvent } from '@upgradezin/shared';
 import { config } from './config.ts';
 import { getDb } from './db/instance.ts';
 import { backoffInfo, BlockedError, SearchRedirectError, PageLimitError, pageLimitUntil, registerSuccess } from './pace.ts';
-import { collectTerm, partialOf, withBrowserSession } from './prices/collect.ts';
-import { ensureTerms, idOf, matchingListings, readResult, withHistoryStats, type DueTerm } from './prices/prices.ts';
+import { collectText, partialOf, withBrowserSession } from './prices/collect.ts';
+import { matchingListings, titleMatches, withHistoryStats } from './prices/prices.ts';
 import { isLive } from './prices/routine.ts';
+import { sweepState } from './prices/sweep.ts';
 
 export interface SearchHandlers {
   onStatus(e: StoreStatusEvent): void;
@@ -13,14 +14,15 @@ export interface SearchHandlers {
 }
 
 /**
- * Busca do site: responde na hora com o que o banco tem (termos + anúncios que batem pelas
- * specs) e, por trás, consulta as lojas com busca ao vivo ligada (admin) para os termos coletados
- * há mais de REVALIDATE_MIN, na frente da rotina. O resultado troca quando a consulta chega, e o
- * que ela trouxer também vai para o banco. Loja com busca ao vivo desligada: só o banco.
+ * Busca do site. Os termos do formulário ("RTX 4060", "AM4", "750W"…) não vão às lojas: o
+ * resultado são os anúncios do banco (lidos pela rotina nas páginas de categoria) que batem com
+ * eles pelas specs. Texto livre ("Não achou? Buscar nas lojas"): o banco (títulos com todas as
+ * palavras) e, nas lojas com busca ao vivo ligada, a busca da própria loja, na frente da rotina;
+ * o resultado troca quando ela chega, e o que ela trouxer também vai para o banco.
  */
 export async function runSearch(p: SearchParams, handlers: SearchHandlers, signal: AbortSignal, force = false) {
   // A pessoa saiu da página (ou "Parar"): a tela para de receber, mas a consulta que já saiu
-  // termina e grava no banco. Assim a próxima busca já acha o preço fresco.
+  // termina e grava no banco. Assim a próxima busca já acha o que ela trouxe.
   const h: SearchHandlers = {
     onStatus: (e) => !signal.aborted && handlers.onStatus(e),
     onOffers: (store, offers, partial) => !signal.aborted && handlers.onOffers(store, offers, partial),
@@ -32,48 +34,51 @@ export async function runSearch(p: SearchParams, handlers: SearchHandlers, signa
 const background = new AbortController();
 export const stopBackgroundSearches = () => background.abort();
 
-async function runStores(p: SearchParams, h: SearchHandlers, signal: AbortSignal, force: boolean) {
+/** Última busca por texto que deu certo em cada loja (loja|categoria|texto): não repete por REVALIDATE_MIN. */
+const searchedAt = new Map<string, number>();
+const textKey = (store: StoreId, category: CategoryId, text: string) => `${store}|${category}|${text.toLowerCase()}`;
+
+/** Testes: esquece as buscas por texto recentes. */
+export const forgetTextSearches = () => searchedAt.clear();
+
+/** Termos do formulário (specs) e textos livres de uma busca, sem repetidos. */
+function splitTerms(category: CategoryId, terms: string[]) {
   const seen = new Set<string>();
-  const terms = p.terms.map((t) => t.trim()).filter((t) => t && !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase()));
-  if (!terms.length) return;
+  const list = terms.map((t) => t.trim()).filter((t) => t && !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase()));
+  return { form: list.filter((t) => isFormTerm(category, t)), texts: list.filter((t) => !isFormTerm(category, t)) };
+}
+
+/** O que o banco tem para a busca numa loja: os anúncios que batem com os termos do formulário e os de título com o texto. */
+function fromDb(store: StoreId, category: CategoryId, form: string[], texts: string[]): Offer[] {
   const db = getDb();
-  const ids = ensureTerms(db, terms.map((term) => ({ category: p.category, term })), p.text ? 'text' : 'user');
-  const items: DueTerm[] = terms.map((term) => ({ id: idOf(ids, { category: p.category, term }), category: p.category, term }));
+  const since = new Date(Date.now() - config.SEARCH_DB_MAX_AGE_H * 3_600_000).toISOString();
+  return dedupe([...(form.length ? matchingListings(db, store, category, form, since) : []), ...texts.flatMap((t) => titleMatches(db, store, category, t, since))]);
+}
+
+/** Fim da última volta completa da rotina pela categoria na loja (a idade do que o banco mostra). */
+const sweptAt = (store: StoreId, category: CategoryId) => sweepState(getDb(), store, category).doneAt;
+
+async function runStores(p: SearchParams, h: SearchHandlers, signal: AbortSignal, force: boolean) {
+  const { form, texts } = splitTerms(p.category, p.terms);
+  if (!form.length && !texts.length) return;
+  const db = getDb();
 
   await Promise.all(
     p.stores.map(async (store) => {
       if (signal.aborted) return;
-      const stored = items.map((t) => readResult(db, store, t.id));
       // Lista completa da loja (não os lotes de página): vai com o resumo do histórico de cada anúncio.
       const sendList = (offers: Offer[]) => h.onOffers(store, withHistoryStats(db, offers));
       const now = Date.now();
-      // Toda busca atualiza por trás: mostra o banco na hora e consulta a loja para todo termo
-      // coletado há mais de REVALIDATE_MIN (a pessoa não espera; o resultado troca quando chega).
-      // "Atualizar" (force) usa o mesmo piso, para não repetir uma coleta de minutos atrás.
-      const revalidateBefore = now - Math.max(config.REVALIDATE_MIN, force ? config.FORCE_MIN_AGE_MIN : 0) * 60_000;
-      const atOf = (i: number) => (stored[i]!.at ? Date.parse(stored[i]!.at!) : 0);
-      // Busca ao vivo desligada na loja (admin): não consulta, mostra só o que o banco tem.
-      let need = isLive(store) ? items.filter((_, i) => atOf(i) < revalidateBefore) : [];
-      // Resultado por termo; começa com o do banco e é trocado conforme a consulta ao vivo termina.
-      const byTerm = new Map(items.map((t, i) => [t.id, stored[i]!.offers]));
-      // Anúncios da loja que o banco já tem de outras coletas (outros termos, varredura) e batem
-      // com algum termo pelas specs: sem isso, buscar "AM4" escondia o processador AM4 que só tinha
-      // aparecido na coleta de "Ryzen 7" (ou numa loja bloqueada, que nunca coletou "AM4").
-      const related = matchingListings(db, store, p.category, terms, new Date(now - config.SEARCH_DB_MAX_AGE_H * 3_600_000).toISOString());
-      const current = () => dedupe([...related, ...[...byTerm.values()].flat()]);
-      const oldest = () => {
-        const ats = stored.map((r) => r.at).filter((a): a is string => !!a);
-        return ats.length ? ats.sort()[0] : undefined;
-      };
-
-      // Todos os termos vão à loja, um por vez, com prioridade sobre a rotina na fila da loja
-      // (pace.ts, withStore). Termos mais antigos primeiro.
-      need = [...need].sort((a, b) => atOf(items.indexOf(a)) - atOf(items.indexOf(b)));
+      // Texto buscado na loja há menos de REVALIDATE_MIN ("Atualizar": FORCE_MIN_AGE_MIN) vale o banco.
+      const fresh = (Math.max(config.REVALIDATE_MIN, force ? config.FORCE_MIN_AGE_MIN : 0) || 0) * 60_000;
+      const need = isLive(store) ? texts.filter((t) => (searchedAt.get(textKey(store, p.category, t)) ?? 0) < now - fresh) : [];
+      const live: Offer[] = [];
+      const current = () => dedupe([...fromDb(store, p.category, form, texts), ...live]);
 
       if (!need.length) {
         const offers = current();
         sendList(offers);
-        h.onStatus({ store, state: 'cached', count: offers.length, at: oldest() });
+        h.onStatus({ store, state: 'cached', count: offers.length, at: sweptAt(store, p.category) });
         return;
       }
       // Enquanto consulta, mostra o que o banco já tem.
@@ -82,13 +87,7 @@ async function runStores(p: SearchParams, h: SearchHandlers, signal: AbortSignal
       const bo = backoffInfo(store);
       const limit = pageLimitUntil(store);
       if (bo || limit) {
-        h.onStatus({
-          store,
-          state: 'blocked',
-          reason: bo ? bo.reason : 'hourly-limit',
-          count: current().length,
-          at: new Date(bo ? bo.until : limit!).toISOString(),
-        });
+        h.onStatus({ store, state: 'blocked', reason: bo ? bo.reason : 'hourly-limit', count: current().length, at: new Date(bo ? bo.until : limit!).toISOString() });
         return;
       }
 
@@ -96,13 +95,11 @@ async function runStores(p: SearchParams, h: SearchHandlers, signal: AbortSignal
       h.onStatus({ store, state: 'running', count: current().length });
       let pending: Offer[] = [];
       try {
-        for (const t of need) {
+        for (const text of need) {
           pending = [];
-          const before = dedupe([...related, ...[...byTerm.entries()].filter(([id]) => id !== t.id).flatMap(([, o]) => o)]).length;
+          const before = current().length;
           // Sinal do servidor, não da conexão: sair da página não interrompe a consulta.
-          // Termo que a loja redireciona para outra página (ex. a da categoria): fica com o que o banco já
-          // tem (anúncios de outros termos que batem pelas specs) e segue para o próximo.
-          const offers = await collectTerm(store, t, background.signal, {
+          const offers = await collectText(store, p.category, text, background.signal, {
             onPage: ({ page, total, found, offers: batch }) => {
               pending.push(...batch);
               if (batch.length) h.onOffers(store, batch, true);
@@ -110,11 +107,12 @@ async function runStores(p: SearchParams, h: SearchHandlers, signal: AbortSignal
             },
             onNeedsHuman: () => h.onStatus({ store, state: 'needs-human' }),
           }).catch((err) => {
-            if (err instanceof SearchRedirectError) return null;
+            // A loja leva o texto para a página de uma categoria: o que ela tem, a rotina já lê.
+            if (err instanceof SearchRedirectError) return [];
             throw err;
           });
-          if (!offers) continue;
-          byTerm.set(t.id, offers);
+          searchedAt.set(textKey(store, p.category, text), Date.now());
+          live.push(...offers);
           h.onStatus({ store, state: 'running', count: current().length });
         }
         registerSuccess(store);
@@ -141,21 +139,15 @@ async function runStores(p: SearchParams, h: SearchHandlers, signal: AbortSignal
 }
 
 /**
- * Lista de uma loja para uma busca, só do banco: o resultado de cada termo mais os anúncios que
- * batem pelas specs (a mesma conta da busca). Usada pelas telas abertas quando chega coleta nova.
+ * Lista de uma loja para uma busca, só do banco (a mesma conta da busca). Usada pelas telas abertas
+ * quando chega coleta nova.
  */
-export function storedList(store: StoreId, category: SearchParams['category'], terms: string[]): Offer[] {
-  const db = getDb();
-  const idOfTerm = db.prepare('SELECT id FROM search_terms WHERE category = ? AND lower(term) = lower(?)');
-  const fromTerms = terms.flatMap((t) => {
-    const row = idOfTerm.get(category, t) as { id: number } | undefined;
-    return row ? readResult(db, store, row.id).offers : [];
-  });
-  const related = matchingListings(db, store, category, terms, new Date(Date.now() - config.SEARCH_DB_MAX_AGE_H * 3_600_000).toISOString());
-  return withHistoryStats(db, dedupe([...related, ...fromTerms]));
+export function storedList(store: StoreId, category: CategoryId, terms: string[]): Offer[] {
+  const { form, texts } = splitTerms(category, terms);
+  return withHistoryStats(getDb(), fromDb(store, category, form, texts));
 }
 
-/** Mesmo anúncio em dois termos: fica a versão mais recente. */
+/** Mesmo anúncio duas vezes: fica a versão mais recente. */
 function dedupe(offers: Offer[]): Offer[] {
   const seen = new Map<string, Offer>();
   for (const o of offers) {

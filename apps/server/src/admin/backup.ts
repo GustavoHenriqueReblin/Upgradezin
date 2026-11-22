@@ -113,14 +113,6 @@ function report(db: Db): MergeReport {
       `SELECT count(*) n FROM src.price_points p JOIN src.listings x ON x.id = p.listing_id
        WHERE NOT EXISTS (SELECT 1 FROM main.listings y JOIN main.price_points q ON q.listing_id = y.id WHERE y.store = x.store AND y.store_sku = x.store_sku AND q.at = p.at)`,
     ),
-    newTerms: count(db, `SELECT count(*) n FROM src.search_terms x WHERE NOT EXISTS (SELECT 1 FROM main.search_terms y WHERE y.category = x.category AND lower(y.term) = lower(x.term))`),
-    newerRuns: count(
-      db,
-      `SELECT count(*) n FROM src.term_runs r JOIN src.search_terms x ON x.id = r.term_id
-       LEFT JOIN main.search_terms y ON y.category = x.category AND lower(y.term) = lower(x.term)
-       LEFT JOIN main.term_runs s ON s.term_id = y.id AND s.store = r.store
-       WHERE s.term_id IS NULL OR coalesce(r.last_ok_at, '') > coalesce(s.last_ok_at, '')`,
-    ),
     newerSheets: count(
       db,
       `SELECT count(*) n FROM src.product_sheets x LEFT JOIN main.product_sheets y ON y.store = x.store AND y.store_sku = x.store_sku WHERE y.store IS NULL OR x.fetched_at > y.fetched_at`,
@@ -146,8 +138,7 @@ export const previewMerge = (db: Db, source: string): MergeReport => withSource(
 
 /**
  * Junta no banco o que só a fonte tem: anúncios (a oferta vista por último vale), histórico de
- * preço nos instantes que faltam, termos, ligação anúncio×termo, coletas por termo (a mais
- * recente vale) e fichas técnicas. Não mexe em meta (pausas, varredura), lojas, consultas nem
+ * preço nos instantes que faltam e fichas técnicas. Não mexe em meta (pausas, varredura), lojas, consultas nem
  * montagens. Uma transação só. Devolve o que entrou.
  */
 export function applyMerge(db: Db, source: string): MergeReport {
@@ -166,25 +157,6 @@ export function applyMerge(db: Db, source: string): MergeReport {
       db.exec(`INSERT OR IGNORE INTO main.price_points (listing_id, at, price_cash, price_card, effective_cash, coupon, promo, in_stock)
         SELECT y.id, p.at, p.price_cash, p.price_card, p.effective_cash, p.coupon, p.promo, p.in_stock
         FROM src.price_points p JOIN src.listings x ON x.id = p.listing_id JOIN main.listings y ON y.store = x.store AND y.store_sku = x.store_sku`);
-      db.exec(`INSERT INTO main.search_terms (category, term, origin, created_at, last_requested_at)
-        SELECT category, term, origin, created_at, last_requested_at FROM src.search_terms x
-        WHERE NOT EXISTS (SELECT 1 FROM main.search_terms y WHERE y.category = x.category AND lower(y.term) = lower(x.term))`);
-      db.exec(`INSERT INTO main.listing_terms (listing_id, term_id, last_seen_at)
-        SELECT y.id, t.id, lt.last_seen_at FROM src.listing_terms lt
-        JOIN src.listings x ON x.id = lt.listing_id JOIN main.listings y ON y.store = x.store AND y.store_sku = x.store_sku
-        JOIN src.search_terms xt ON xt.id = lt.term_id JOIN main.search_terms t ON t.category = xt.category AND lower(t.term) = lower(xt.term)
-        WHERE true
-        ON CONFLICT (term_id, listing_id) DO UPDATE SET last_seen_at = max(last_seen_at, excluded.last_seen_at)`);
-      db.exec(`INSERT INTO main.term_runs (term_id, store, last_try_at, last_ok_at, status, count, redirect_path)
-        SELECT t.id, r.store, r.last_try_at, r.last_ok_at, r.status, r.count, r.redirect_path FROM src.term_runs r
-        JOIN src.search_terms xt ON xt.id = r.term_id JOIN main.search_terms t ON t.category = xt.category AND lower(t.term) = lower(xt.term)
-        WHERE true
-        ON CONFLICT (term_id, store) DO UPDATE SET
-          last_try_at = max(last_try_at, excluded.last_try_at),
-          last_ok_at = CASE WHEN coalesce(excluded.last_ok_at, '') > coalesce(last_ok_at, '') THEN excluded.last_ok_at ELSE last_ok_at END,
-          status = CASE WHEN coalesce(excluded.last_ok_at, '') > coalesce(last_ok_at, '') THEN excluded.status ELSE status END,
-          count = CASE WHEN coalesce(excluded.last_ok_at, '') > coalesce(last_ok_at, '') THEN excluded.count ELSE count END,
-          redirect_path = coalesce(redirect_path, excluded.redirect_path)`);
       db.exec(`INSERT INTO main.product_sheets (store, store_sku, data, fetched_at) SELECT store, store_sku, data, fetched_at FROM src.product_sheets WHERE true
         ON CONFLICT (store, store_sku) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at WHERE excluded.fetched_at > fetched_at`);
       if (db.prepare('PRAGMA main.foreign_key_check').all().length) throw new Error('Referência quebrada depois do merge.');
