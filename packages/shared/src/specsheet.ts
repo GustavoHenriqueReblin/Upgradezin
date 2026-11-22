@@ -34,10 +34,14 @@ export function sheetLines(html: string): string[] {
 
 const num = (s: string) => Number(s.replace(',', '.'));
 
-/** Números com unidade de uma linha, em mm ("26,9 cm" -> 269). */
+/**
+ * Números com unidade de uma linha, em mm ("26,9 cm" e "15,5x11,5cm" -> 269, 155, 115). Ignora números
+ * de outras unidades ("pesando apenas 430g", "8 GB", "185 W"), que não são medidas.
+ */
 function lengthsMm(line: string): number[] {
-  const unit = /\bcm\b/.test(line) && !/\bmm\b/.test(line) ? 10 : 1;
-  return [...line.matchAll(/(\d{2,3}(?:[.,]\d+)?)/g)].map((m) => Math.round(num(m[1]!) * unit));
+  const clean = line.replace(/\d+(?:[.,]\d+)?\s*(?:kg|g|gb|mb|w|mhz|ghz|bits?|v|rpm|dba?|cfm)\b/g, ' ');
+  const unit = /\d\s*cm\b/.test(clean) && !/\d\s*mm\b/.test(clean) ? 10 : 1;
+  return [...clean.matchAll(/(\d{2,3}(?:[.,]\d+)?)/g)].map((m) => Math.round(num(m[1]!) * unit));
 }
 
 const RADIATORS = [120, 140, 240, 280, 360, 420];

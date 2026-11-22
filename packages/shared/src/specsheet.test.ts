@@ -41,4 +41,12 @@ describe('ficha técnica da página do produto', () => {
     const html = '<p>Suporte do radiador (superior):</p><p>- 120 mm</p><p>- 2 x 140 mm</p><p>- 2 x 160 mm</p><p>Altura máxima do cooler da CPU:</p><p>- 360 mm</p>';
     expect(parseSpecSheet('case', html).specs.caseRadiators).toEqual([120, 280]); // 2 x 160 não é radiador comum; a seção acaba no próximo título
   });
+
+  it('placa de vídeo: "15,5x11,5cm" (cm colado) e peso na mesma frase não viram comprimento', () => {
+    // Como num anúncio real (nov/2026): antes saía 430 mm (o peso em gramas).
+    const prose = '<p>Essa placa oferece dimensões de 15,5x11,5cm (CxL), pesando apenas 430g. Com 4GB GDDR5 e 128 bits.</p>';
+    expect(parseSpecSheet('gpu', prose).specs.gpuLength).toBe(155);
+    expect(parseSpecSheet('gpu', '<p>Dimensões:</p><p>• 15,5x11,5cm (CxL)</p>').specs.gpuLength).toBe(155);
+    expect(parseSpecSheet('gpu', '<p>Dimensões: 26,9 cm x 13 cm</p>').specs.gpuLength).toBe(269);
+  });
 });
