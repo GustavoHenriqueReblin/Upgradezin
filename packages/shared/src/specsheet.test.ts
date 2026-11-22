@@ -49,4 +49,14 @@ describe('ficha técnica da página do produto', () => {
     expect(parseSpecSheet('gpu', '<p>Dimensões:</p><p>• 15,5x11,5cm (CxL)</p>').specs.gpuLength).toBe(155);
     expect(parseSpecSheet('gpu', '<p>Dimensões: 26,9 cm x 13 cm</p>').specs.gpuLength).toBe(269);
   });
+
+  it('placa de vídeo: "Board size" em inglês (não o "Box size" da caixa), cm sem unidade e tamanho do cartão em texto corrido', () => {
+    // Como em anúncios reais (nov/2026).
+    expect(parseSpecSheet('gpu', '<p>Box size: 426.5 x 213.5 x 103.5 mm</p><p>Board size: 331.9 x 127.1 x 60 mm</p>').specs.gpuLength).toBe(332);
+    expect(parseSpecSheet('gpu', '<p>Dimensões: Dimensão do cartão 35 x 14 x 6,7</p>').specs.gpuLength).toBe(350);
+    expect(parseSpecSheet('gpu', '<p>Dimensões: 26,9 x 13 x 4</p>').specs.gpuLength).toBe(269);
+    const prose = '<p>Dois ventiladores de lâmina exclusivos de 90 mm, 3 tubos de calor e tamanho de cartão compacto de 200 mm</p>';
+    expect(parseSpecSheet('gpu', prose).specs.gpuLength).toBe(200);
+    expect(parseSpecSheet('gpu', '<p>Ventilador de 90 mm</p>').specs.gpuLength).toBeUndefined(); // só o ventilador: nada
+  });
 });

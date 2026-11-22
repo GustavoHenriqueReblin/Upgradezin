@@ -65,12 +65,22 @@ export function parseSpecSheet(category: CategoryId, html: string): SpecSheet {
   if (category === 'gpu') {
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i]!;
+      // "... tamanho de cartão compacto de 200 mm" vale mesmo em texto corrido que fala dos ventiladores.
+      const card = l.match(/tamanho d[eo] cartao[^0-9]{0,25}(\d{3})\s*mm/);
+      if (card && Number(card[1]) >= 100 && Number(card[1]) <= 450) {
+        specs.gpuLength = Number(card[1]);
+        break;
+      }
       if (noise.test(l)) continue;
-      // "Dimensões: 269 x 131 x 40 mm", "Comprimento: 304 mm" ou, na Gigabyte, "Tamanho do cartão: C=215 L=122 A=40 mm".
-      if (/dimens|comprimento|tamanho d[oa] (cartao|placa)|card size/.test(l)) {
+      // "Dimensões: 269 x 131 x 40 mm", "Comprimento: 304 mm", na Gigabyte "Tamanho do cartão: C=215 L=122 A=40 mm",
+      // em inglês "Board size: 331.9 x 127.1 x 60 mm" (o "Box size" é da caixa: ruído).
+      if (/\bbox\b/.test(l)) continue;
+      if (/dimens|comprimento|tamanho d[oa] (cartao|placa)|card size|board size/.test(l)) {
         // "Dimensões:" sozinho na linha e as medidas na seguinte ("- 269,2 x 131,8 x 40,3 mm").
         const values = /\d/.test(l) ? l : `${l} ${lines[i + 1] ?? ''}`;
-        const mm = lengthsMm(values).filter((n) => n >= 100 && n <= 450);
+        let mm = lengthsMm(values).filter((n) => n >= 100 && n <= 450);
+        // Sem unidade e com números que só fazem sentido em cm ("Dimensão do cartão 35 x 14 x 6,7"): placa de 10 a 45 cm.
+        if (!mm.length && !/\d\s*(mm|cm)\b/.test(values)) mm = lengthsMm(`${values} cm`).filter((n) => n >= 100 && n <= 450);
         if (mm.length) {
           specs.gpuLength = Math.max(...mm);
           break;
