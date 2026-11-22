@@ -17,6 +17,7 @@ import { browserOpen, closeBrowser } from './browser.ts';
 import { BUILD_ID, findSharedBuild, getSharedBuild, saveSharedBuild, SharedBuildSchema } from './builds/builds.ts';
 import { config } from './config.ts';
 import { emitChange } from './changes.ts';
+import { closeServer } from './shutdown.ts';
 import { deleteMeta, getMeta, metaByPrefix, setMeta } from './db/db.ts';
 import { clearBackoff, pauseStore, useBackoffStorage, type Backoff } from './pace.ts';
 import { closeDb, getDb } from './db/instance.ts';
@@ -409,12 +410,14 @@ if (existsSync(webDist)) {
 }
 
 const shutdown = async () => {
+  // Garantia: se algo travar ao fechar, sai mesmo assim (antes do SIGKILL do systemd, 90 s).
+  setTimeout(() => process.exit(1), 10_000).unref();
   stopRoutine();
   stopSheetRoutine();
   stopAdminJobs();
   stopBackgroundSearches();
   await closeBrowser();
-  await app.close();
+  await closeServer(app); // conexões ao vivo (SSE) abertas não seguram a parada
   closeDb();
   process.exit(0);
 };
