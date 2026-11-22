@@ -164,7 +164,8 @@ export function s2SheetFromHtml(html: string): string | null {
     .map((tr) => {
       const label = tr.querySelector('th')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
       const value = tr.querySelector('td')?.innerHTML.trim() ?? '';
-      return label || value ? `<p>${label} ${value}</p>` : '';
+      // "Rótulo: valor" (com os dois-pontos, venha o rótulo com ou sem eles), como o leitor da ficha lê.
+      return label || value ? `<p>${label ? `${label.replace(/\s*:?\s*$/, '')}:` : ''}${value}</p>` : '';
     })
     .filter(Boolean);
   return rows.length ? rows.join('\n') : null;

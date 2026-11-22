@@ -1,6 +1,6 @@
 import { cpuPerf, ENABLED_CATEGORIES, gpuPerf, STORES, type CategoryId, type CoverageRow, type Offer, type PerfGap, type StoreId, type TimelineBucket } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
-import { SHEET_CATEGORIES, sheetCounts } from '../prices/sheets.ts';
+import { sheetCounts } from '../prices/sheets.ts';
 import { inProgress, sweepState } from '../prices/sweep.ts';
 
 /**
@@ -62,8 +62,8 @@ export function coverage(db: Db, paths: (store: StoreId, category: CategoryId) =
         sweeping: n && inProgress(s) ? { path: (s.path ?? 0) + 1, page: s.page } : null,
         sweptAt: s.doneAt ?? null,
         lastOkAt: l?.last ?? null,
-        // Fichas técnicas lidas: só nas categorias com ficha física.
-        sheets: SHEET_CATEGORIES.includes(category) ? (sheets.get(key) ?? 0) : null,
+        // Páginas de produto lidas pela rotina de fichas.
+        sheets: sheets.get(key) ?? 0,
       };
     })
     .sort((a, b) => a.store.localeCompare(b.store) || a.category.localeCompare(b.category));

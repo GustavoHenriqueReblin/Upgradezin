@@ -71,15 +71,8 @@ const Env = z.object({
   FORCE_PER_HOUR: z.coerce.number().default(10),
   /** "Atualizar" não busca o texto de novo na loja se a última busca dele tem menos que isto (minutos). */
   FORCE_MIN_AGE_MIN: z.coerce.number().default(10),
-  /** Fichas técnicas (páginas de produto) que uma pessoa pode pedir por hora (as já guardadas não contam). */
-  SHEETS_PER_HOUR: z.coerce.number().default(30),
   /** Buscas com texto livre ("Não achou? Buscar nas lojas") por pessoa por hora; além disso, só os termos do formulário (banco). */
   TEXT_SEARCHES_PER_HOUR: z.coerce.number().default(20),
-  /**
-   * Ficha técnica: com dados, vale para sempre (a ficha do produto não muda). Página sem ficha é lida
-   * de novo depois disto (dias): a loja pode ter completado a página.
-   */
-  SHEET_MAX_AGE_DAYS: z.coerce.number().default(30),
   /** Links de montagem novos por pessoa por hora. */
   SHARE_PER_HOUR: z.coerce.number().default(20),
   /** Telas de resultado abertas recebendo novidades ao mesmo tempo, por pessoa (abas). */
@@ -116,9 +109,9 @@ const Env = z.object({
   /** Categoria cuja página falhou (erro que não é bloqueio) só é tentada de novo depois disto. */
   ROUTINE_RETRY_MIN: z.coerce.number().default(60),
   /**
-   * Rotina de fichas técnicas (separada da coleta): lê, em cada loja, uma página de produto do
-   * catálogo de placa de vídeo, gabinete e cooler a cada SHEET_ROUTINE_SECONDS segundos. Cada ficha
-   * é lida uma vez. Valores iniciais: depois, vale o que o admin (aba Produtos) guardar.
+   * Rotina de fichas técnicas (separada da coleta): abre, em cada loja, uma página de produto do
+   * catálogo (todas as categorias) a cada SHEET_ROUTINE_SECONDS segundos. Cada página é lida uma
+   * vez. Valores iniciais: depois, vale o que o admin (aba Fichas) guardar.
    */
   SHEET_ROUTINE_ENABLED: z
     .string()

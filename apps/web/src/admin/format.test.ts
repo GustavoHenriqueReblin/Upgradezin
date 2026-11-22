@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sheetEta, shortDuration, splitSeconds, sheetSummary, specPairs, countdown, modeHint, queueLabel, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground } from './format.ts';
+import { sheetEta, shortDuration, splitSeconds, SHEET_STATE_LABEL, fieldLabels, specPairs, countdown, modeHint, queueLabel, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground } from './format.ts';
 
 describe('formatação do admin', () => {
   it('duração', () => {
@@ -87,11 +87,10 @@ describe('rotina: contagem e modos', () => {
 });
 
 describe('ficha técnica e specs na aba Produtos', () => {
-  it('resumo do que a ficha trouxe', () => {
-    expect(sheetSummary({ specs: { gpuLength: 228, gpu16Pin: false }, mpn: 'DUAL-RTX5060' })).toBe('placa 228 mm · sem 12V-2x6 · part number DUAL-RTX5060');
-    expect(sheetSummary({ specs: { caseMaxGpu: 360, caseMaxCooler: 165, caseRadiators: [240, 360] } })).toBe('placa até 360 mm · cooler até 165 mm · radiadores 240/360 mm');
-    expect(sheetSummary({ specs: {} })).toBe('sem medidas');
-    expect(sheetSummary(undefined)).toBe('');
+  it('situação da ficha e nomes dos campos que faltam', () => {
+    expect(SHEET_STATE_LABEL).toEqual({ complete: 'completa', incomplete: 'incompleta', unread: 'não lida' });
+    expect(fieldLabels('cpu', ['architecture', 'tdpW'])).toBe('Arquitetura, TDP');
+    expect(fieldLabels('gpu', ['lengthMm', 'outro'])).toBe('Comprimento, outro');
   });
   it('specs do título como campo e valor, sem os vazios', () => {
     expect(specPairs({ socket: 'AM5', igpu: true, coolerSockets: ['AM4', 'AM5'], ramModules: undefined, coolerBrands: [] })).toEqual([

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { normalizeListing, type BuildSlot, type Offer, type StoreId } from '@upgradezin/shared';
-import { applySheets, bestOffer, buildTotals, checkCandidate, loadBuild, saveBuild, sheetRequests, slotFilters, type BuildItem, type SavedBuild } from './build.ts';
+import { bestOffer, buildTotals, checkCandidate, loadBuild, saveBuild, slotFilters, type BuildItem, type SavedBuild } from './build.ts';
 import { DEFAULT_FILTERS } from './filters.ts';
 
 const offer = (store: StoreId, priceCash: number, inStock = true): Offer =>
@@ -129,33 +129,6 @@ describe('guardar no navegador', () => {
     });
     expect(loadBuild()).toEqual({});
     expect(() => saveBuild({ cpu: CPU_5600 })).not.toThrow();
-  });
-});
-
-describe('ficha técnica das peças da montagem', () => {
-  const offer = (store: 's1' | 's2', sku: string) => ({ store, storeSku: sku, title: 't', url: 'https://x.example', priceCash: 1, inStock: true, seller: 'x', marketplace: false, openbox: false, specs: {}, modelKey: 'k', collectedAt: '2026-01-01T00:00:00.000Z' });
-  const item = (key: string, offers: ReturnType<typeof offer>[], specs = {}) => ({ key, title: key, specs, offers });
-
-  it('só pede a ficha quando a outra peça já está na montagem, uma oferta por peça (na ordem das lojas)', () => {
-    const gpu = item('gpu', [offer('s2', '9'), offer('s1', '7')]);
-    expect(sheetRequests({ gpu })).toEqual([]);
-    expect(sheetRequests({ gpu, case: item('case', [offer('s2', 'c1')]) })).toEqual([
-      { slot: 'gpu', item: 'gpu:s1:7' },
-      { slot: 'case', item: 'case:s2:c1' },
-    ]);
-  });
-  it('junta as medidas, marca como consultada e não pede de novo; peça trocada no meio não recebe a ficha da antiga', () => {
-    const b = { gpu: item('gpu', [offer('s1', '7')]), case: item('case', [offer('s1', 'c1')]) };
-    const req = sheetRequests(b);
-    const next = applySheets(b, req, { 'gpu:s1:7': { specs: { gpuLength: 300 } }, 'case:s1:c1': null });
-    expect(next.gpu).toMatchObject({ specs: { gpuLength: 300 }, sheet: true });
-    expect(next.case).toMatchObject({ sheet: true });
-    expect(sheetRequests(next)).toEqual([]);
-    const swapped = applySheets({ ...b, gpu: item('gpu2', [offer('s1', '8')]) }, req, { 'gpu:s1:7': { specs: { gpuLength: 300 } } });
-    expect(swapped.gpu?.specs).toEqual({});
-    // Sem resposta para a peça (loja em pausa, limite): não marca, pede de novo depois.
-    expect(applySheets(b, req, {}).gpu?.sheet).toBeUndefined();
-    expect(applySheets(b, req, {})).toBe(b); // a mesma montagem: a tela não pede de novo em seguida
   });
 });
 

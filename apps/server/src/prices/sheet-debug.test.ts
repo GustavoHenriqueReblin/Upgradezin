@@ -31,25 +31,28 @@ function setup(debug: boolean, sheetText: string) {
   };
 }
 
-const run = (sku: string) => sheetOf('s1', sku, 'gpu', new AbortController().signal, { origin: 'admin', force: true });
+const run = (sku: string) => sheetOf('s1', sku, 'gpu', new AbortController().signal, { origin: 'admin' });
 
-describe('ficha vazia: guarda a página para conferir (DEBUG_DUMPS)', () => {
-  it('sem medida nenhuma: salva a página inteira em data/debug, com loja, categoria e código no nome', async () => {
-    const files = setup(true, '<p>Garantia: 3 meses</p>');
-    expect((await run('901'))!.specs).toEqual({});
+describe('página sem ficha: guarda a página para conferir (DEBUG_DUMPS)', () => {
+  it('sem o bloco da ficha: salva a página inteira em data/debug, com loja, categoria e código no nome', async () => {
+    const files = setup(true, '');
+    expect(await run('901')).toEqual({ values: {}, hasSheet: false });
     const [f] = files();
     expect(f!.name).toMatch(/-s1-ficha-gpu-901\.html$/);
     expect(f!.html).toContain('PÁGINA INTEIRA'); // a página toda, não só o campo da ficha
   });
 
-  it('com medida: não salva', async () => {
+  it('com ficha: não salva; o texto e os campos ficam no banco', async () => {
     const files = setup(true, '<p>Dimensões: 250 x 120 x 40 mm</p>');
-    expect((await run('902'))!.specs.gpuLength).toBe(250);
+    expect(await run('902')).toEqual({ values: { lengthMm: 250 }, hasSheet: true });
     expect(files()).toEqual([]);
+    const { getDb } = await import('../db/instance.ts');
+    const { pageText } = await import('./sheets.ts');
+    expect(pageText(getDb(), 's1', '902')?.text).toBe('Dimensões: 250 x 120 x 40 mm');
   });
 
   it('DEBUG_DUMPS desligado (padrão): não salva nada', async () => {
-    const files = setup(false, '<p>Garantia: 3 meses</p>');
+    const files = setup(false, '');
     await run('903');
     expect(files()).toEqual([]);
   });

@@ -1,4 +1,4 @@
-import { CATEGORY_DEFS, type MergeReport, type RoutineMode, type SheetStatus, type SpecSheet, type Specs, type StoreAttempt } from '@upgradezin/shared';
+import { CATEGORY_DEFS, SHEET_FIELDS, type CategoryId, type MergeReport, type RoutineMode, type SheetState, type Specs, type StoreAttempt } from '@upgradezin/shared';
 
 /** "3 d 4 h", "2 h 15 min", "40 s". */
 export function formatDuration(totalS: number): string {
@@ -136,22 +136,11 @@ export function sheetEta(missing: number, seconds: number): string {
   return h < 48 ? `cerca de ${Math.ceil(h)} h` : `cerca de ${Math.round(h / 24)} dias`;
 }
 
-export const SHEET_STATUS_LABEL: Record<SheetStatus, string> = { ok: 'lida', shared: 'de outra loja', empty: 'página sem ficha', missing: 'não lida', na: 'sem ficha física' };
+export const SHEET_STATE_LABEL: Record<SheetState, string> = { complete: 'completa', incomplete: 'incompleta', unread: 'não lida' };
 
-/** O que a ficha trouxe, em texto curto: "placa 228 mm · sem 12V-2x6 · part number DUAL-RTX5060". */
-export function sheetSummary(sheet: SpecSheet | undefined): string {
-  if (!sheet) return '';
-  const s = sheet.specs;
-  const parts = [
-    s.gpuLength && `placa ${s.gpuLength} mm`,
-    s.gpu16Pin !== undefined && (s.gpu16Pin ? 'com 12V-2x6' : 'sem 12V-2x6'),
-    s.coolerHeight && `altura ${s.coolerHeight} mm`,
-    s.caseMaxGpu && `placa até ${s.caseMaxGpu} mm`,
-    s.caseMaxCooler && `cooler até ${s.caseMaxCooler} mm`,
-    s.caseRadiators?.length && `radiadores ${s.caseRadiators.join('/')} mm`,
-    sheet.mpn && `part number ${sheet.mpn}`,
-  ].filter(Boolean);
-  return parts.length ? parts.join(' · ') : 'sem medidas';
+/** Nomes dos campos da ficha ("architecture,tdpW" -> "Arquitetura, TDP"). */
+export function fieldLabels(category: CategoryId, keys: string[]): string {
+  return keys.map((k) => SHEET_FIELDS[category].find((f) => f.key === k)?.label ?? k).join(', ');
 }
 
 /** Specs lidas do título, como "campo: valor" (listas separadas por vírgula; vazias de fora). */

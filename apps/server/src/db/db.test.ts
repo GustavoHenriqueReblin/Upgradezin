@@ -6,8 +6,8 @@ describe('migrações', () => {
   it('banco novo chega na última versão', () => {
     const db = openDb(':memory:');
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((t) => t.name);
-    expect(tables).toEqual(expect.arrayContaining(['meta', 'listings', 'price_points', 'product_sheets', 'store_configs', 'store_attempts', 'shared_builds']));
-    for (const t of ['parts', 'search_terms', 'term_runs', 'listing_terms']) expect(tables).not.toContain(t);
+    expect(tables).toEqual(expect.arrayContaining(['meta', 'listings', 'price_points', 'sheet_pages', 'store_configs', 'store_attempts', 'shared_builds']));
+    for (const t of ['parts', 'search_terms', 'term_runs', 'listing_terms', 'product_sheets']) expect(tables).not.toContain(t);
     expect(tables).not.toContain('parts');
     expect(tables).not.toContain('part_codes');
   });
@@ -48,10 +48,27 @@ describe('migrações', () => {
       INSERT INTO term_runs (term_id, store, last_try_at, status) VALUES (1, 's1', 't', 'ok');
       INSERT INTO price_points (listing_id, at, price_cash, effective_cash, in_stock) VALUES (7, 't1', 400, 400, 1);
     `);
-    expect(migrate(db)).toEqual([12]);
+    expect(migrate(db, 12)).toEqual([12]);
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((t) => t.name);
     for (const t of ['search_terms', 'term_runs', 'listing_terms']) expect(tables).not.toContain(t);
     expect(db.prepare('SELECT count(*) n FROM listings').get()).toEqual({ n: 1 });
     expect(db.prepare('SELECT count(*) n FROM price_points').get()).toEqual({ n: 1 });
+  });
+
+  it('13: fichas refeitas: sai a ficha antiga (medidas em JSON), entra a página com o texto da ficha; anúncios ficam', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec('PRAGMA foreign_keys = ON');
+    migrate(db, 12);
+    db.exec(`
+      INSERT INTO product_sheets VALUES ('s1', 'a', '{"specs":{"gpuLength":300}}', 't');
+      INSERT INTO listings (id, store, store_sku, category, title, url, model_key, offer, first_seen_at, last_seen_at) VALUES (7, 's1', 'a', 'gpu', 'Placa', 'u', 'k', '{}', 't', 't');
+      INSERT INTO meta VALUES ('sheet-reader', 'x'), ('sheet-routine', '{}');
+    `);
+    expect(migrate(db)).toEqual([13]);
+    const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((t) => t.name);
+    expect(tables).not.toContain('product_sheets');
+    expect(db.prepare("SELECT name FROM pragma_table_info('sheet_pages')").all().map((c) => (c as { name: string }).name)).toEqual(['store', 'store_sku', 'category', 'text', 'fetched_at']);
+    expect(db.prepare('SELECT count(*) n FROM listings').get()).toEqual({ n: 1 });
+    expect(db.prepare('SELECT key FROM meta').all()).toEqual([{ key: 'sheet-routine' }]); // a configuração da rotina fica
   });
 });

@@ -1,58 +1,108 @@
 import { describe, expect, it } from 'vitest';
-import type { CategoryId, Offer, StoreId } from '@upgradezin/shared';
-import { openDb, type Db } from '../db/db.ts';
+import { SHEET_FIELDS, type CategoryId, type Offer, type StoreId } from '@upgradezin/shared';
+import { getMeta, openDb, setMeta, type Db } from '../db/db.ts';
 import { saveCollection } from './prices.ts';
-import { getSheet, nextSheets, saveSheet, sheetCounts } from './sheets.ts';
+import { catalogProducts, mergeSources, nextSheets, pageText, readerStamp, rereadSheets, savePage, sheetCounts, sheetCoverage, sheetQueueSizes, syncSheetTables } from './sheets.ts';
 
 const offer = (store: StoreId, sku: string, inStock = true): Offer =>
-  ({ store, storeSku: sku, title: `Produto ${sku}`, url: `https://${store}.example/${sku}`, priceCash: 100, inStock, specs: {}, modelKey: `m${sku}`, collectedAt: '' }) as Offer;
+  ({ store, storeSku: sku, title: `Produto ${sku}`, url: `https://${store}.example/${sku}`, priceCash: 100, inStock, specs: {}, modelKey: `m${store}${sku}`, collectedAt: '' }) as Offer;
 
 /** Grava anúncios de uma categoria numa loja, vistos em `at`. */
 function seen(db: Db, store: StoreId, category: CategoryId, offers: Offer[], at: string) {
   saveCollection(db, { store, category, offers, at });
 }
+const cols = (db: Db, t: string) => (db.prepare(`PRAGMA table_info(${t})`).all() as { name: string; type: string }[]).map((c) => `${c.name}:${c.type}`);
 
 const NOW = '2026-11-21T12:00:00.000Z';
-const SEEN_SINCE = '2026-11-07T12:00:00.000Z';
-const EMPTY_BEFORE = '2026-10-22T12:00:00.000Z';
+const SINCE = '2026-11-07T12:00:00.000Z';
+const RAM_FULL = 'Marca: Kingston\nCapacidade: 16GB (2 x 8GB)\nTipo: DDR4\nFrequência: 3200 MHz\nLatência: CL16';
 
-describe('fichas técnicas guardadas', () => {
-  it('com dados vale para sempre; vazia (página sem ficha) só até ser lida de novo', () => {
+describe('tabelas de ficha por categoria', () => {
+  it('uma coluna por campo, com o tipo do campo; campo novo vira coluna, campo que saiu é apagado', () => {
     const db = openDb(':memory:');
-    saveSheet(db, 's1', '1', { specs: { gpuLength: 300 } }, '2020-01-01T00:00:00.000Z');
-    saveSheet(db, 's1', '2', { specs: {}, mpn: 'ABC-123' }, '2020-01-01T00:00:00.000Z');
-    saveSheet(db, 's1', '3', { specs: {} }, '2020-01-01T00:00:00.000Z');
-    saveSheet(db, 's1', '4', { specs: {} }, NOW);
-    expect(getSheet(db, 's1', '1', EMPTY_BEFORE)?.specs.gpuLength).toBe(300); // antiga, com dados: vale
-    expect(getSheet(db, 's1', '2', EMPTY_BEFORE)?.mpn).toBe('ABC-123'); // só part number também conta como ficha
-    expect(getSheet(db, 's1', '3', EMPTY_BEFORE)).toBeUndefined(); // vazia e antiga: ler de novo
-    expect(getSheet(db, 's1', '4', EMPTY_BEFORE)).toEqual({ specs: {} }); // vazia e recente: não abre a página de novo
+    syncSheetTables(db);
+    expect(cols(db, 'sheet_cpu')).toEqual(expect.arrayContaining(['store:TEXT', 'store_sku:TEXT', 'brand:TEXT', 'socket:TEXT', 'cores:INTEGER', 'base_ghz:REAL', 'tdp_w:INTEGER']));
+    expect(cols(db, 'sheet_gpu')).toContain('power16_pin:INTEGER');
+    // Coluna que não está mais na lista (como se um campo tivesse saído) e campo que ainda não tem coluna.
+    db.exec('ALTER TABLE sheet_ram ADD COLUMN voltagem REAL; ALTER TABLE sheet_ram DROP COLUMN cl');
+    expect(syncSheetTables(db)).toEqual({ added: ['sheet_ram.cl'], dropped: ['sheet_ram.voltagem'] });
+    expect(syncSheetTables(db)).toEqual({ added: [], dropped: [] });
   });
 
-  it('fila da rotina: placa de vídeo, gabinete e cooler, em estoque primeiro; pula os já lidos e os que saíram do catálogo', () => {
+  it('guarda a página (texto e campos lidos); página sem ficha também fica guardada; ler de novo troca', () => {
     const db = openDb(':memory:');
-    seen(db, 's2', 'cooler', [offer('s2', 'c1'), { ...offer('s2', 'water'), specs: { coolerType: 'water' } }], NOW); // water cooler: sem ficha física
-    seen(db, 's2', 'case', [offer('s2', 'k1')], NOW);
-    seen(db, 's2', 'gpu', [offer('s2', 'g-sem-estoque', false), offer('s2', 'g1'), offer('s2', 'g-lida')], NOW);
-    seen(db, 's2', 'gpu', [offer('s2', 'g-antiga')], '2026-10-01T00:00:00.000Z'); // não vista nos últimos 14 dias
-    seen(db, 's2', 'cpu', [offer('s2', 'p1')], NOW); // processador não tem ficha física
-    seen(db, 's1', 'gpu', [offer('s1', 'outra-loja')], NOW);
-    saveSheet(db, 's2', 'g-lida', { specs: { gpuLength: 250 } }, NOW);
-    saveSheet(db, 's2', 'k1', { specs: {} }, '2026-09-01T00:00:00.000Z'); // vazia e antiga: volta para a fila
+    expect(savePage(db, { store: 's1', sku: '1', category: 'ram', text: RAM_FULL, at: NOW })).toEqual({ brand: 'Kingston', capacityGb: 16, modules: 2, type: 'DDR4', mhz: 3200, cl: 16 });
+    expect(db.prepare('SELECT capacity_gb, modules, type, mhz, cl FROM sheet_ram WHERE store_sku = ?').get('1')).toEqual({ capacity_gb: 16, modules: 2, type: 'DDR4', mhz: 3200, cl: 16 });
+    expect(pageText(db, 's1', '1')).toEqual({ text: RAM_FULL, at: NOW });
+    expect(savePage(db, { store: 's1', sku: '2', category: 'ram', text: null })).toEqual({});
+    expect(pageText(db, 's1', '2')?.text).toBeNull();
+    savePage(db, { store: 's1', sku: '1', category: 'ram', text: 'Capacidade: 32GB' });
+    expect(db.prepare('SELECT capacity_gb, type FROM sheet_ram WHERE store_sku = ?').get('1')).toEqual({ capacity_gb: 32, type: null });
+    // Anúncio que mudou de categoria sai da tabela da antiga.
+    savePage(db, { store: 's1', sku: '1', category: 'ssd', text: 'Capacidade: 1 TB' });
+    expect(db.prepare("SELECT count(*) n FROM sheet_ram WHERE store_sku = '1'").get()).toEqual({ n: 0 });
+    expect(sheetCounts(db).get('s1|ssd')).toBe(1);
+  });
 
-    expect(nextSheets(db, 's2', SEEN_SINCE, EMPTY_BEFORE, 10)).toEqual([
-      { sku: 'g1', category: 'gpu' },
-      { sku: 'g-sem-estoque', category: 'gpu' },
-      { sku: 'k1', category: 'case' },
-      { sku: 'c1', category: 'cooler' },
+  it('o leitor ou os campos mudaram: relê as páginas guardadas (sem abrir de novo); igual, não relê', () => {
+    const db = openDb(':memory:');
+    savePage(db, { store: 's1', sku: '1', category: 'ram', text: RAM_FULL });
+    expect(rereadSheets(db)).toBe(1); // primeira vez: sem marca guardada
+    expect(getMeta(db, 'sheet-reader')).toBe(readerStamp());
+    db.exec("UPDATE sheet_ram SET cl = NULL WHERE store_sku = '1'");
+    expect(rereadSheets(db)).toBe(0);
+    setMeta(db, 'sheet-reader', 'leitor antigo');
+    expect(rereadSheets(db)).toBe(1);
+    expect(db.prepare("SELECT cl FROM sheet_ram WHERE store_sku = '1'").get()).toEqual({ cl: 16 });
+  });
+});
+
+describe('produtos, fila e cobertura', () => {
+  it('junta as fontes na ordem dada: a primeira com o campo vale; faltam os principais sem valor', () => {
+    const merged = mergeSources('ram', [
+      { store: 's2', sku: 'b', at: NOW, hasSheet: true, values: { capacityGb: 16 } },
+      { store: 's1', sku: 'a', at: NOW, hasSheet: true, values: { capacityGb: 32, type: 'DDR4' } },
     ]);
-    expect(nextSheets(db, 's2', SEEN_SINCE, EMPTY_BEFORE)).toEqual([{ sku: 'g1', category: 'gpu' }]); // uma por vez
+    expect(merged.values).toEqual({ capacityGb: 16, type: 'DDR4' });
+    expect(merged.origin).toEqual({ capacityGb: { store: 's2', sku: 'b' }, type: { store: 's1', sku: 'a' } });
+    expect(merged.missing).toEqual(['modules', 'mhz', 'cl']);
   });
 
-  it('contagem por loja e categoria (cobertura do admin)', () => {
+  it('fila: só páginas não lidas de produto sem ficha completa, vistos nos últimos dias; em estoque e achado há menos tempo primeiro', () => {
     const db = openDb(':memory:');
-    seen(db, 's3', 'gpu', [offer('s3', 'a'), offer('s3', 'b')], NOW);
-    saveSheet(db, 's3', 'a', { specs: { gpuLength: 280 } }, NOW);
-    expect(sheetCounts(db).get('s3|gpu')).toBe(1);
+    seen(db, 's2', 'ram', [offer('s2', 'antigo')], '2026-11-10T00:00:00.000Z');
+    seen(db, 's2', 'cpu', [offer('s2', 'novo')], NOW);
+    seen(db, 's2', 'gpu', [offer('s2', 'sem-estoque', false)], NOW);
+    seen(db, 's2', 'ram', [offer('s2', 'completo'), offer('s2', 'incompleto')], '2026-11-15T00:00:00.000Z');
+    seen(db, 's2', 'ssd', [offer('s2', 'fora')], '2026-10-01T00:00:00.000Z'); // não visto nos últimos 14 dias
+    seen(db, 's1', 'ram', [offer('s1', 'outra-loja')], NOW);
+    savePage(db, { store: 's2', sku: 'completo', category: 'ram', text: RAM_FULL });
+    savePage(db, { store: 's2', sku: 'incompleto', category: 'ram', text: 'Capacidade: 8GB' }); // lida: não volta à fila
+    expect(nextSheets(db, 's2', SINCE, 10)).toEqual([
+      { sku: 'novo', category: 'cpu' },
+      { sku: 'antigo', category: 'ram' },
+      { sku: 'sem-estoque', category: 'gpu' },
+    ]);
+    expect(nextSheets(db, 's2', SINCE)).toEqual([{ sku: 'novo', category: 'cpu' }]); // uma por vez
+    expect(sheetQueueSizes(db, SINCE)).toEqual(new Map([['s2', 3], ['s1', 1]]));
+  });
+
+  it('cobertura por categoria: completas, incompletas, não lidas, as que só a web completaria e os campos que mais faltam', () => {
+    const db = openDb(':memory:');
+    seen(db, 's1', 'ram', [offer('s1', 'a'), offer('s1', 'b'), offer('s1', 'c')], NOW);
+    seen(db, 's2', 'ram', [offer('s2', 'd')], NOW);
+    savePage(db, { store: 's1', sku: 'a', category: 'ram', text: RAM_FULL });
+    savePage(db, { store: 's1', sku: 'b', category: 'ram', text: 'Capacidade: 8GB\nTipo: DDR5' });
+    savePage(db, { store: 's2', sku: 'd', category: 'ram', text: null });
+    const ram = sheetCoverage(db, SINCE).find((r) => r.category === 'ram')!;
+    expect(ram).toMatchObject({ name: 'Memória RAM', products: 4, complete: 1, incomplete: 2, unread: 1, exhausted: 2, missing: { mhz: 2, cl: 2, capacityGb: 1 } });
+    const states = Object.fromEntries(catalogProducts(db, 'ram', SINCE).map((p) => [p.listings[0]!.sku, p.state]));
+    expect(states).toEqual({ a: 'complete', b: 'incomplete', c: 'unread', d: 'incomplete' });
+  });
+
+  it('todas as categorias do registro têm tabela', () => {
+    const db = openDb(':memory:');
+    syncSheetTables(db);
+    for (const c of Object.keys(SHEET_FIELDS)) expect(cols(db, `sheet_${c}`).length).toBeGreaterThan(2);
   });
 });

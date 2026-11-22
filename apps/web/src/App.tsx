@@ -11,7 +11,7 @@ import {
   type Offer,
   type UpgradeAction,
 } from '@upgradezin/shared';
-import { applySheets, checkCandidate, itemFromGroup, loadBuild, MAX_QTY, sanitizeBuild, saveBuild, sheetRequests, slotFilters, type SavedBuild } from './build.ts';
+import { checkCandidate, itemFromGroup, loadBuild, MAX_QTY, sanitizeBuild, saveBuild, slotFilters, type SavedBuild } from './build.ts';
 import { discountOf, SORT_LABEL } from './format.ts';
 import { applyFilters, CATEGORY_SORTS, commonWords, DEFAULT_FILTERS, resetResultFilters, type Filters } from './filters.ts';
 import { MAX_TERMS, planSearch } from './searchPlan.ts';
@@ -93,21 +93,6 @@ export function App() {
   const [buildSlot, setBuildSlot] = useState<BuildSlot | null>(null);
   const [onlyCompatible, setOnlyCompatible] = useState(true);
   useEffect(() => saveBuild(build), [build]);
-  // Medidas físicas (ficha técnica da loja) da placa de vídeo, do cooler e do gabinete, para conferir se cabem.
-  useEffect(() => {
-    const requests = sheetRequests(build);
-    if (!requests.length) return;
-    let alive = true;
-    fetch(`/api/sheets?items=${encodeURIComponent(requests.map((r) => r.item).join(","))}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((results) => {
-        if (alive && results) setBuild((b) => applySheets(b, requests, results));
-      })
-      .catch(() => {}); // sem resposta: tenta de novo na próxima mudança da montagem
-    return () => {
-      alive = false;
-    };
-  }, [build]);
 
   /** Montagem aberta por link (/m/<id>): só leitura, até "Usar Esta Montagem" ou voltar. */
   const [shared, setShared] = useState<{ id: string; state: 'loading' | 'missing' | 'error'; data?: SharedBuild } | null>(() => {

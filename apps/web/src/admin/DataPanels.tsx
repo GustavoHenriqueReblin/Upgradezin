@@ -188,8 +188,8 @@ export function CoveragePanel({ onUnauthorized }: Props) {
       </Table>
       <p className="mt-2 text-xs text-zinc-500">
         Página da categoria: a rotina lê a lista da categoria na loja (configurada em Lojas) até acabar o que está em estoque; no fim de cada volta, o que estava em estoque e não apareceu passa a "sem
-        estoque". "Não configurada": a loja não tem caminho para essa categoria. Fichas lidas: medidas físicas da página do produto (placa de vídeo, gabinete, cooler), lidas uma vez por produto pela rotina
-        de fichas, aos poucos.
+        estoque". "Não configurada": a loja não tem caminho para essa categoria. Fichas lidas: páginas de produto que a rotina de fichas já abriu (o andamento por produto está na aba
+        Fichas).
       </p>
     </Box>
   );

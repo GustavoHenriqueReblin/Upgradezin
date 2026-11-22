@@ -3,9 +3,10 @@ import { join, resolve } from 'node:path';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { z } from 'zod';
-import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, pickUpgrades, STORES, type CategoryId, type Offer, type SheetRoutineStatus, type SpecSheet, type StoreId } from '@upgradezin/shared';
+import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, pickUpgrades, STORES, type CategoryId, type Offer, type SheetRoutineStatus, type StoreId } from '@upgradezin/shared';
 import { readSheetNow, stopAdminJobs, storesState, sweepNow } from './admin/actions.ts';
-import { listProducts, sheetStoreStatus } from './admin/products.ts';
+import { listProducts } from './admin/products.ts';
+import { listSheetProducts, sheetPageText, sheetStoreStatus } from './admin/sheets.ts';
 import { AdminAuth, MIN_PASSWORD } from './admin/auth.ts';
 import { ActivityLog } from './admin/activity.ts';
 import { Backups, MergeUploads } from './admin/backup.ts';
@@ -21,15 +22,15 @@ import { closeServer } from './shutdown.ts';
 import { deleteMeta, getMeta, metaByPrefix, setMeta } from './db/db.ts';
 import { clearBackoff, pauseStore, useBackoffStorage, type Backoff } from './pace.ts';
 import { closeDb, getDb } from './db/instance.ts';
-import { activeSessions, canReadSheet, sheetOf } from './prices/collect.ts';
+import { activeSessions, canReadSheet } from './prices/collect.ts';
 import { listingBrands, listingsHistory, recentOffers } from './prices/prices.ts';
-import { productSheet } from './prices/sheets.ts';
+import { rereadSheets, SHEET_SCOPE_DAYS, sheetCoverage, syncSheetTables } from './prices/sheets.ts';
 import { startProductKeys } from './prices/identity.ts';
 import { setSheetRoutine, sheetNextAt, sheetRoutineBusy, sheetRoutineSettings, startSheetRoutine, stopSheetRoutine, useSheetRoutineStorage } from './prices/sheet-routine.ts';
 import { routineInfo, routineSettings, setRoutineSettings, startRoutine, stopRoutine, useRoutineStorage } from './prices/routine.ts';
 import { runSearch, stopBackgroundSearches, storedList } from './search.ts';
 import { onCollected } from './prices/events.ts';
-import { clientIp, forceLimiter, registerSecurity, searchStreams, shareLimiter, sheetLimiter, textLimiter, watchStreams } from './security.ts';
+import { clientIp, forceLimiter, registerSecurity, searchStreams, shareLimiter, textLimiter, watchStreams } from './security.ts';
 import { ACTIVE_STORES, adminStores, publicStores, saveStoreConfig, storeConfig, sweepPaths, useStoreStorage } from './stores.ts';
 
 /** Versão do app (package.json da raiz; ver CHANGELOG.md). */
@@ -88,6 +89,11 @@ const SearchQuery = z.object({
   // Rotina de fichas (separada da coleta): do admin (meta "sheet-routine"); sem nada guardado, vale o .env.
   const sheetRoutine = getMeta(db, 'sheet-routine');
   useSheetRoutineStorage(sheetRoutine ? JSON.parse(sheetRoutine) : null, (s) => setMeta(db, 'sheet-routine', JSON.stringify(s)));
+  // Fichas: colunas por categoria conforme a lista de campos; leitor ou campos mudaram, relê as páginas guardadas.
+  const cols = syncSheetTables(db);
+  if (cols.added.length || cols.dropped.length) app.log.info(`Fichas: colunas criadas ${cols.added.join(', ') || '-'}; apagadas ${cols.dropped.join(', ') || '-'}.`);
+  const reread = rereadSheets(db);
+  if (reread) app.log.info(`Fichas: ${reread} página(s) relida(s) com o leitor atual.`);
   // Lojas: do banco (admin); na primeira vez, copiadas do .env.
   const seeded = useStoreStorage(db);
   if (seeded) app.log.info(`Lojas: ${seeded} copiada(s) do .env para o banco; daqui em diante, edite no admin (/admin).`);
@@ -122,11 +128,14 @@ if (AdminAuth.isConfigured(config.ADMIN_USER, config.ADMIN_PASSWORD)) {
       routine: routineInfo,
       setRoutine: (s) => (setRoutineSettings(s), routineInfo()),
     },
-    products: {
-      list: (f) => listProducts(getDb(), f),
-      sheets: sheetStatus,
-      setSheets: (s) => (setSheetRoutine(s), sheetStatus()),
-      readSheet: (store, sku) => readSheetNow(getDb(), store, sku),
+    products: { list: (f) => listProducts(getDb(), f) },
+    sheets: {
+      routine: sheetStatus,
+      setRoutine: (s) => (setSheetRoutine(s), sheetStatus()),
+      coverage: () => sheetCoverage(getDb(), new Date(Date.now() - SHEET_SCOPE_DAYS * 86_400_000).toISOString()),
+      list: (f) => listSheetProducts(getDb(), f),
+      page: (store, sku) => sheetPageText(getDb(), store, sku),
+      read: (store, sku) => readSheetNow(getDb(), store, sku),
     },
     data: {
       coverage: () => coverage(getDb(), (store, category) => (ACTIVE_STORES.includes(store) ? sweepPaths(store, category).length : 0)),
@@ -139,7 +148,7 @@ if (AdminAuth.isConfigured(config.ADMIN_USER, config.ADMIN_PASSWORD)) {
       people: activity.people(),
       searchesOpen: searchStreams.total(),
       watchesOpen: watchStreams.total(),
-      atLimit: { force: forceLimiter.atLimit(), text: textLimiter.atLimit(), sheets: sheetLimiter.atLimit(), share: shareLimiter.atLimit() },
+      atLimit: { force: forceLimiter.atLimit(), text: textLimiter.atLimit(), share: shareLimiter.atLimit() },
     }),
     live: { recent: () => listAttempts(getDb(), { limit: 50 }), subscribe: onAttempt },
     db: getDb,
@@ -167,50 +176,6 @@ app.get('/api/brands', async (req, reply) => {
   const value = listingBrands(getDb(), category, new Date(Date.now() - 30 * 86_400_000).toISOString());
   brandsCache.set(category, { at: Date.now(), value });
   return value;
-});
-
-/**
- * Ficha técnica (medidas físicas, part number) das peças da montagem: placa de vídeo, cooler e
- * gabinete, para conferir se cabem. items = "categoria:loja:código" separados por vírgula, até 4.
- * Do banco quando já lida; senão abre a página do produto (só nas lojas que sabem ler, com o limite
- * por pessoa SHEETS_PER_HOUR). Devolve { "categoria:loja:código": SpecSheet | null }.
- */
-const SheetQuery = z.object({
-  items: z
-    .string()
-    .max(400)
-    .transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean))
-    .pipe(z.array(z.string().regex(/^(gpu|cooler|case):s\d:[\w-]{1,64}$/)).min(1).max(4)),
-});
-app.get('/api/sheets', async (req, reply) => {
-  const parsed = SheetQuery.safeParse(req.query);
-  if (!parsed.success) return reply.code(400).send({ error: z.prettifyError(parsed.error) });
-  const ip = clientIp(req);
-  const db = getDb();
-  const since = new Date(Date.now() - config.SHEET_MAX_AGE_DAYS * 86_400_000).toISOString();
-  // Cliente desconectou (fechou a resposta antes do fim): não abre mais páginas.
-  const ac = new AbortController();
-  reply.raw.on('close', () => {
-    if (!reply.raw.writableEnded) ac.abort();
-  });
-  // Só resposta definitiva: a ficha, ou null quando a loja não tem como dar (não lê ficha, não
-  // configurada). Falha passageira (loja em pausa, limite por pessoa, erro) fica fora: o site
-  // pede de novo depois.
-  const out: Record<string, SpecSheet | null> = {};
-  for (const item of parsed.data.items) {
-    const [category, store, sku] = item.split(':') as [CategoryId, StoreId, string];
-    if (!ACTIVE_STORES.includes(store) || !canReadSheet(store)) {
-      out[item] = null;
-      continue;
-    }
-    const cached = productSheet(db, store, sku, since)?.sheet; // a do anúncio ou a de outro anúncio do mesmo produto
-    if (cached) out[item] = cached;
-    else if (sheetLimiter.take(ip)) {
-      const sheet = await sheetOf(store, sku, category, ac.signal).catch(() => undefined);
-      if (sheet !== undefined) out[item] = sheet;
-    }
-  }
-  return out;
 });
 
 /**

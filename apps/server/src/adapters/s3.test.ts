@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSpecSheet, type Offer } from '@upgradezin/shared';
+import { readSheet, sheetText, type Offer } from '@upgradezin/shared';
 import { mapS3Card, parseS3Cards, s3SheetFromHtml } from './s3.ts';
 import { COLLECTED_AT, fixture } from './fixtures.ts';
 
@@ -80,12 +80,10 @@ describe('S3: produto aberto', () => {
 
 describe('S3: ficha técnica da página do produto', () => {
   it('bloco "Especificações Técnicas": rótulo em negrito e valor na linha de baixo viram uma linha só', () => {
-    expect(parseSpecSheet('gpu', s3SheetFromHtml(fixture('s3-product-gpu.html'))!).specs).toEqual({ gpuLength: 249, gpu16Pin: false });
-    expect(parseSpecSheet('case', s3SheetFromHtml(fixture('s3-product-case.html'))!)).toEqual({
-      specs: { caseMaxGpu: 395, caseRadiators: [120, 140, 240, 280, 360] },
-      mpn: 'V1-BK-V1',
-    });
-    expect(parseSpecSheet('cooler', s3SheetFromHtml(fixture('s3-product-cooler.html'))!)).toEqual({ specs: { coolerHeight: 159 }, mpn: 'ACFRE00125A' });
+    const read = (category: 'gpu' | 'case' | 'cooler', file: string) => readSheet(category, sheetText(s3SheetFromHtml(fixture(file))!));
+    expect(read('gpu', 's3-product-gpu.html')).toMatchObject({ chip: 'Arc B570', vramGb: 10, memType: 'GDDR6', busBits: 192, lengthMm: 249, pcie: '4.0 x8', power16Pin: false });
+    expect(read('case', 's3-product-case.html')).toMatchObject({ model: 'V1-BK-V1', formFactor: 'Mid Tower', maxGpuMm: 395, radiators: '120,140,240,280,360' });
+    expect(read('cooler', 's3-product-cooler.html')).toMatchObject({ model: 'ACFRE00125A', type: 'ar', heightMm: 159, sockets: 'LGA1851,LGA1700,AM5,AM4' });
   });
 
   it('dois-pontos dentro do rótulo não ficam duplicados', () => {

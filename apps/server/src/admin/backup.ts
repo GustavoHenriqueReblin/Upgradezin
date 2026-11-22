@@ -5,6 +5,7 @@ import { pipeline } from 'node:stream/promises';
 import { createGzip, gunzipSync } from 'node:zlib';
 import type { BackupFile, MergeReport } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
+import { rereadSheets } from '../prices/sheets.ts';
 
 /** Nome de arquivo de backup aceito (sem caminho: nada fora da pasta). */
 const NAME = /^[\w.-]{1,100}\.db(\.gz)?$/;
@@ -115,7 +116,7 @@ function report(db: Db): MergeReport {
     ),
     newerSheets: count(
       db,
-      `SELECT count(*) n FROM src.product_sheets x LEFT JOIN main.product_sheets y ON y.store = x.store AND y.store_sku = x.store_sku WHERE y.store IS NULL OR x.fetched_at > y.fetched_at`,
+      `SELECT count(*) n FROM src.sheet_pages x LEFT JOIN main.sheet_pages y ON y.store = x.store AND y.store_sku = x.store_sku WHERE y.store IS NULL OR x.fetched_at > y.fetched_at`,
     ),
   };
 }
@@ -157,14 +158,16 @@ export function applyMerge(db: Db, source: string): MergeReport {
       db.exec(`INSERT OR IGNORE INTO main.price_points (listing_id, at, price_cash, price_card, effective_cash, coupon, promo, in_stock)
         SELECT y.id, p.at, p.price_cash, p.price_card, p.effective_cash, p.coupon, p.promo, p.in_stock
         FROM src.price_points p JOIN src.listings x ON x.id = p.listing_id JOIN main.listings y ON y.store = x.store AND y.store_sku = x.store_sku`);
-      db.exec(`INSERT INTO main.product_sheets (store, store_sku, data, fetched_at) SELECT store, store_sku, data, fetched_at FROM src.product_sheets WHERE true
-        ON CONFLICT (store, store_sku) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at WHERE excluded.fetched_at > fetched_at`);
+      // Páginas de ficha: o texto entra; os campos são relidos depois (rereadSheets), com o leitor deste servidor.
+      db.exec(`INSERT INTO main.sheet_pages (store, store_sku, category, text, fetched_at) SELECT store, store_sku, category, text, fetched_at FROM src.sheet_pages WHERE true
+        ON CONFLICT (store, store_sku) DO UPDATE SET category = excluded.category, text = excluded.text, fetched_at = excluded.fetched_at WHERE excluded.fetched_at > fetched_at`);
       if (db.prepare('PRAGMA main.foreign_key_check').all().length) throw new Error('Referência quebrada depois do merge.');
       db.exec('COMMIT');
     } catch (err) {
       db.exec('ROLLBACK');
       throw err;
     }
+    if (before.newerSheets) rereadSheets(db, true);
     return before;
   });
 }

@@ -77,8 +77,6 @@ export class Concurrency {
 export const forceLimiter = new Limiter(config.FORCE_PER_HOUR, 3_600_000);
 /** Links de montagem novos por pessoa (a mesma montagem reaproveita o link e não conta). */
 export const shareLimiter = new Limiter(config.SHARE_PER_HOUR, 3_600_000);
-/** Fichas técnicas que vão à loja (página de produto), por pessoa por hora. */
-export const sheetLimiter = new Limiter(config.SHEETS_PER_HOUR, 3_600_000);
 /** Buscas com texto livre ("Buscar nas lojas" do filtro de texto) por pessoa por hora. */
 export const textLimiter = new Limiter(config.TEXT_SEARCHES_PER_HOUR, 3_600_000);
 /** Buscas abertas ao mesmo tempo por pessoa. */

@@ -226,6 +226,20 @@ const MIGRATIONS: (string | Rebuild)[] = [
   DROP TABLE term_runs;
   DROP TABLE search_terms;
   `,
+  // 13: fichas técnicas refeitas: a página lida guarda o texto da ficha; os campos de cada categoria
+  // ficam em sheet_<categoria>, uma coluna por campo (criadas por syncSheetTables, prices/sheets.ts)
+  `
+  DROP TABLE product_sheets;
+  CREATE TABLE sheet_pages (
+    store      TEXT NOT NULL,
+    store_sku  TEXT NOT NULL,
+    category   TEXT NOT NULL,
+    text       TEXT,                        -- texto da ficha (sheetText); null: a página não tinha ficha
+    fetched_at TEXT NOT NULL,
+    PRIMARY KEY (store, store_sku)
+  );
+  DELETE FROM meta WHERE key = 'sheet-reader';
+  `,
 ];
 
 export type Db = DatabaseSync;

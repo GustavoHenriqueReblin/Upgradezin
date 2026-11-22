@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { RoutineInfo, SheetRoutineSettings } from '@upgradezin/shared';
+import type { Offer, RoutineInfo, SheetRoutineSettings } from '@upgradezin/shared';
 import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
 import { openDb } from '../db/db.ts';
@@ -10,7 +10,10 @@ import { AdminAuth, readCookie, sessionCookie } from './auth.ts';
 import { Backups, MergeUploads } from './backup.ts';
 import { listAttempts, onAttempt, pageAttempts } from '../prices/attempts.ts';
 import { attemptTimeline, coverage, perfGaps } from './data.ts';
-import { listProducts, sheetStoreStatus } from './products.ts';
+import { listProducts } from './products.ts';
+import { listSheetProducts, sheetPageText, sheetStoreStatus } from './sheets.ts';
+import { savePage, SHEET_SCOPE_DAYS, sheetCoverage } from '../prices/sheets.ts';
+import { saveCollection } from '../prices/prices.ts';
 import { registerAdmin } from './routes.ts';
 import { emitChange, onChange } from '../changes.ts';
 import { baseName, serverStatus } from './status.ts';
@@ -79,10 +82,13 @@ describe('cookie da sessão', () => {
 
 /** Chamadas feitas às ações do admin (as de verdade são testadas em ops.test.ts). */
 const calls: unknown[][] = [];
+/** Banco do último app criado (para os testes gravarem dados direto). */
+let lastDb = openDb(':memory:');
 
 function makeApp() {
   const app = Fastify();
   const db = openDb(':memory:');
+  lastDb = db;
   const dir = mkdtempSync(join(tmpdir(), 'uz-routes-'));
   calls.length = 0;
   const routine: RoutineInfo = { enabled: false, stores: [], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, busy: false, lastTickAt: null, nextTickAt: null, seconds: { normal: 15, reduced: 20, slow: 60 } };
@@ -99,15 +105,18 @@ function makeApp() {
       routine: () => routine,
       setRoutine: (s) => (calls.push(['routine', s]), { ...routine, ...s, modes: { ...routine.modes, ...s.modes }, live: { ...routine.live, ...s.live }, seconds: { ...routine.seconds, ...s.seconds } }),
     },
-    products: {
-      list: (f) => listProducts(db, f),
-      sheets: () => ({ ...sheetRoutine, busy: false, progress: sheetStoreStatus(db, [{ id: 's1', name: 'Loja S1', canRead: true }]).map((p) => ({ ...p, nextAt: null })) }),
-      setSheets: (s) => {
+    products: { list: (f) => listProducts(db, f) },
+    sheets: {
+      routine: () => ({ ...sheetRoutine, busy: false, progress: sheetStoreStatus(db, [{ id: 's1', name: 'Loja S1', canRead: true }]).map((p) => ({ ...p, nextAt: null })) }),
+      setRoutine: (s) => {
         calls.push(['sheets', s]);
         sheetRoutine = { ...sheetRoutine, ...s };
         return { ...sheetRoutine, busy: false, progress: [] };
       },
-      readSheet: (id, sku) => (calls.push(['sheet', id, sku]), sku === 'pausada' ? { ok: false, error: 'Loja em pausa.' } : { ok: true, startsAt: '2026-11-20T21:00:00.000Z' }),
+      coverage: () => sheetCoverage(db, new Date(Date.now() - SHEET_SCOPE_DAYS * 86_400_000).toISOString()),
+      list: (f) => listSheetProducts(db, f),
+      page: (store, sku) => sheetPageText(db, store, sku),
+      read: (id, sku) => (calls.push(['sheet', id, sku]), sku === 'pausada' ? { ok: false, error: 'Loja em pausa.' } : { ok: true, startsAt: '2026-11-20T21:00:00.000Z' }),
     },
     data: {
       coverage: () => coverage(db, () => 0),
@@ -115,7 +124,7 @@ function makeApp() {
       attempts: (f) => pageAttempts(db, f),
       timeline: (hours) => attemptTimeline(db, hours),
     },
-    activity: () => ({ recent: [], people: 0, searchesOpen: 0, watchesOpen: 0, atLimit: { force: 0, text: 0, sheets: 0, share: 0 } }),
+    activity: () => ({ recent: [], people: 0, searchesOpen: 0, watchesOpen: 0, atLimit: { force: 0, text: 0, share: 0 } }),
     live: { recent: () => listAttempts(db, { limit: 50 }), subscribe: onAttempt },
     db: () => db,
     backups: new Backups(join(dir, 'backups')),
@@ -172,7 +181,7 @@ describe('rotas /api/admin', () => {
     const app = makeApp();
     const cookie = cookieOf(await login(app));
     const s = (await app.inject({ url: '/api/admin/status', headers: { cookie } })).json();
-    expect(s).toMatchObject({ version: '9.9.9', browserOpen: false, activeSessions: 0, db: { file: ':memory:', migration: 12 } });
+    expect(s).toMatchObject({ version: '9.9.9', browserOpen: false, activeSessions: 0, db: { file: ':memory:', migration: 13 } });
     expect(s.uptimeS).toBeGreaterThanOrEqual(0);
     expect(s.memory.rssMb).toBeGreaterThan(0);
   });
@@ -222,7 +231,7 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     const app = makeApp();
     const cookie = cookieOf(await login(app));
     const post = (url: string, payload?: object) => app.inject({ method: 'POST', url, headers: { cookie, 'x-admin': '1' }, ...(payload ? { payload } : {}) });
-    return { app, cookie, post };
+    return { app, cookie, post, db: lastDb };
   };
 
   it('tirar pausa e pausar (5 min a 7 dias)', async () => {
@@ -246,15 +255,32 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     expect((await post('/api/admin/stores/s1/collect', { category: 'gpu', term: 'RTX 3050' })).statusCode).toBe(404); // rota antiga saiu
   });
 
-  it('produtos: lista paginada com filtros, andamento das fichas e "Ler ficha"', async () => {
-    const { app, cookie } = await setup();
-    const list = await app.inject({ url: '/api/admin/products?store=s1&sheet=missing&inStock=1&page=1&pageSize=20', headers: { cookie } });
+  it('produtos e fichas: listas paginadas com filtros, cobertura, texto da página, rotina de fichas e "Ler ficha"', async () => {
+    const { app, cookie, db } = await setup();
+    const list = await app.inject({ url: '/api/admin/products?store=s1&inStock=1&page=1&pageSize=20', headers: { cookie } });
     expect(list.statusCode).toBe(200);
     expect(list.json()).toMatchObject({ items: [], total: 0, page: 1, pageSize: 20 });
-    for (const q of ['sheet=talvez', 'store=s9', 'page=0', 'pageSize=500', 'inStock=sim']) {
+    for (const q of ['store=s9', 'page=0', 'pageSize=500', 'inStock=sim']) {
       expect((await app.inject({ url: `/api/admin/products?${q}`, headers: { cookie } })).statusCode).toBe(400);
     }
-    expect((await app.inject({ url: '/api/admin/sheets', headers: { cookie } })).json()).toMatchObject({ enabled: false, seconds: 180, stores: ['s1', 's2', 's3'], progress: [{ store: 's1', total: 0, nextAt: null }] });
+    expect((await app.inject({ url: '/api/admin/sheets', headers: { cookie } })).json()).toMatchObject({ enabled: false, seconds: 180, stores: ['s1', 's2', 's3'], progress: [{ store: 's1', read: 0, queue: 0, nextAt: null }] });
+
+    // Fichas: um processador lido e outro não.
+    const now = new Date().toISOString();
+    const cpu = (sku: string) => ({ store: 's1', storeSku: sku, title: `Ryzen ${sku}`, url: `https://s1.example/${sku}`, priceCash: 1, inStock: true, specs: {}, modelKey: `m${sku}`, collectedAt: now }) as Offer;
+    saveCollection(db, { store: 's1', category: 'cpu', offers: [cpu('1'), cpu('2')], at: now });
+    const text = ['Soquete: AM4', 'Núcleos: 6'].join('\n');
+    savePage(db, { store: 's1', sku: '1', category: 'cpu', text });
+    const cov = (await app.inject({ url: '/api/admin/sheets/coverage', headers: { cookie } })).json() as { category: string; products: number; incomplete: number; unread: number }[];
+    expect(cov.find((r) => r.category === 'cpu')).toMatchObject({ products: 2, incomplete: 1, unread: 1 });
+    const sheets = await app.inject({ url: '/api/admin/sheets/products?category=cpu&state=incomplete', headers: { cookie } });
+    expect(sheets.json()).toMatchObject({ total: 1, items: [{ state: 'incomplete', values: { socket: 'AM4', cores: 6 } }] });
+    for (const q of ['', 'category=nada', 'category=cpu&state=talvez', 'category=cpu&page=0']) {
+      expect((await app.inject({ url: `/api/admin/sheets/products?${q}`, headers: { cookie } })).statusCode).toBe(400);
+    }
+    expect((await app.inject({ url: '/api/admin/sheets/page?store=s1&sku=1', headers: { cookie } })).json()).toMatchObject({ store: 's1', sku: '1', text });
+    expect((await app.inject({ url: '/api/admin/sheets/page?store=s1&sku=2', headers: { cookie } })).statusCode).toBe(404);
+    expect((await app.inject({ url: '/api/admin/sheets/page?store=s9&sku=1', headers: { cookie } })).statusCode).toBe(400);
 
     // Rotina de fichas (separada da coleta): ligar, lojas e intervalo; inválido é recusado.
     const put = (payload: unknown, headers: Record<string, string> = { cookie, 'x-admin': '1' }) => app.inject({ method: 'PUT', url: '/api/admin/sheets', headers, payload: payload as object });

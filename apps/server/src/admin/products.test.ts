@@ -3,8 +3,9 @@ import type { CategoryId, Offer, Specs, StoreId } from '@upgradezin/shared';
 import { openDb, type Db } from '../db/db.ts';
 import { recordAttempt } from '../prices/attempts.ts';
 import { saveCollection } from '../prices/prices.ts';
-import { saveSheet } from '../prices/sheets.ts';
-import { listProducts, sheetStoreStatus } from './products.ts';
+import { savePage } from '../prices/sheets.ts';
+import { listProducts } from './products.ts';
+import { sheetStoreStatus } from './sheets.ts';
 
 const offer = (store: StoreId, sku: string, title: string, specs: Specs = {}, extra: Partial<Offer> = {}): Offer =>
   ({ store, storeSku: sku, title, url: `https://${store}.example/${sku}`, priceCash: 1000, inStock: true, specs, modelKey: `m${sku}`, collectedAt: '', ...extra }) as Offer;
@@ -21,26 +22,20 @@ function catalog() {
   seen(db, 's1', 'case', [offer('s1', 'k1', 'Gabinete Mid Tower', {}, { inStock: false })], '2026-11-21T09:00:00.000Z');
   seen(db, 's2', 'cpu', [offer('s2', 'p1', 'Processador Ryzen 5 5600 100%', { cpuBrand: 'amd', cpuLine: 'Ryzen 5', cpuModel: '5600' })], '2026-11-21T08:00:00.000Z');
   seen(db, 's2', 'cooler', [offer('s2', 'c1', 'Cooler antigo')], '2026-10-01T00:00:00.000Z'); // fora dos 14 dias
-  saveSheet(db, 's1', 'g1', { specs: { gpuLength: 228 } }, '2026-11-21T11:00:00.000Z');
-  saveSheet(db, 's1', 'k1', { specs: {} }, '2026-11-21T11:00:00.000Z');
+  savePage(db, { store: 's1', sku: 'g1', category: 'gpu', text: 'Dimensões: 228 x 120 x 40 mm', at: '2026-11-21T11:00:00.000Z' });
+  savePage(db, { store: 's1', sku: 'k1', category: 'case', text: null, at: '2026-11-21T11:00:00.000Z' });
   return db;
 }
 
 describe('produtos do catálogo (admin)', () => {
-  it('lista paginada, do visto há menos tempo; ficha, specs do título e índice de desempenho', () => {
+  it('lista paginada, do visto há menos tempo; specs do título e índice de desempenho', () => {
     const db = catalog();
     const all = listProducts(db);
     expect(all.total).toBe(5);
     // Vistos no mesmo instante: o anúncio mais novo primeiro.
-    expect(all.items.map((p) => [p.sku, p.sheetStatus])).toEqual([
-      ['g2', 'missing'],
-      ['g1', 'ok'],
-      ['k1', 'empty'],
-      ['p1', 'na'], // processador não tem ficha física
-      ['c1', 'missing'],
-    ]);
+    expect(all.items.map((p) => p.sku)).toEqual(['g2', 'g1', 'k1', 'p1', 'c1']);
     const g1 = all.items.find((p) => p.sku === 'g1')!;
-    expect(g1).toMatchObject({ store: 's1', category: 'gpu', price: 1000, inStock: true, perf: 128, sheet: { specs: { gpuLength: 228 } }, sheetAt: '2026-11-21T11:00:00.000Z' });
+    expect(g1).toMatchObject({ store: 's1', category: 'gpu', price: 1000, inStock: true, perf: 128 });
     expect(all.items[0]!.perf).toBeUndefined(); // RX 9040 fora da tabela
     expect(all.items.find((p) => p.sku === 'p1')!.perf).toBe(100);
 
@@ -49,13 +44,11 @@ describe('produtos do catálogo (admin)', () => {
     expect(page2.items.map((p) => p.sku)).toEqual(['k1', 'p1']);
   });
 
-  it('filtros: loja, categoria, ficha, estoque e texto (título ou código, % literal)', () => {
+  it('filtros: loja, categoria, estoque e texto (título ou código, % literal)', () => {
     const db = catalog();
     const skus = (f: Parameters<typeof listProducts>[1]) => listProducts(db, f).items.map((p) => p.sku);
     expect(skus({ store: 's2' })).toEqual(['p1', 'c1']);
     expect(skus({ category: 'gpu' })).toEqual(['g2', 'g1']);
-    expect(skus({ sheet: 'missing' })).toEqual(['g2', 'c1']);
-    expect(skus({ sheet: 'na' })).toEqual(['p1']);
     expect(skus({ inStock: false })).toEqual(['k1']);
     expect(skus({ q: 'rtx' })).toEqual(['g1']);
     expect(skus({ q: 'K1' })).toEqual(['k1']); // pelo código
@@ -63,7 +56,7 @@ describe('produtos do catálogo (admin)', () => {
     expect(skus({ q: '%' })).toEqual(['p1']); // não vira curinga
   });
 
-  it('andamento das fichas por loja: lidas, sem ficha, faltam (vistos nos últimos 14 dias) e lidas na última hora', () => {
+  it('andamento das fichas por loja: páginas lidas, fila (vistos nos últimos 14 dias) e lidas na última hora', () => {
     const db = catalog();
     const at = (ms: number) => new Date(NOW - ms).toISOString();
     recordAttempt(db, { store: 's1', at: at(10 * 60_000), kind: 'sheet', origin: 'routine', category: 'gpu', term: 'g1', status: 'ok', count: 1, ms: 900 });
@@ -71,8 +64,8 @@ describe('produtos do catálogo (admin)', () => {
     recordAttempt(db, { store: 's1', at: at(5 * 60_000), kind: 'term', origin: 'routine', category: 'gpu', term: 'x', status: 'ok', count: 3, ms: 900 }); // termo não conta
     const st = sheetStoreStatus(db, [{ id: 's1', name: 'Loja S1', canRead: true }, { id: 's2', name: 'Loja S2', canRead: true }], NOW);
     expect(st).toEqual([
-      { store: 's1', name: 'Loja S1', canRead: true, total: 3, ok: 1, shared: 0, empty: 1, missing: 1, lastHour: 1, lastAt: at(10 * 60_000) },
-      { store: 's2', name: 'Loja S2', canRead: true, total: 0, ok: 0, shared: 0, empty: 0, missing: 0, lastHour: 0, lastAt: null }, // o cooler da s2 saiu do catálogo
+      { store: 's1', name: 'Loja S1', canRead: true, read: 2, queue: 1, lastHour: 1, lastAt: at(10 * 60_000) }, // falta o g2
+      { store: 's2', name: 'Loja S2', canRead: true, read: 0, queue: 1, lastHour: 0, lastAt: null }, // o processador; o cooler saiu do catálogo
     ]);
   });
 });

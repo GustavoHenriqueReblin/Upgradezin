@@ -4,7 +4,6 @@ import type { Db } from '../db/db.ts';
 import { backoffInfo, BlockedError, jitter, PageLimitError, pagesUsed, queuedAt, registerSuccess, sleep } from '../pace.ts';
 import { attemptCounts, lastAttempt } from '../prices/attempts.ts';
 import { canReadSheet, canSweep, collectSweepPage, sheetOf, withBrowserSession } from '../prices/collect.ts';
-import { SHEET_CATEGORIES } from '../prices/sheets.ts';
 import { routineBusy, routineNextAt, routineSettings } from '../prices/routine.ts';
 import { restartSweep, sweepState } from '../prices/sweep.ts';
 import { ACTIVE_STORES, adminStores, sweepPaths } from '../stores.ts';
@@ -91,7 +90,7 @@ export function sweepNow(db: Db, store: StoreId, category: CategoryId, now = Dat
 }
 
 /**
- * "Ler ficha" (admin, aba Produtos): abre a página do produto e lê a ficha técnica de novo, mesmo
+ * "Ler ficha" (admin, aba Fichas): abre a página do produto e lê a ficha técnica de novo, mesmo
  * que já esteja guardada. Na fila da loja, na frente da rotina, com o intervalo e o limite por hora
  * de sempre. Loja em pausa recusa. Responde na hora; a ficha aparece na lista quando terminar.
  */
@@ -100,13 +99,12 @@ export function readSheetNow(db: Db, store: StoreId, sku: string): CollectNowRes
   if (!canReadSheet(store)) return { ok: false, error: 'Esta loja ainda não tem leitor de ficha técnica.' };
   const row = db.prepare('SELECT category FROM listings WHERE store = ? AND store_sku = ?').get(store, sku) as { category: CategoryId } | undefined;
   if (!row) return { ok: false, error: 'Produto não encontrado no catálogo.' };
-  if (!SHEET_CATEGORIES.includes(row.category)) return { ok: false, error: 'Só placa de vídeo, gabinete e cooler têm ficha física.' };
   const bo = backoffInfo(store);
   if (bo) return { ok: false, error: `Loja em pausa até ${new Date(bo.until).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. Tire a pausa antes.` };
-  void withBrowserSession(() => sheetOf(store, sku, row.category, jobs.signal, { origin: 'admin', force: true }))
-    .then((sheet) => {
+  void withBrowserSession(() => sheetOf(store, sku, row.category, jobs.signal, { origin: 'admin' }))
+    .then((r) => {
       registerSuccess(store);
-      console.info(`[admin ${store}] ficha ${sku}: ${sheet && (Object.keys(sheet.specs).length || sheet.mpn) ? 'lida' : 'página sem ficha'}`);
+      console.info(`[admin ${store}] ficha ${sku}: ${!r?.hasSheet ? 'página sem ficha' : `${Object.keys(r.values).length} campos`}`);
     })
     .catch((err) => {
       if (!jobs.signal.aborted) console.warn(`[admin ${store}] ficha ${sku}:`, err instanceof Error ? err.message : err);

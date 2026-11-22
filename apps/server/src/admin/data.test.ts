@@ -20,7 +20,7 @@ describe('cobertura', () => {
     recordSweepPage(db, { store: 's2', category: 'cpu', path: 0, paths: 2, page: 1, totalPages: 5, maxPages: 40, inStock: 30, offers: [], at: '2026-11-20T19:40:00.000Z' });
     const paths = (store: string, category: string) => (store === 's2' && (category === 'gpu' || category === 'cpu') ? (category === 'cpu' ? 2 : 1) : 0);
     expect(coverage(db, paths, now)).toEqual([
-      { store: 's2', category: 'cpu', listings: 0, inStock: 0, seen24h: 0, seen7d: 0, paths: 2, sweeping: { path: 1, page: 2 }, sweptAt: null, lastOkAt: null, sheets: null },
+      { store: 's2', category: 'cpu', listings: 0, inStock: 0, seen24h: 0, seen7d: 0, paths: 2, sweeping: { path: 1, page: 2 }, sweptAt: null, lastOkAt: null, sheets: 0 },
       // O fim da volta (18h30) marcou o "3", visto antes dela, como sem estoque; o "1" foi visto depois.
       { store: 's2', category: 'gpu', listings: 3, inStock: 1, seen24h: 2, seen7d: 2, paths: 1, sweeping: null, sweptAt: '2026-11-20T18:30:00.000Z', lastOkAt: '2026-11-20T19:00:00.000Z', sheets: 0 },
     ]);

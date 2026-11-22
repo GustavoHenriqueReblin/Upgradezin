@@ -1,4 +1,4 @@
-import { ADMIN_PAGE_SIZE_MAX, CATEGORIES, STORES, type AdminPage, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type CategoryId, type CoverageRow, type PerfGap, type AdminProductFilter, type AdminProductPage, type SheetRoutineStatus, type SheetRoutineInput, SHEET_SECONDS_MIN, SHEET_SECONDS_MAX, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, ROUTINE_MODES, MODE_SECONDS_MIN, MODE_SECONDS_MAX } from '@upgradezin/shared';
+import { ADMIN_PAGE_SIZE_MAX, CATEGORIES, STORES, type AdminPage, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type CategoryId, type CoverageRow, type PerfGap, type AdminProductFilter, type AdminProductPage, type SheetRoutineStatus, type SheetRoutineInput, type SheetCoverageRow, type SheetPageText, type SheetProductFilter, type SheetProductPage, SHEET_SECONDS_MIN, SHEET_SECONDS_MAX, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, ROUTINE_MODES, MODE_SECONDS_MIN, MODE_SECONDS_MAX } from '@upgradezin/shared';
 import { createReadStream } from 'node:fs';
 import { emitChange, onChange } from '../changes.ts';
 import type { ActivityInfo } from '@upgradezin/shared';
@@ -30,9 +30,14 @@ export interface AdminDeps {
   };
   products: {
     list: (f: AdminProductFilter) => AdminProductPage;
-    sheets: () => SheetRoutineStatus;
-    setSheets: (s: SheetRoutineInput) => SheetRoutineStatus;
-    readSheet: (store: StoreId, sku: string) => CollectNowResult;
+  };
+  sheets: {
+    routine: () => SheetRoutineStatus;
+    setRoutine: (s: SheetRoutineInput) => SheetRoutineStatus;
+    coverage: () => SheetCoverageRow[];
+    list: (f: SheetProductFilter) => SheetProductPage;
+    page: (store: StoreId, sku: string) => SheetPageText | undefined;
+    read: (store: StoreId, sku: string) => CollectNowResult;
   };
   data: {
     coverage: () => CoverageRow[];
@@ -64,11 +69,17 @@ const AttemptsQuery = z.object({
 const ProductsQuery = z.object({
   store: z.enum(STORES).optional(),
   category: z.enum(CATEGORIES).optional(),
-  sheet: z.enum(['ok', 'shared', 'empty', 'missing', 'na']).optional(),
   inStock: z.enum(['1', '0']).transform((v) => v === '1').optional(),
   q: z.string().max(80).optional(),
   ...Paging,
 });
+const SheetProductsQuery = z.object({
+  category: z.enum(CATEGORIES),
+  state: z.enum(['complete', 'incomplete', 'unread']).optional(),
+  q: z.string().max(80).optional(),
+  ...Paging,
+});
+const SheetPageQuery = z.object({ store: z.enum(STORES), sku: z.string().regex(/^[\w-]{1,64}$/) });
 const TimelineQuery = z.object({ hours: z.coerce.number().int().min(1).max(720).default(48) });
 
 const Pause = z.object({ minutes: z.number().int().min(5).max(7 * 24 * 60) });
@@ -189,22 +200,34 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
         return r;
       });
 
-      // Produtos do catálogo (paginado), andamento das fichas técnicas e "Ler ficha".
+      // Produtos do catálogo (paginado).
       admin.get('/products', async (req, reply) => {
         const q = ProductsQuery.safeParse(req.query);
         return q.success ? deps.products.list(q.data) : reply.code(400).send({ error: 'invalid' });
       });
-      admin.get('/sheets', async () => deps.products.sheets());
+
+      // Fichas técnicas: rotina, cobertura por categoria, produtos com a ficha, texto de uma página e "Ler ficha".
+      admin.get('/sheets', async () => deps.sheets.routine());
       admin.put('/sheets', async (req, reply) => {
         const b = SheetRoutine.safeParse(req.body);
         if (!b.success) return reply.code(400).send({ error: 'invalid' });
         req.log.info(b.data, 'admin: rotina de fichas');
-        return deps.products.setSheets(b.data);
+        return deps.sheets.setRoutine(b.data);
+      });
+      admin.get('/sheets/coverage', async () => deps.sheets.coverage());
+      admin.get('/sheets/products', async (req, reply) => {
+        const q = SheetProductsQuery.safeParse(req.query);
+        return q.success ? deps.sheets.list(q.data) : reply.code(400).send({ error: 'invalid' });
+      });
+      admin.get('/sheets/page', async (req, reply) => {
+        const q = SheetPageQuery.safeParse(req.query);
+        if (!q.success) return reply.code(400).send({ error: 'invalid' });
+        return deps.sheets.page(q.data.store, q.data.sku) ?? reply.code(404).send({ error: 'not-found' });
       });
       admin.post<{ Params: { id: string; sku: string } }>('/products/:id/:sku/sheet', async (req, reply) => {
         const id = storeParam(req.params.id);
         if (!id || !/^[\w-]{1,64}$/.test(req.params.sku)) return reply.code(404).send({ error: 'not-found' });
-        const r = deps.products.readSheet(id, req.params.sku);
+        const r = deps.sheets.read(id, req.params.sku);
         if (!r.ok) return reply.code(409).send({ error: 'rejected', errors: [r.error] });
         req.log.info({ store: id, sku: req.params.sku }, 'admin: ler ficha');
         return r;

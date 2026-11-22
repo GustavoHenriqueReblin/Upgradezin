@@ -7,7 +7,7 @@ import { useBackoffStorage } from '../pace.ts';
 import { useStoreStorage } from '../stores.ts';
 import { saveCollection } from './prices.ts';
 import { routineNextAt, setRoutineSettings, stopRoutine, tick, useRoutineStorage } from './routine.ts';
-import { getSheet } from './sheets.ts';
+import { pageText } from './sheets.ts';
 
 afterEach(() => {
   usePageLoader(null);
@@ -37,6 +37,6 @@ describe('rotina de preços: só páginas de categoria', () => {
     expect(lists.length).toBe(3);
     expect(urls.some((u) => u.includes('/produto/777'))).toBe(false);
     expect(urls.some((u) => u.includes('/busca/'))).toBe(false);
-    expect(getSheet(getDb(), 's1', '777', new Date().toISOString())).toBeUndefined();
+    expect(pageText(getDb(), 's1', '777')).toBeUndefined();
   });
 });

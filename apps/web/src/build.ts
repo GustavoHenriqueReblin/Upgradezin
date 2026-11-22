@@ -35,47 +35,6 @@ export interface BuildItem {
   qty?: number;
   /** Peça que a pessoa já tem (importada do CPU-Z): sem ofertas, conta na compatibilidade e fica fora do total. */
   current?: true;
-  /** A ficha técnica já foi consultada (medidas em `specs`, quando a loja informa). */
-  sheet?: true;
-}
-
-/**
- * Peças com medidas físicas na ficha técnica da loja e com quem elas precisam caber: placa de
- * vídeo × gabinete (e o conector × fonte), cooler × gabinete. A ficha só é pedida quando a outra
- * peça já está na montagem.
- */
-const SHEET_PAIRS: Partial<Record<BuildSlot, BuildSlot[]>> = { gpu: ['case', 'psu'], cooler: ['case'], case: ['gpu', 'cooler'] };
-
-/** Fichas a pedir: "categoria:loja:código" de uma oferta de cada peça (na ordem das lojas). */
-export function sheetRequests(b: SavedBuild): { slot: BuildSlot; item: string }[] {
-  const out: { slot: BuildSlot; item: string }[] = [];
-  for (const [slot, pairs] of Object.entries(SHEET_PAIRS) as [BuildSlot, BuildSlot[]][]) {
-    const it = b[slot];
-    if (!it || it.current || it.sheet || !pairs.some((p) => b[p])) continue;
-    const offer = [...it.offers].sort((x, y) => STORES.indexOf(x.store) - STORES.indexOf(y.store))[0];
-    if (offer && /^[\w-]{1,64}$/.test(offer.storeSku)) out.push({ slot, item: `${slot}:${offer.store}:${offer.storeSku}` });
-  }
-  return out;
-}
-
-/** Junta as medidas das fichas às peças e marca como consultadas (mesmo sem ficha, para não pedir de novo). */
-export function applySheets(
-  b: SavedBuild,
-  requests: { slot: BuildSlot; item: string }[],
-  results: Record<string, { specs?: Partial<Specs> } | null>,
-): SavedBuild {
-  const next = { ...b };
-  let changed = false;
-  for (const { slot, item } of requests) {
-    const it = next[slot];
-    // A peça mudou enquanto a ficha vinha: a resposta não vale para a nova. Sem resposta para ela
-    // (falha passageira no servidor): fica sem marcar, para pedir de novo depois.
-    if (!it || !it.offers.some((o) => item === `${slot}:${o.store}:${o.storeSku}`) || !(item in results)) continue;
-    next[slot] = { ...it, specs: { ...it.specs, ...(results[item]?.specs ?? {}) }, sheet: true };
-    changed = true;
-  }
-  // Nada mudou: a mesma montagem (outro objeto faria a tela pedir as fichas de novo, sem fim).
-  return changed ? next : b;
 }
 
 /** Peças que aceitam quantidade: memória (pentes avulsos iguais, ex. 2× 8 GB). */

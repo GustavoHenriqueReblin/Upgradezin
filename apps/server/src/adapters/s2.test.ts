@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSpecSheet, type Offer } from '@upgradezin/shared';
+import { readSheet, sheetText, type Offer } from '@upgradezin/shared';
 import { grabJson, mapS2Item, parseS2Rsc, rscFromHtml, s2Redirect, s2SheetFromHtml } from './s2.ts';
 import { COLLECTED_AT, fixture } from './fixtures.ts';
 
@@ -99,11 +99,27 @@ describe('S2: placa-mãe', () => {
 });
 
 describe('S2: ficha técnica da página do produto', () => {
-  it('tabela de especificações: rótulo e valor juntos na mesma linha, lida pelo parseSpecSheet', () => {
-    expect(parseSpecSheet('gpu', s2SheetFromHtml(fixture('s2-product-gpu.html'))!)).toEqual({ specs: { gpuLength: 228, gpu16Pin: false }, mpn: 'DUAL-RTX5060-8G-NAC' });
-    expect(parseSpecSheet('case', s2SheetFromHtml(fixture('s2-product-case.html'))!)).toEqual({
-      specs: { caseMaxCooler: 165, caseMaxGpu: 360, caseRadiators: [240, 360] },
-      mpn: 'AG-STRIKER-A411-WH',
+  it('tabela de especificações: "Rótulo: valor" em cada linha, lida pelo leitor da ficha', () => {
+    const html = s2SheetFromHtml(fixture('s2-product-gpu.html'))!;
+    expect(html).toContain('<p>Marca:');
+    expect(readSheet('gpu', sheetText(html))).toEqual({
+      brand: 'Asus',
+      model: 'DUAL-RTX5060-8G-NAC',
+      chip: 'RTX 5060',
+      vramGb: 8,
+      memType: 'GDDR7',
+      busBits: 128,
+      boostMhz: 2527,
+      lengthMm: 228,
+      pcie: '5.0',
+      power16Pin: false,
+    });
+    expect(readSheet('case', sheetText(s2SheetFromHtml(fixture('s2-product-case.html'))!))).toMatchObject({
+      brand: 'Acegeek',
+      mbFormats: 'ATX,Micro-ATX,Mini-ITX',
+      maxGpuMm: 360,
+      maxCoolerMm: 165,
+      radiators: '240,360',
     });
   });
 

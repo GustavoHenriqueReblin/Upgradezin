@@ -196,7 +196,7 @@ describe('varrer agora e painel das lojas', () => {
     }
   });
 
-  it('"Ler ficha": recusa produto fora do catálogo, categoria sem ficha física e loja em pausa', () => {
+  it('"Ler ficha": qualquer categoria; recusa produto fora do catálogo, loja desligada e loja em pausa', () => {
     const db = openDb(':memory:');
     useStoreStorage(db);
     useBackoffStorage([], () => {});
@@ -207,7 +207,6 @@ describe('varrer agora e painel das lojas', () => {
       at: new Date().toISOString(),
     });
     expect(readSheetNow(db, 's1', 'nao-existe')).toMatchObject({ ok: false, error: expect.stringContaining('não encontrado') });
-    expect(readSheetNow(db, 's1', 'p1')).toMatchObject({ ok: false, error: expect.stringContaining('ficha física') });
     expect(readSheetNow(db, 's9' as 's1', 'p1')).toMatchObject({ ok: false });
     pauseStore('s1', 60);
     saveCollection(db, {

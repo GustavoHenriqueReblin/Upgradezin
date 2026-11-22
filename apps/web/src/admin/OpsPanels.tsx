@@ -34,7 +34,7 @@ export function ActivityPanel({ onUnauthorized }: Props) {
   // Cada busca no site na hora; telas abertas e limites (que não avisam) a cada 10 s.
   useLiveReload(['activity'], load, { fallbackMs: 10_000 });
   if (!a) return <p className="text-zinc-500">Carregando…</p>;
-  const limits = a.atLimit.force + a.atLimit.text + a.atLimit.sheets + a.atLimit.share;
+  const limits = a.atLimit.force + a.atLimit.text + a.atLimit.share;
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-4">
@@ -43,7 +43,7 @@ export function ActivityPanel({ onUnauthorized }: Props) {
         <Stat label="Pessoas desde o reinício" value={a.people} />
         <Stat
           label="No limite agora"
-          value={limits ? `${limits} (atualizar ${a.atLimit.force}, texto ${a.atLimit.text}, fichas ${a.atLimit.sheets}, links ${a.atLimit.share})` : 'ninguém'}
+          value={limits ? `${limits} (atualizar ${a.atLimit.force}, texto ${a.atLimit.text}, links ${a.atLimit.share})` : 'ninguém'}
         />
       </div>
       <Box title="Buscas recentes">

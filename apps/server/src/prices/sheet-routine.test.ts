@@ -8,7 +8,7 @@ import { useStoreStorage } from '../stores.ts';
 import { saveCollection } from './prices.ts';
 import { routineNextAt, setRoutineSettings, stopRoutine } from './routine.ts';
 import { setSheetRoutine, sheetDelay, sheetNextAt, sheetRoutineSettings, sheetTick, stopSheetRoutine, useSheetRoutineStorage } from './sheet-routine.ts';
-import { getSheet } from './sheets.ts';
+import { productSheet } from './sheets.ts';
 
 afterEach(() => {
   usePageLoader(null);
@@ -76,9 +76,8 @@ describe('rotina de fichas técnicas (separada da coleta)', () => {
     await sheetTick(sheetNextAt('s1')!);
     expect(urls).toHaveLength(2);
     expect(urls.every((u) => u.includes('/produto/'))).toBe(true); // nenhuma busca nem varredura
-    const now = new Date().toISOString();
-    expect(getSheet(getDb(), 's1', '501', now)?.specs.gpuLength).toBeGreaterThan(200);
-    expect(getSheet(getDb(), 's1', '502', now)?.specs.gpuLength).toBeGreaterThan(200);
+    expect(productSheet(getDb(), 's1', '501')?.values.lengthMm).toBeGreaterThan(200);
+    expect(productSheet(getDb(), 's1', '502')?.values.lengthMm).toBeGreaterThan(200);
   });
 
   it('só nas lojas marcadas; desligada, para; loja em pausa espera', async () => {

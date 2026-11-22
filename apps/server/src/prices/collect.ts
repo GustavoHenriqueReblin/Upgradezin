@@ -1,4 +1,4 @@
-import { parseSpecSheet, type AttemptKind, type AttemptOrigin, type CategoryId, type Offer, type SpecSheet, type StoreId } from '@upgradezin/shared';
+import { sheetText, type AttemptKind, type AttemptOrigin, type CategoryId, type Offer, type SheetValues, type StoreId } from '@upgradezin/shared';
 import { s1 } from '../adapters/s1.ts';
 import { s2 } from '../adapters/s2.ts';
 import { s3 } from '../adapters/s3.ts';
@@ -10,7 +10,7 @@ import { BlockedError, PageLimitError, registerBlock, withStore } from '../pace.
 import { storeConfig, sweepPaths } from '../stores.ts';
 import { recordAttempt, type NewAttempt } from './attempts.ts';
 import { saveCollection } from './prices.ts';
-import { productSheet, saveSheet } from './sheets.ts';
+import { savePage } from './sheets.ts';
 import { recordSweepFailure, recordSweepPage } from './sweep.ts';
 
 const ADAPTERS: Record<StoreId, StoreAdapter> = { s1, s2, s3 };
@@ -165,24 +165,21 @@ export function collectSweepPage(
 export const canReadSheet = (store: StoreId) => !!ADAPTERS[store].productSheet;
 
 /**
- * Ficha técnica de um produto: do banco, se já lida (vazia: só se lida há menos de
- * SHEET_MAX_AGE_DAYS); senão abre a página (na fila da loja, com o intervalo de sempre) e guarda,
- * inclusive quando não há ficha. A montagem pede com prioridade; a rotina, na vez dela.
+ * Lê a ficha técnica de um anúncio: abre a página do produto (na fila da loja, com o intervalo de
+ * sempre), guarda o texto da ficha e os campos lidos (prices/sheets.ts), inclusive quando a página
+ * não tem ficha. Devolve os campos. A rotina pede na vez dela; o admin ("Ler ficha"), na frente.
  */
 export async function sheetOf(
   store: StoreId,
   sku: string,
   category: CategoryId,
   signal: AbortSignal,
-  opts: { origin?: 'search' | 'routine' | 'admin'; force?: boolean } = {},
-): Promise<SpecSheet | null> {
-  const db = getDb();
-  // force (admin, "Ler ficha"): abre a página mesmo com ficha guardada.
-  const cached = opts.force ? undefined : productSheet(db, store, sku, new Date(Date.now() - config.SHEET_MAX_AGE_DAYS * 86_400_000).toISOString())?.sheet;
-  if (cached) return cached;
+  opts: { origin?: 'routine' | 'admin' } = {},
+): Promise<{ values: SheetValues; hasSheet: boolean } | null> {
   const adapter = ADAPTERS[store];
   if (!adapter.productSheet) return null;
-  const origin = opts.origin ?? 'search';
+  const db = getDb();
+  const origin = opts.origin ?? 'routine';
   // Endereço do anúncio (a S2 abre a página pelo nome do produto, não pelo código).
   const url = (db.prepare('SELECT url FROM listings WHERE store = ? AND store_sku = ?').get(store, sku) as { url: string } | undefined)?.url;
   return withStore(store, signal, async () => {
@@ -190,12 +187,12 @@ export async function sheetOf(
     const base = { store, kind: 'sheet' as const, origin, category, term: sku };
     try {
       const html = await adapter.productSheet!({ sku, ...(url && { url }) }, signal);
-      const sheet = html ? parseSpecSheet(category, html) : { specs: {} };
-      saveSheet(db, store, sku, sheet);
-      // Ficha sem nenhuma medida: guarda a página inteira para conferir se faltou no anúncio ou no leitor (só com DEBUG_DUMPS).
-      if (!Object.keys(sheet.specs).length) await saveDebugHtml(store, lastPageHtml(store) ?? html ?? '', `ficha-${category}-${sku}`);
-      logAttempt(base, t0, { count: html ? 1 : 0 });
-      return sheet;
+      const text = html ? sheetText(html) : '';
+      const values = savePage(db, { store, sku, category, text: text || null });
+      // Página sem ficha: guarda a página inteira para conferir se faltou no anúncio ou no leitor (só com DEBUG_DUMPS).
+      if (!text) await saveDebugHtml(store, lastPageHtml(store) ?? html ?? '', `ficha-${category}-${sku}`);
+      logAttempt(base, t0, { count: text ? 1 : 0 });
+      return { values, hasSheet: !!text };
     } catch (err) {
       if (!didNotRun(err, signal)) logAttempt(base, t0, { count: 0, err });
       if (err instanceof BlockedError && !err.paused && !signal.aborted) registerBlock(store, err.reason);

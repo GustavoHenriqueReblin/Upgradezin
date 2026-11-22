@@ -8,13 +8,13 @@ import { nextSheets, SHEET_SCOPE_DAYS } from './sheets.ts';
 
 /**
  * Rotina de fichas técnicas, separada da rotina de coleta: chave, lojas e intervalo próprios (admin,
- * aba Produtos). Em cada loja, lê uma ficha do catálogo (placa de vídeo, gabinete, cooler) ainda não
- * lida a cada `seconds` segundos (+ até 20% aleatório), contados do fim da anterior. Cada ficha é lida
- * uma vez (a página sem ficha volta depois de SHEET_MAX_AGE_DAYS).
+ * aba Fichas). Em cada loja, abre a página de um produto do catálogo (todas as categorias) cuja
+ * ficha ainda não está completa a cada `seconds` segundos (+ até 20% aleatório), contados do fim da
+ * anterior. Cada página é lida uma vez: o texto fica guardado e é relido quando o leitor muda
+ * (prices/sheets.ts). Ordem: o produto que a coleta achou há menos tempo, em estoque antes.
  *
- * Divide com o resto só o que é da loja: a fila (uma página por vez; a busca do site passa na
- * frente), o intervalo entre páginas, o limite de páginas por hora (fica de fora a parte da busca do
- * site, como na coleta) e a pausa por bloqueio.
+ * Divide com o resto só o que é da loja: a fila (uma página por vez; o "Ler ficha" do admin passa
+ * na frente), o intervalo entre páginas, o limite de páginas por hora e a pausa por bloqueio.
  */
 
 /** De quanto em quanto tempo a agenda é conferida. */
@@ -118,15 +118,15 @@ async function readOne(store: StoreId, signal: AbortSignal): Promise<void> {
   }
   const now = Date.now();
   const iso = (ms: number) => new Date(ms).toISOString();
-  const [next] = nextSheets(getDb(), store, iso(now - SHEET_SCOPE_DAYS * 86_400_000), iso(now - config.SHEET_MAX_AGE_DAYS * 86_400_000));
+  const [next] = nextSheets(getDb(), store, iso(now - SHEET_SCOPE_DAYS * 86_400_000));
   if (!next) {
     nextAt.set(store, Date.now() + IDLE_MS); // nada a ler: confere de novo depois (produto novo no catálogo)
     return;
   }
   try {
-    const sheet = await sheetOf(store, next.sku, next.category, signal, { origin: 'routine' });
+    const r = await sheetOf(store, next.sku, next.category, signal, { origin: 'routine' });
     registerSuccess(store);
-    console.info(`[ficha ${store}] ${next.category} ${next.sku}: ${sheet && (Object.keys(sheet.specs).length || sheet.mpn) ? 'lida' : 'página sem ficha'}`);
+    console.info(`[ficha ${store}] ${next.category} ${next.sku}: ${!r?.hasSheet ? 'página sem ficha' : `${Object.keys(r.values).length} campos`}`);
   } catch (err) {
     if (!signal.aborted && !(err instanceof BlockedError) && !(err instanceof PageLimitError)) console.error(`[ficha ${store}] ${next.category} ${next.sku}:`, err);
   }

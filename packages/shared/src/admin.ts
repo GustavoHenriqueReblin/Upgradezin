@@ -1,4 +1,4 @@
-import type { SpecSheet } from './specsheet.ts';
+import type { SheetValues } from './sheet/fields.ts';
 import type { BlockReason, CategoryId, Specs, StoreId } from './types.ts';
 
 /** Tipos das respostas do admin (/api/admin), usados pelo servidor e pela tela /admin. */
@@ -215,13 +215,6 @@ export interface PerfGap {
   store: StoreId;
 }
 
-/**
- * Ficha técnica de um produto do catálogo: lida (com medidas ou part number), de outra loja (outro
- * anúncio do mesmo produto tem a ficha com medidas: vale para este), vazia (a página não tinha ficha),
- * ainda não lida, ou a categoria não tem ficha física (só placa de vídeo, gabinete e cooler têm).
- */
-export type SheetStatus = 'ok' | 'shared' | 'empty' | 'missing' | 'na';
-
 /** Um produto do catálogo (anúncio de uma loja) para a aba Produtos do admin. */
 export interface AdminProduct {
   store: StoreId;
@@ -238,11 +231,6 @@ export interface AdminProduct {
   specs: Specs;
   /** Índice de desempenho em jogos (processador e placa de vídeo), quando a tabela conhece o modelo. */
   perf?: number;
-  sheetStatus: SheetStatus;
-  sheet?: SpecSheet;
-  sheetAt?: string;
-  /** Ficha de outro anúncio do mesmo produto (status 'shared'): de onde veio. */
-  sheetFrom?: { store: StoreId; sku: string };
   /** Chave do produto (mesmo part number em todas as lojas) e quantos anúncios, nesta e nas outras lojas, são ele. */
   productKey?: string;
   siblings?: { store: StoreId; sku: string; title: string; url: string }[];
@@ -266,26 +254,23 @@ export type AdminProductPage = AdminPage<AdminProduct>;
 export interface AdminProductFilter {
   store?: StoreId;
   category?: CategoryId;
-  sheet?: SheetStatus;
   inStock?: boolean;
   q?: string;
   page?: number;
   pageSize?: number;
 }
 
-/** Andamento das fichas numa loja (produtos de placa de vídeo, gabinete e cooler vistos nos últimos 14 dias). */
+/** Andamento da rotina de fichas numa loja. */
 export interface SheetStoreStatus {
   store: StoreId;
   name: string;
   /** A loja sabe ler a ficha da página do produto. */
   canRead: boolean;
-  total: number;
-  ok: number;
-  /** Sem ficha própria, mas com a de outro anúncio do mesmo produto (outra loja): não precisa ler. */
-  shared: number;
-  empty: number;
-  missing: number;
-  /** Fichas lidas na última hora (rotina, montagem e admin) e a última. */
+  /** Páginas de produto lidas nesta loja (com e sem ficha). */
+  read: number;
+  /** Páginas na fila: anúncios desta loja de produtos sem ficha completa, ainda não lidos. */
+  queue: number;
+  /** Fichas lidas na última hora (rotina e admin) e a última. */
   lastHour: number;
   lastAt: string | null;
   /** Próxima ficha da rotina nesta loja (null: a rotina não está rodando nela). */
@@ -297,6 +282,71 @@ export interface SheetRoutineStatus extends SheetRoutineSettings {
   /** Alguma loja lendo ficha agora. */
   busy: boolean;
   progress: SheetStoreStatus[];
+}
+
+/**
+ * Ficha de um produto: completa (todos os campos principais), incompleta (lida, mas faltam
+ * principais) ou não lida (nenhuma página do produto lida ainda).
+ */
+export type SheetState = 'complete' | 'incomplete' | 'unread';
+
+/** Cobertura das fichas numa categoria (produtos vistos nos últimos 14 dias). */
+export interface SheetCoverageRow {
+  category: CategoryId;
+  name: string;
+  products: number;
+  complete: number;
+  incomplete: number;
+  unread: number;
+  /** Incompletos com as páginas de todas as lojas já lidas: só a busca na web completaria. */
+  exhausted: number;
+  /** Campo principal -> quantos produtos lidos ainda não o têm. */
+  missing: Record<string, number>;
+}
+
+/** Um produto (os anúncios do mesmo produto nas lojas) com a ficha juntada, para a aba Fichas. */
+export interface SheetProduct {
+  /** Chave do produto (product_key) ou "id:<anúncio>". */
+  key: string;
+  category: CategoryId;
+  title: string;
+  state: SheetState;
+  values: SheetValues;
+  /** De qual página (loja + código) veio cada campo. */
+  origin: Record<string, { store: StoreId; sku: string }>;
+  /** Campos principais que faltam. */
+  missing: string[];
+  listings: {
+    store: StoreId;
+    sku: string;
+    title: string;
+    url: string;
+    inStock: boolean;
+    firstSeenAt: string;
+    /** A página já foi lida (e quando; hasSheet: tinha ficha). */
+    read: boolean;
+    at?: string;
+    hasSheet?: boolean;
+  }[];
+}
+
+export type SheetProductPage = AdminPage<SheetProduct>;
+
+/** Filtros da lista de fichas (uma categoria por vez: cada uma tem seus campos). */
+export interface SheetProductFilter {
+  category: CategoryId;
+  state?: SheetState;
+  q?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+/** Texto guardado da ficha de uma página (para conferir o que o leitor leu). */
+export interface SheetPageText {
+  store: StoreId;
+  sku: string;
+  text: string | null;
+  at: string;
 }
 
 /** Consultas por hora numa loja (linha do tempo de bloqueios). */
@@ -330,7 +380,7 @@ export interface ActivityInfo {
   searchesOpen: number;
   watchesOpen: number;
   /** Pessoas no limite agora, por limite. */
-  atLimit: { force: number; text: number; sheets: number; share: number };
+  atLimit: { force: number; text: number; share: number };
 }
 
 /** Um arquivo em data/backups. */

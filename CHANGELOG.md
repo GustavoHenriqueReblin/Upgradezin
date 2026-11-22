@@ -5,6 +5,8 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 ## [Não lançado]
 
 ### Adicionado
+- Fichas técnicas refeitas do zero, para todas as categorias: cada uma com seus campos fixos, só o indispensável para quem monta ou faz upgrade (placa-mãe: chipset, soquete, formato, memória, PCIe, M.2, SATA, rede; processador: soquete, arquitetura, núcleos, threads, clocks, cache, TDP, vídeo integrado; placa de vídeo: chip, VRAM, memória, barramento, clocks, consumo, comprimento; memória, SSD, fonte, gabinete e cooler com os seus). Uma tabela por categoria no banco, uma coluna por campo: mudar a lista de campos cria ou apaga a coluna sozinho. A ficha de um produto junta as páginas de todas as lojas que o vendem (mesmo part number), campo a campo, guardando de onde veio cada um. O texto da ficha fica guardado: melhorar o leitor relê tudo sem abrir as páginas de novo. A rotina de fichas lê todas as categorias, o que a coleta achou há menos tempo primeiro, e só abre página de produto sem ficha completa.
+- Admin, aba Fichas: a rotina de fichas (saiu da aba Produtos), a cobertura por categoria (completas, incompletas, não lidas, as que só a web completaria e os campos que mais faltam) e os produtos de cada categoria com os campos lidos, de onde veio cada um, o texto guardado da página e "Ler ficha".
 - Tabela de desempenho: RX 9050 e RX 7650 GRE (índice pelas vizinhas na TechPowerUp, consumo e PCIe x8 da 7650 GRE).
 - Rotina de preços só pelas páginas de categoria das lojas, nas três lojas e em qualquer modo: lê a lista de cada categoria até acabar o que está em estoque (as lojas listam os em estoque primeiro) e recomeça a cada `ROUTINE_REFRESH_H`. Anúncio novo só entra em estoque; no fim de cada volta, o que estava em estoque e não apareceu passa a "sem estoque" (com ponto no histórico), e volta ao estoque sozinho na volta seguinte em que aparecer. Uma categoria pode ter mais de um caminho na loja (separados por espaço, em Lojas). A S3 ganhou leitor de página de categoria (os cards dela não trazem a marca: lida do título) e do "ver mais".
 - Admin, Coleta: "Varrer agora" lê uma categoria inteira numa loja na hora (serve para conferir um caminho novo). Cobertura: anúncios em estoque, volta em andamento e última volta completa por loja e categoria.
@@ -40,6 +42,7 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 - O modo da loja passa a valer só para a rotina. Antes, no reduzido e no lento, a busca do site também esperava o intervalo do modo; agora isso é a "Busca ao vivo", independente do modo. A chave `slowlast:` do banco deixou de ser usada e é apagada ao subir.
 
 ### Removido
+- Ficha técnica antiga (só medidas físicas de placa de vídeo, gabinete e cooler) e tudo o que era dela: a tabela no banco, o `GET /api/sheets` da montagem, o limite `SHEETS_PER_HOUR`, a releitura de página vazia depois de `SHEET_MAX_AGE_DAYS` e o `pnpm sheet-dumps`. O site fica em manutenção (só o admin) enquanto o banco de fichas novo é montado.
 - Termos automáticos: a rotina não busca mais termos nas lojas (traziam kits, PCs montados e acessórios e só o topo de cada busca). Saem as tabelas de termos (migração 12), a aba Termos e o "coletar termo" do admin, e `ROUTINE_TEXT_DAYS`, `ROUTINE_SWEEP_REFRESH_H` e `ROUTINE_SWEEP_PAGES_PER_HOUR`.
 
 ## [0.3.0] - 2026-11-21
