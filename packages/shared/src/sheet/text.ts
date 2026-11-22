@@ -104,6 +104,12 @@ export function sheetDoc(text: string): SheetDoc {
       section = l;
       continue;
     }
+    // Título sem dois-pontos e itens com rótulo abaixo ("Dimensões" / "- Altura: 485 mm"): é a seção.
+    if (HEADING.test(l) && /:/.test(lines[i + 1] ?? '') && !(current && !current.value)) {
+      section = l;
+      current = null;
+      continue;
+    }
     // Continuação do valor anterior ("Velocidade: 2x1R DDR5-5600" / "2x2R DDR5-5600").
     if (current && extra < 12 && l.length <= 200) {
       current.value = current.value ? `${current.value} | ${l}` : l;

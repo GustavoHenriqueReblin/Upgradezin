@@ -230,6 +230,40 @@ describe('leitor da ficha', () => {
     expect(readSheet('cooler', lines('Radiador: Material: Alumínio', 'Dimensões: 317 (C) x 138 (L) x 38 (A) mm')).radiatorMm).toBe(280);
   });
 
+  it('formatos achados nas fichas lidas pela rotina (nov/2026)', () => {
+    // Placa-mãe: máximo de memória em vários jeitos, "PCIEX16 4.0", "2*SATA3", M.2 com letra, rede pelo chip, chipset só no modelo.
+    expect(readSheet('motherboard', lines('Memória: 4 x slots memória DIMM, Max. 128GB, DDR5', 'Máx. capacidade de memória do sistema: 96 GB'))).toMatchObject({ ramSlots: 4, ramMaxGb: 128 });
+    expect(readSheet('motherboard', 'Memória: 4 x DDR5 DIMM sockets supporting up to 192 GB').ramMaxGb).toBe(192);
+    expect(readSheet('motherboard', 'Portas de extensão : 1x PCIEX16 4.0').pcieX16).toBe('4.0');
+    expect(readSheet('motherboard', 'PCI_E1 Gen PCIe 4.0 suporta até x16 (da CPU)').pcieX16).toBe('4.0');
+    expect(readSheet('motherboard', 'Armazenamento: 2*SATA3').sataPorts).toBe(2);
+    expect(readSheet('motherboard', lines('Slot M.2_A (chave M): PCIe 5.0 x4', 'Slot M.2_B (chave M): PCIe 5.0 x4', 'Slot M.2_C (chave M): PCIe 4.0 x2')).m2Slots).toBe(3);
+    expect(readSheet('motherboard', 'Rede: Placa de rede REALTEK 8125BG integrada').lan).toBe('2.5 Gb');
+    expect(readSheet('motherboard', 'Modelo: PRO-A620AM-B-EVO')).toMatchObject({ chipset: 'A620', socket: 'AM5' });
+    // Placa de vídeo da S1: rótulo sem dois-pontos, valor na frase, clock "do núcleo", medida em polegadas e cm.
+    expect(readSheet('gpu', lines('- Memória de Vídeo 12GB GDDR6', '- Interface de Memória 192 bits', 'Clock do Núcleo: 2587 MHz (Reference Card: 2572 MHz)'))).toMatchObject({ vramGb: 12, busBits: 192, boostMhz: 2587 });
+    expect(readSheet('gpu', lines('Clock Gráfico', '2655MHz Extreme Performance', '2640MHz Boost')).boostMhz).toBe(2640);
+    expect(readSheet('gpu', 'Dimensões 7,87 "x 4,84" x 1,496 "Polegada 20 x 12,3 x 3,8 centímetros PSU recomendado 650W').lengthMm).toBe(200);
+    expect(readSheet('gpu', 'Dimensões: Dimensão do cartão 35 x 14 x 6,7').lengthMm).toBe(350);
+    expect(readSheet('gpu', 'Equipada com 2560 CUDA CORES, 8GB DE MEMÓRIA GDDR6 e interface PCI EXPRESS 5.0').vramGb).toBe(8);
+    // Memória: capacidade sem rótulo, "Densidade", frequência sem unidade.
+    expect(readSheet('ram', lines('- 32 GB (2 x 16 GB)', '- Velocidade: 6000'))).toMatchObject({ capacityGb: 32, modules: 2, mhz: 6000 });
+    expect(readSheet('ram', 'Densidade: 4GB').capacityGb).toBe(4);
+    // Fonte: conectores numa linha só, com vírgula; padrão solto no texto.
+    expect(readSheet('psu', '- Conectores: 1x 20+4 Pinos ATX, 2x 4+4 Pinos CPU, 2x Sata com 4 portas, 1x Molex com 4 portas, 2x 6+2 Pinos PCIe')).toMatchObject({ eps: 2, sata: 8, pcie8: 2 });
+    expect(readSheet('psu', 'Fonte Pcyes Atx 500w Real Electro V2').standard).toBe('ATX');
+    // Gabinete: medidas separadas, folgas em cm e com decimal, "Liquidação" (tradução de clearance), frente de plástico, ventoinhas na frase.
+    expect(readSheet('case', lines('Dimensões:Largura: 200 mm', 'Altura: 370 mm', 'Comprimento: 435 mm', 'Ventoinhas:Dimensões: 120 x 120 x 25 mm')).dimensions).toBe('370 x 200 x 435');
+    expect(readSheet('case', lines('Dimensões', '- Profundidade: 420 mm', '- Largura: 225 mm', '- Altura: 485 mm')).dimensions).toBe('485 x 225 x 420');
+    expect(readSheet('case', lines('- Max. Altura Cooler: 15,0 cm', '- Max. Comprimento Placas Gráficas: 31,5 cm'))).toMatchObject({ maxCoolerMm: 150, maxGpuMm: 315 });
+    expect(readSheet('case', lines('Altura Máxima do Cooler de CPU: 163,5 mm', 'Liquidação:Cooler de CPU: 161 MM')).maxCoolerMm).toBe(164);
+    expect(readSheet('case', lines('Liquidação:Cooler de CPU: 161 MM', 'GPU: 350 mm (sem ventoinhas frontais e radiador)'))).toMatchObject({ maxCoolerMm: 161, maxGpuMm: 350 });
+    expect(readSheet('case', 'Painel frontal:Plástico').front).toBe('Fechada');
+    expect(readSheet('case', lines('Painel frontal com USB Tipo-C', 'Painel frontal em malha de alto desempenho')).front).toBe('Mesh');
+    expect(readSheet('case', 'Inclui 3 ventoinhas HP140 PWM pré-instaladas').fansIncluded).toBe(3);
+    expect(readSheet('case', 'GABINETE COOLER MASTER ELITE 301 (COM 3 FANS ARGB)').fansIncluded).toBe(3);
+  });
+
   it('marca e modelo; sem nada reconhecido, nada (nunca chuta)', () => {
     expect(readSheet('ssd', lines('MARCA: LEXAR', 'MODELO: NQ100 256GB', 'P/N: LNQ100X256G-RNNNG'))).toEqual({ brand: 'Lexar', model: 'LNQ100X256G-RNNNG' });
     expect(readSheet('cpu', 'Garantia: 12 meses')).toEqual({});

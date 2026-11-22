@@ -107,7 +107,7 @@ export const SHEET_FIELDS: Record<CategoryId, SheetField[]> = {
     f('sata', 'Conectores SATA', 'int', undefined, M),
   ],
   case: [
-    f('formFactor', 'Formato', 'text', undefined, M),
+    f('formFactor', 'Tamanho', 'text'),
     f('mbFormats', 'Placas-mãe', 'list', undefined, M),
     f('maxGpuMm', 'Placa de vídeo até', 'int', 'mm', M),
     f('maxCoolerMm', 'Cooler até', 'int', 'mm', M),

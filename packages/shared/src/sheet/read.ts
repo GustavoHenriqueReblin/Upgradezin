@@ -11,7 +11,7 @@ import { dec, firstInt, isNo, numberWith, pick, sheetDoc, thousands, type SheetD
  *
  * READER_VERSION: mudou o leitor ou os campos, sobe o número: o servidor relê as fichas guardadas.
  */
-export const READER_VERSION = 2;
+export const READER_VERSION = 3;
 
 type Reader = (doc: SheetDoc) => SheetValues;
 
@@ -132,35 +132,43 @@ const formOf = (s: string) => {
 
 const motherboard: Reader = (doc) => {
   const chipset =
-    pick(doc, [/^chipset$/], (v) => v.match(CHIPSET)?.[1]?.toUpperCase()) ?? doc.all.match(new RegExp(`chipset[^\\n]{0,30}?${CHIPSET.source}`))?.[1]?.toUpperCase();
+    pick(doc, [/^chipset$/], (v) => v.match(CHIPSET)?.[1]?.toUpperCase()) ??
+    doc.all.match(new RegExp(`chipset[^\\n]{0,30}?${CHIPSET.source}`))?.[1]?.toUpperCase() ??
+    // Só no modelo ("PRO-A620AM-B-EVO", "B760M-K").
+    pick(doc, [/^modelo$|^model$|part ?number/], (v) => v.match(new RegExp(`(?:^|[^a-z0-9])${CHIPSET.source.slice(2, -2)}(?!\\d)`))?.[1]?.toUpperCase());
   const socket = pick(doc, [/soquete|socket|^cpu|processador/], (v, l) => socketOf(`${l} ${v}`)) ?? socketOf(doc.all) ?? socketOfChipset(chipset);
   const formFactor = pick(doc, [/formato|fator de forma|form factor|^tipo$|dimens/], (v) => formOf(v)) ?? formOf(doc.all.match(/(fator de forma|formato)[^\n]{0,40}/)?.[0] ?? '');
   const memText = [...doc.pairs.filter((p) => /memoria|memory|dimm/.test(`${p.section} ${p.label}`)).map((p) => `${p.label} ${p.value}`), doc.all].join('\n');
   const ramType = memText.match(/ddr([345])/)?.[0]?.toUpperCase();
   const slotsM =
-    memText.match(/(\d)\s*(?:x|\*)?\s*(?:slots?|soquetes?|memorias?)\s*(?:de memoria\s*)?(?:ddr\d\s*)?(?:u?dimm|ddr\d)/) ??
+    memText.match(/(\d)\s*(?:x|\*)?\s*(?:slots?|soquetes?|memorias?)\s*(?:(?:de )?memoria\s*)?(?:ddr\d\s*)?(?:u?dimm|ddr\d)/) ??
     memText.match(/(\d)\s*x?\s*(?:u?dimm|ddr\d)\b/) ??
     memText.match(/slots? de memoria:?\s*(\d)/);
   const ramSlots = inRange(slotsM ? Number(slotsM[1]) : undefined, 1, 8);
-  const maxM = memText.match(/(?:max(?:imo|ima)?\.?|ate|capacidade maxima[^\d]{0,30}?)\s*(\d{2,3})\s*gb/) ?? memText.match(/(\d{2,3})\s*gb\s*(?:de memoria|max)/);
+  // "máx. 64 GB", "Máx. capacidade de memória do sistema: 96 GB", "up to 192 GB", "Máximo suportado 96GB".
+  const maxM = memText.match(/(?:max\w*\.?|ate|up to|capacidade)[^\d\n]{0,45}?(\d{2,3})\s*gb/) ?? memText.match(/(\d{2,3})\s*gb\s*(?:de memoria|max)/);
   const ramMaxGb = inRange(maxM ? Number(maxM[1]) : undefined, 16, 512);
   const mhz = [...memText.matchAll(/(\d{4})\+?\s*(?:\(oc\)|mhz|mt\/s)/g)].map((m) => Number(m[1])).filter((n) => n >= 1600 && n <= 12000);
   const ramMaxMhz = mhz.length ? Math.max(...mhz) : undefined;
   // PCIe do slot x16 principal: a maior versão citada com x16.
-  const x16 = [...doc.all.matchAll(/pci-?\s*e(?:xpress)?\s*(?:gen\s*)?(\d)(?:\.0)?(?:\s*\/\s*\d\.0)?\s*x\s*16|x16[^\n]{0,40}?pcie\s*(\d)\.0|pci-?e(?:xpress)?\s*x16[^\n]{0,50}?pcie\s*(\d)\.0|x16\s*gen\s*(\d)/g)].map(
-    (m) => Number(m[1] ?? m[2] ?? m[3] ?? m[4]),
-  );
+  // Também "1x PCIEX16 4.0" e "PCI_E1 Gen PCIe 4.0 suporta até x16".
+  const x16 = [
+    ...doc.all.matchAll(
+      /pci-?\s*e(?:xpress)?\s*(?:gen\s*)?(\d)(?:\.0)?(?:\s*\/\s*\d\.0)?\s*x\s*16|x16[^\n]{0,40}?pcie\s*(\d)\.0|pci-?e(?:xpress)?\s*x16[^\n]{0,50}?pcie\s*(\d)\.0|x16\s*gen\s*(\d)|pciex16\s*(\d)\.0|pcie\s*(\d)\.0[^\n]{0,20}x16/g,
+    ),
+  ].map((m) => Number(m[1] ?? m[2] ?? m[3] ?? m[4] ?? m[5] ?? m[6]));
   const pcieX16 = x16.length ? `${Math.max(...x16)}.0` : undefined;
   // M.2: total declarado ("2x M.2", "Suporta 2 slots M.2") ou os slots numerados (M.2_1, M2_2).
   const m2Total = [...doc.all.matchAll(/(\d)\s*(?:x\s*)?(?:slots?\s*|soquetes?\s*|conectores?\s*)?m\.?2\b/g)].map((m) => Number(m[1]));
-  const m2Named = new Set([...doc.all.matchAll(/\bm\.?2_(\d)|\bm2[a-z]?_(?:cpu|sb|\d)/g)].map((m) => m[0]));
+  const m2Named = new Set([...doc.all.matchAll(/\bm\.?2_([a-z\d])\b|\bm2[a-z]?_(?:cpu|sb|\d)/g)].map((m) => m[0]));
   const m2Slots = inRange(m2Total.length ? Math.max(...m2Total) : m2Named.size || (/\bm\.2\b/.test(doc.all) ? 1 : undefined), 1, 8);
   const m2v = [...doc.all.matchAll(/m\.?2[^\n]{0,80}?pcie\s*(?:gen\s*)?(\d)(?:\.0)?\s*x\s*[24]/g)].map((m) => Number(m[1]));
   const m2Pcie = m2v.length ? `${Math.max(...m2v)}.0` : undefined;
-  const sataM = [...doc.all.matchAll(/(\d)\s*x?\s*(?:portas?|conectores?)?\s*sata/g)].map((m) => Number(m[1]));
+  // "4x portas SATA", "2*SATA3", "2x slot SATA 6G".
+  const sataM = [...doc.all.matchAll(/(\d)\s*[x*]?\s*(?:portas?|conectores?|slots?)?\s*sata/g)].map((m) => Number(m[1]));
   const sataPorts = inRange(sataM.length ? Math.max(...sataM) : undefined, 0, 12);
   const lanM = doc.all.match(/(10|5|2[.,]5|1)\s*g(?:b|bps|be)?\b[^\n]{0,20}?(?:lan|ethernet)|(?:lan|ethernet|rede)[^\n]{0,50}?\b(10|5|2[.,]5|1)\s*g(?:b|bps|be)?\b/);
-  const lan = lanM ? `${(lanM[1] ?? lanM[2])!.replace(',', '.')} Gb` : /gigabit|giga lan|1000 ?mbps|rtl8111/.test(doc.all) ? '1 Gb' : /rtl8125/.test(doc.all) ? '2.5 Gb' : undefined;
+  const lan = lanM ? `${(lanM[1] ?? lanM[2])!.replace(',', '.')} Gb` : /gigabit|giga lan|1000 ?mbps|(?:rtl|realtek)\s*8111/.test(doc.all) ? '1 Gb' : /(?:rtl|realtek)\s*8125/.test(doc.all) ? '2.5 Gb' : undefined;
   const wifiM = doc.all.match(/wi-?fi\s*(7|6e|6|5)\b/);
   const wifi = wifiM ? `Wi-Fi ${wifiM[1]!.toUpperCase()}` : undefined;
   const bt = doc.all.match(/bluetooth[^\d\n]{0,12}(\d\.\d)/)?.[1];
@@ -173,22 +181,25 @@ const gpu: Reader = (doc) => {
   const chip =
     pick(doc, [/^gpu$|^chip|processador grafico|^chipset$|^gpu \/|^modelo da gpu|^graphics/], (v) => extractGpuModel(v)?.model) ??
     doc.lines.map((l) => extractGpuModel(l)?.model).find(Boolean);
-  const vramGb = pick(doc, [/memoria de video|tamanho (da|de) memoria|capacidade de memoria|^memoria$|memory size|^capacidade$|^vram/], (v) => inRange(numberWith(v, /gb\b/), 1, 48));
+  // Sem rótulo com dois-pontos ("- Memória de Vídeo 12GB GDDR6") ou só na frase ("RTX 5060 8GB GDDR7").
+  const vramGb =
+    pick(doc, [/memoria de video|tamanho (da|de) memoria|capacidade de memoria|^memoria$|memory size|^capacidade$|^vram/], (v) => inRange(numberWith(v, /gb\b/), 1, 48)) ??
+    inRange(Number(doc.all.match(/memoria de video[^\n\d]{0,10}(\d{1,2})\s*gb/)?.[1] ?? doc.all.match(/\b(\d{1,2})\s*gb,?\s*(?:de\s*(?:memoria\s*)?)?g?ddr\d/)?.[1]), 1, 48);
   const memType =
     pick(doc, [/tipo (de |da )?memoria|memory type|tipo dram|memoria/], (v) => v.match(/g?ddr\d+x?/)?.[0]?.toUpperCase().replace(/^DDR/, 'GDDR')) ??
     (doc.all.match(/\bgddr\d+x?\b/)?.[0] ?? doc.all.match(/\d\s*gb,?\s*(ddr\d)\b/)?.[1])?.toUpperCase().replace(/^DDR/, 'GDDR');
-  const busBits = pick(doc, [/interface (de|da) memoria|barramento de memoria|memory bus|memoria de interface|interface de memoria \(barramento\)|bus width|^interface$|^memoria$/], (v) =>
-    inRange(numberWith(v, /-?\s*bits?/), 32, 1024),
-  );
+  const busBits =
+    pick(doc, [/interface (de|da) memoria|barramento de memoria|memory bus|memoria de interface|interface de memoria \(barramento\)|bus width|^interface$|^memoria$/], (v) => inRange(numberWith(v, /-?\s*bits?/), 32, 1024)) ??
+    inRange(Number(doc.all.match(/(?:interface de memoria|barramento|bus)[^\n\d]{0,30}(\d{2,4})\s*-?\s*bits?\b/)?.[1] ?? doc.all.match(/\b(64|96|128|160|192|256|320|384|512)\s*-?\s*bits?\b/)?.[1]), 32, 1024);
   const mhzOf = (v: string, re: RegExp) => {
     const m = v.match(re);
     return inRange(m ? thousands(m[1]!) : undefined, 300, 4000);
   };
   const boostMhz =
     pick(doc, [/boost/], (v) => mhzOf(v, /(\d[\d.,]*)\s*mhz/)) ??
-    pick(doc, [/clock|velocidade do clock|frequencia/], (v) => mhzOf(v, /boost\s*:?\s*(?:ate\s*)?(\d[\d.,]*)\s*mhz/) ?? mhzOf(v, /(\d[\d.,]*)\s*mhz\s*\(boost/)) ??
-    pick(doc, [/^clock$|^clock do motor|core clock|velocidade do clock de gpu/], (v) => mhzOf(v, /(\d[\d.,]*)\s*mhz/)) ??
-    mhzOf(doc.all, /(\d[\d.,]*)\s*mhz\s*\(boost/) ??
+    pick(doc, [/clock|velocidade do clock|frequencia/], (v) => mhzOf(v, /boost\s*:?\s*(?:ate\s*)?(\d[\d.,]*)\s*mhz/) ?? mhzOf(v, /(\d[\d.,]*)\s*mhz\s*\(?boost/)) ??
+    pick(doc, [/^clock$|^clock do motor|core clock|velocidade do clock de gpu|clock do nucleo|clock grafico|gpu clock/], (v) => mhzOf(v, /(\d[\d.,]*)\s*mhz/)) ??
+    mhzOf(doc.all, /(\d[\d.,]*)\s*mhz\s*\(?boost/) ??
     mhzOf(doc.all, /boost(?: clock)?\s*:?\s*(?:ate\s*)?(\d[\d.,]*)\s*mhz/);
   const baseMhz = pick(doc, [/clock|base/], (v, l) => (/base/.test(l) ? mhzOf(v, /(\d[\d.,]*)\s*mhz/) : mhzOf(v, /base\s*:?\s*(?:ate\s*)?(\d[\d.,]*)\s*mhz/)));
   // "Consumo de energia: 600W" em algumas fichas é a fonte recomendada: acima de 450 W não é a placa.
@@ -197,12 +208,19 @@ const gpu: Reader = (doc) => {
   );
   const psuW = pick(doc, [/psu recomendada|fonte (de alimentacao )?recomendada|recommended psu|^fonte|alimentacao recomendada|consumo de energia/], (v) => inRange(numberWith(v, /w(?:atts?)?\b/), 300, 1600));
   // Comprimento: a maior medida das dimensões da placa (em cm, se a ficha usa cm).
-  const lengthMm = pick(doc, [/dimens|card size|product size|tamanho d[aoe] (placa|cartao|produto)|^comprimento|^tamanho$|^length/], (v) => {
+  const lengthOf = (v: string) => {
     if (/caixa|embalagem|box/.test(v)) return undefined;
-    const cm = /\d\s*cm\b/.test(v) && !/mm/.test(v);
-    const nums = [...v.matchAll(/(\d{2,3}(?:[.,]\d+)?)/g)].map((m) => dec(m[1]!) * (cm ? 10 : 1)).filter((n) => n >= 100 && n <= 450);
+    // Em polegadas e cm na mesma frase: vale o cm.
+    const part = /cent[ií]metros|\bcm\b/.test(v) && /polegada|"/.test(v) ? v.slice(v.search(/polegada/) + 1) : v;
+    const cm = /\d\s*(?:cm|centimetros?)\b/.test(part) && !/\d\s*mm/.test(part);
+    let nums = [...part.matchAll(/(\d{2,3}(?:[.,]\d+)?)/g)].map((m) => dec(m[1]!) * (cm ? 10 : 1)).filter((n) => n >= 100 && n <= 450);
+    // Sem unidade e com números que só fazem sentido em cm ("Dimensão do cartão 35 x 14 x 6,7"): placa de 10 a 45 cm.
+    if (!nums.length && !/\d\s*(?:mm|cm)\b/.test(part)) nums = [...part.matchAll(/(\d{2}(?:[.,]\d+)?)\s*x/g)].map((m) => dec(m[1]!) * 10).filter((n) => n >= 100 && n <= 450);
     return nums.length ? Math.round(Math.max(...nums)) : undefined;
-  });
+  };
+  const lengthMm =
+    pick(doc, [/dimens|card size|product size|tamanho d[aoe] (placa|cartao|produto)|^comprimento|^tamanho$|^length/], lengthOf) ??
+    lengthOf(doc.lines.find((l) => /^dimens/.test(l) && /\d/.test(l)) ?? '');
   const pcieM = doc.all.match(/pci[- ]?e(?:xpress)?\s*:?\s*(?:gen\s*)?(\d)(?:\.\d)?(?:\s*(?:x\s*(\d+)|(\d+)\s*x))?/);
   const lanes = doc.all.match(/uses?\s*x\s*(\d+)|\(x(\d+)\)/);
   const pcie = pcieM ? `${pcieM[1]}.0${lanes ? ` x${lanes[1] ?? lanes[2]}` : pcieM[2] || pcieM[3] ? ` x${pcieM[2] ?? pcieM[3]}` : ''}` : undefined;
@@ -215,7 +233,11 @@ const gpu: Reader = (doc) => {
 // ---------- memória ----------
 
 const ram: Reader = (doc) => {
-  const capV = pick(doc, [/^capacidade|quantidade de memoria|tamanho do modulo|^tamanho$|^capacity/], (v) => (/\d\s*gb/.test(v) ? v : undefined)) ?? '';
+  // Sem rótulo: "- 32 GB (2 x 16 GB)".
+  const capV =
+    pick(doc, [/^capacidade|quantidade de memoria|tamanho do modulo|^tamanho$|^capacity|densidade/], (v) => (/\d\s*gb/.test(v) ? v : undefined)) ??
+    doc.lines.find((l) => /^\d{1,3}\s*gb(\s*\(\d\s*x\s*\d{1,3}\s*gb\))?$/.test(l)) ??
+    '';
   const kit = capV.match(/(\d)\s*x\s*(\d{1,3})\s*gb/);
   const total = numberWith(capV, /gb/);
   const capacityGb = inRange(kit && total === Number(kit[2]) ? Number(kit[1]) * Number(kit[2]) : total, 1, 512);
@@ -225,7 +247,8 @@ const ram: Reader = (doc) => {
     pick(doc, [/padrao|velocidade|compatibilidade|classificacao/], (v) => (/pc5-/.test(v) ? 'DDR5' : /pc4-/.test(v) ? 'DDR4' : /pc3-/.test(v) ? 'DDR3' : undefined)) ??
     doc.all.match(/\bddr([345])\b/)?.[0]?.toUpperCase();
   const mhz =
-    pick(doc, [/frequencia|velocidade|speed/], (v) => inRange(numberWith(v, /mhz|mt\/s/), 800, 12000)) ?? inRange(Number(doc.all.match(/ddr\d-(\d{4})/)?.[1]), 800, 12000);
+    pick(doc, [/frequencia|velocidade|speed/], (v) => inRange(numberWith(v, /mhz|mt\/s/) ?? (/^\d{4}$/.test(v.trim()) ? Number(v) : undefined), 800, 12000)) ??
+    inRange(Number(doc.all.match(/ddr\d-(\d{4})/)?.[1] ?? doc.lines.find((l) => /^\d{4}\s*(mhz|mt\/s)$/.test(l))?.match(/\d{4}/)?.[0]), 800, 12000);
   const cl =
     pick(doc, [/latencia|^cas|^cl\b|cl \(ddi\)/], (v) => inRange(Number(v.match(/c(?:l)?\s*(\d{2})\b/)?.[1] ?? v.match(/^(\d{2})\b/)?.[1]), 4, 60)) ??
     inRange(Number(doc.all.match(/\bcl\s*(\d{2})\b/)?.[1]), 4, 60);
@@ -271,7 +294,9 @@ const ssd: Reader = (doc) => {
 function psuConnectors(doc: SheetDoc) {
   const counts = { eps: 0, pcie8: 0, pcie16: 0, sata: 0 };
   const seen = { eps: false, pcie8: false, pcie16: false, sata: false };
-  for (const raw of doc.lines) {
+  // "Conectores: 1x 20+4 Pinos ATX, 2x 4+4 Pinos CPU, 2x Sata com 4 portas": um item por pedaço.
+  const segments = doc.lines.flatMap((l) => (l.match(/\d\s*x\s*\S/g) ?? []).length >= 2 ? l.replace(/^[^:]{1,30}:\s*/, '').split(/,\s*(?=\d)/) : [l]);
+  for (const raw of segments) {
     // O tipo pela linha inteira ("SATA: 6"); a contagem sem o rótulo.
     const l = raw.replace(/^[^:\d]{1,40}:\s*(?=\d)/, '');
     const kind: keyof typeof counts | null = /12v-?2x6|12vhpwr|16\s*pin|\b12\s*\+\s*4|p16\b/.test(raw)
@@ -292,12 +317,12 @@ function psuConnectors(doc: SheetDoc) {
     if (!n) continue;
     const total = l.match(/total:?\s*(\d{1,2})/);
     // "3 x Cabos SATA (com 4 conectores cada)": cabos vezes conectores; "6 x SATA (3 cabos com 3…)": já são os conectores.
-    const per = l.match(/com\s*(\d)\s*conectores?\s*(?:cada|por cabo)/);
+    const per = l.match(/com\s*(\d)\s*(?:conectores?|portas?)\s*(?:cada|por cabo)?/);
     const cables = /^\d{1,2}\s*x?\s*cabos?\b/.test(l);
     const token = kind === 'sata' ? /\bs-?ata\b/g : kind === 'pcie8' ? /6\s*\+\s*2/g : null;
     const reps = token ? (l.match(token) ?? []).length : 1;
     if (total) n = Number(total[1]);
-    else if (per && (cables || /\bcabo|com \d conectores por cabo/.test(l))) n *= Number(per[1]);
+    else if (per && (cables || /\bcabo|com \d (conectores|portas)/.test(l))) n *= Number(per[1]);
     else if (reps > 1) n *= reps;
     counts[kind] += n;
     seen[kind] = true;
@@ -335,7 +360,9 @@ const psu: Reader = (doc) => {
   };
   // Prefere o que tem versão ("ATX 3.1") ao "ATX" sozinho de outro rótulo.
   const stds = doc.pairs.filter((p) => /^padrao|fator de forma|^formato|^tipo$|^versao|especificacao|compativel|atx12v/.test(p.label)).map((p) => stdOf(`${p.label} ${p.value}`)).filter((x): x is string => !!x);
-  const standard = stds.find((x) => x !== 'ATX') ?? stds[0] ?? stdOf(doc.all.match(/\b(sfx[- ]?l?|atx\s*(?:12v)?\s*(?:v|ver\.?)?\s*\d[.,]\d+)\b/)?.[0] ?? '');
+  // Sem rótulo: a versão em qualquer lugar do texto; senão "ATX"/"SFX" solto ("Fonte Pcyes Atx 500w").
+  const standard =
+    stds.find((x) => x !== 'ATX') ?? stds[0] ?? stdOf(doc.all.match(/\b(sfx[- ]?l?|atx\s*(?:12v)?\s*(?:v|ver\.?)?\s*\d[.,]\d+)\b/)?.[0] ?? '') ?? stdOf(doc.all.match(/\b(sfx|atx)\b/)?.[0] ?? '');
   return clean({ watts, efficiency, modular, standard, ...psuConnectors(doc) });
 };
 
@@ -370,29 +397,45 @@ const caseReader: Reader = (doc) => {
     const l = /^[^0-9]*:\s*$/.test(l0) && doc.lines[i + 1] ? `${l0} ${doc.lines[i + 1]}` : l0;
     if (/compatibilidade|maxim|clearance|folga|limite|liberac|espaco/.test(l0) && !/\d/.test(l0)) inClearance = true;
     else if (inClearance && !/\d\s*mm/.test(l0)) inClearance = false;
-    const limit = inClearance || /max|ate\b|suport|compat|limite|liberac|espaco|superior da/.test(l);
-    const g = l.match(/(?:gpu|vga|placa\s+de\s+video|placa\s+grafica|graphics card)[^0-9]{0,40}?(\d{3})\s*mm/);
-    if (g && (limit || /comprimento/.test(l)) && !maxGpuMm) maxGpuMm = inRange(Number(g[1]), 150, 600);
-    const c = l.match(/(?:cooler|cpu|processador)[^0-9]{0,40}?(\d{2,3})\s*mm/);
-    if (c && (limit || /altura/.test(l)) && /cpu|processador|altura/.test(l) && !/radiador|liquid|water|fan\b|ventoinha/.test(l) && !maxCoolerMm) maxCoolerMm = inRange(Number(c[1]), 50, 200);
+    const limit = inClearance || /max|ate\b|suport|compat|limite|liberac|liquidac|espaco|superior da|≤|<=/.test(l);
+    // Medida em mm ou cm, com decimal ("163,5 mm", "31,5 cm").
+    const mm = (m: RegExpMatchArray | null) => (m ? Math.round(dec(m[1]!) * (/cm/.test(m[2]!) ? 10 : 1)) : undefined);
+    const g = l.match(/(?:gpu|vga|placa\s+de\s+video|placas?\s+graficas?|graphics card)[^0-9]{0,40}?(\d{2,3}(?:[.,]\d+)?)\s*(mm|cm)\b/);
+    // "GPU: 350 mm" (o rótulo sozinho já é o limite).
+    if (g && (limit || /comprimento/.test(l) || /^(gpu|vga|placa de video)\s*:/.test(l)) && !maxGpuMm) maxGpuMm = inRange(mm(g), 150, 600);
+    const c = l.match(/(?:cooler|cpu|processador)[^0-9]{0,40}?(\d{2,3}(?:[.,]\d+)?)\s*(mm|cm)\b/);
+    if (c && (limit || /altura/.test(l)) && /cpu|processador|altura/.test(l) && !/radiador|\bliquid[ao]s?\b|water|fan\b|ventoinha/.test(l) && !maxCoolerMm) maxCoolerMm = inRange(mm(c), 50, 200);
     if (/fonte|psu/.test(l)) maxPsuNote = l;
   }
   void maxPsuNote;
   const dimV = pick(doc, [/dimens(oes|ao)( do (produto|gabinete))?|tamanho do (gabinete|produto)|medidas/], (v, l) => (/embalagem|caixa/.test(`${l} ${v}`) ? undefined : v));
   const dims = dimV ? [...dimV.matchAll(/(\d{2,4}(?:[.,]\d+)?)/g)].map((m) => dec(m[1]!)) : [];
   const cm = dimV ? /\bcm\b/.test(dimV) && !/mm/.test(dimV) : false;
-  const dimensions = dims.length >= 3 ? dims.slice(0, 3).map((n) => Math.round(n * (cm ? 10 : 1))).join(' x ') : undefined;
+  // Medidas separadas ("Dimensões:" / "Largura: 200 mm" / "Altura: 450 mm" / "Profundidade: 400 mm").
+  // Na seção "Dimensões" ou logo depois do rótulo dela (até 5 pares).
+  const dimAt = doc.pairs.findIndex((p) => (/^dimens/.test(p.label) || /^dimens/.test(p.section)) && !/ventoinha|fan/.test(p.section));
+  const near = dimAt >= 0 ? doc.pairs.slice(dimAt, dimAt + 6) : [];
+  const sep = ['altura', 'largura', 'profundidade|comprimento'].map((k) => {
+    const p = near.find((x) => new RegExp(`^(${k})$`).test(x.label));
+    const n = p ? numberWith(p.value, /mm|cm/) : undefined;
+    return n ? Math.round(n * (/\d\s*cm/.test(p!.value) ? 10 : 1)) : undefined;
+  });
+  const dimensions =
+    dims.length >= 3 ? dims.slice(0, 3).map((n) => Math.round(n * (cm ? 10 : 1))).join(' x ') : sep.every((n) => n && n >= 100) ? sep.join(' x ') : undefined;
   // Frente: mesh (entra ar), vidro ou fechada. Do painel frontal ou do material; no texto, só frases sobre a frente.
-  const frontV = pick(doc, [/painel frontal|^frente|^frontal|^material/], (v) => v) ?? '';
+  const frontV = pick(doc, [/painel frontal|^frente|^frontal|^material/], (v) => (/mesh|malha|perfurad|vidro|glass|fechad|acrilico|solid|plastico|aco\b/.test(v) ? v : undefined)) ?? '';
   const frontText = frontV || (doc.all.match(/(?:painel )?front(?:al)?[^\n]{0,30}(?:mesh|malha|perfurad|vidro)|(?:mesh|malha|vidro temperado)[^\n]{0,15}front/)?.[0] ?? '');
-  const front = /mesh|malha|perfurad/.test(frontText) ? 'Mesh' : /vidro|glass/.test(frontText) ? 'Vidro' : /fechad|acrilico|solid/.test(frontText) ? 'Fechada' : undefined;
+  const front = /mesh|malha|perfurad/.test(frontText) ? 'Mesh' : /vidro|glass/.test(frontText) ? 'Vidro' : /fechad|acrilico|solid|plastico|aco\b/.test(frontText) ? 'Fechada' : undefined;
   // Ventoinhas que vêm instaladas: soma as linhas ("Top: 2 x 120 mm" / "Rear: 1 x 120 mm"); "Não possui" = 0.
   const fansIncluded =
     pick(doc, [/ventoinhas? (inclusas?|instaladas?|pre-instaladas?)|fans? (inclusos?|inclusas?|incluidos?|instalados?)|ventilador(es)? pre-instalados?|coolers? inclusos?|pre-installed/], (v) => {
       if (isNo(v) || /nao possui|nao acompanha|sem /.test(v)) return 0;
       const items = [...v.matchAll(/(\d+)\s*x/g)].reduce((s, m) => s + Number(m[1]), 0);
       return inRange(items || firstInt(v), 0, 12);
-    }) ?? (/(nao acompanha|sem) (fans|ventoinhas|coolers)|nao possui (fans|ventoinhas)/.test(doc.all) ? 0 : undefined);
+    }) ??
+    // "Inclui 3 ventoinhas … pré-instaladas", "(com 3 fans ARGB)".
+    inRange(Number(doc.all.match(/inclui\s*(\d{1,2})\s*(?:ventoinhas|fans|coolers)|(\d{1,2})\s*(?:ventoinhas|fans|coolers)[^\n]{0,30}pre-?instalad|\bcom\s*(\d{1,2})\s*(?:fans|ventoinhas)\b/)?.slice(1).find(Boolean)), 1, 12) ??
+    (/(nao acompanha|sem) (fans|ventoinhas|coolers)|nao possui (fans|ventoinhas)|(fans|ventoinhas)[^\n]{0,20}nao (inclu|acompanha)/.test(doc.all) ? 0 : undefined);
   const fansMaxList = doc.lines.filter((l) => /suporte (a|de|para) (ventoinhas?|fans?|coolers?)|ventoinhas? suportadas?|fans? suportados?|max(imo)? de ventoinhas/.test(l));
   const fansMax = inRange(fansMaxList.map((l) => [...l.matchAll(/(\d+)\s*x/g)].reduce((s, m) => s + Number(m[1]), 0)).find((n) => n > 0), 1, 20);
   const radiators = new Set<number>();
