@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { CATEGORY_DEFS, MODE_SECONDS_MAX, MODE_SECONDS_MIN, ROUTINE_MODES, type AdminStoreState, type RoutineInfo, type RoutineInput, type RoutineMode, type StoreAttempt, type StoreId } from '@upgradezin/shared';
+import { CATEGORY_DEFS, FULL_SWEEP_SECONDS_MAX, FULL_SWEEP_SECONDS_MIN, MODE_SECONDS_MAX, MODE_SECONDS_MIN, ROUTINE_MODES, type AdminStoreState, type CategoryId, type FullSweepSettings, type RoutineInfo, type RoutineInput, type RoutineMode, type StoreAttempt, type StoreId } from '@upgradezin/shared';
 import { Pause, Play, RefreshCw } from 'lucide-react';
 import { AdminError, adminApi } from './api.ts';
 import { attemptLabel, countdown, formatWhen, MODE_LABEL, modeHint, pauseLabel, queueLabel, routineStores, shortDuration } from './format.ts';
@@ -236,21 +236,75 @@ function StoreCard({ s, act }: { s: AdminStoreState; act: (fn: () => Promise<unk
         ))}
       </div>
 
-      <div className="mt-3 flex items-center gap-2">
+      <FullSweepForm key={JSON.stringify(s.fullSweepSettings)} s={s} act={act} />
+    </Box>
+  );
+}
+
+/**
+ * Varredura completa da loja: intervalo entre páginas (só dela) e categorias marcadas, guardados para o
+ * botão e a varredura da madrugada. O botão guarda o que está na tela e começa.
+ */
+function FullSweepForm({ s, act }: { s: AdminStoreState; act: (fn: () => Promise<unknown>, ok: string) => Promise<void> }) {
+  const saved = s.fullSweepSettings;
+  const [minS, setMinS] = useState(String(saved.minS));
+  const [maxS, setMaxS] = useState(String(saved.maxS));
+  const [categories, setCategories] = useState<CategoryId[]>(saved.categories);
+  const body: FullSweepSettings = { minS: Number(minS), maxS: Number(maxS), categories: s.sweepCategories.filter((c) => categories.includes(c)) };
+  const inRange = (n: number) => Number.isInteger(n) && n >= FULL_SWEEP_SECONDS_MIN && n <= FULL_SWEEP_SECONDS_MAX;
+  const valid = inRange(body.minS) && inRange(body.maxS) && body.minS <= body.maxS;
+  const changed = body.minS !== saved.minS || body.maxS !== saved.maxS || body.categories.join() !== saved.categories.join();
+  const toggle = (c: CategoryId) => setCategories((xs) => (xs.includes(c) ? xs.filter((x) => x !== c) : [...xs, c]));
+  const names = body.categories.map((c) => CATEGORY_DEFS[c].name.toLowerCase()).join(', ');
+  const input = 'w-16 rounded-lg border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100';
+
+  return (
+    <div className="mt-3 space-y-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
         <Btn
-          disabled={!s.enabled || !!s.pause || !!s.fullSweep}
-          title="Pausa a rotina de preços e a de fichas e lê todas as categorias desta loja, uma depois da outra, até o fim da lista: os esgotados também entram no banco (a rotina só lê o que está em estoque). No fim, cada rotina volta a como estava."
+          disabled={!s.enabled || !!s.pause || !!s.fullSweep || !valid || !body.categories.length}
+          title="Pausa a rotina de preços e a de fichas e lê as categorias marcadas desta loja, uma depois da outra, até o fim da lista: os esgotados também entram no banco (a rotina só lê o que está em estoque). No fim, cada rotina volta a como estava."
           onClick={() =>
             void act(
-              () => adminApi<{ startsAt: string }>(`/stores/${s.id}/sweep`, { method: 'POST' }),
-              `${s.name}: varredura completa começou (todas as categorias, esgotados também). As rotinas de preços e de fichas ficam pausadas até ela terminar e voltam sozinhas a como estavam. As páginas aparecem em Consultas; cada volta, em Cobertura.`,
+              () => adminApi<{ startsAt: string }>(`/stores/${s.id}/sweep`, { method: 'POST', body }),
+              `${s.name}: varredura completa começou (${names}; esgotados também; uma página a cada ${body.minS} a ${body.maxS} s). As rotinas de preços e de fichas ficam pausadas até ela terminar e voltam sozinhas a como estavam. As páginas aparecem em Consultas; cada volta, em Cobertura.`,
             )
           }
         >
           <RefreshCw className={`h-3.5 w-3.5 ${s.fullSweep ? 'animate-spin' : ''}`} /> {s.fullSweep ? 'Varredura completa rodando' : 'Varredura completa'}
         </Btn>
+        <label className="flex items-center gap-1.5" title="Intervalo aleatório entre uma página e a próxima, só na varredura completa (as rotinas usam o da loja)">
+          uma página a cada
+          <input type="number" inputMode="numeric" min={FULL_SWEEP_SECONDS_MIN} max={FULL_SWEEP_SECONDS_MAX} value={minS} onChange={(e) => setMinS(e.target.value)} className={input} aria-label="Intervalo mínimo (s)" />
+          a
+          <input type="number" inputMode="numeric" min={FULL_SWEEP_SECONDS_MIN} max={FULL_SWEEP_SECONDS_MAX} value={maxS} onChange={(e) => setMaxS(e.target.value)} className={input} aria-label="Intervalo máximo (s)" />
+          s
+        </label>
+        {changed && (
+          <Btn
+            subtle
+            disabled={!valid}
+            title="Guarda sem começar (vale também para a varredura da madrugada)"
+            onClick={() => void act(() => adminApi(`/stores/${s.id}/full-sweep`, { method: 'PUT', body }), `${s.name}: configuração da varredura completa salva (vale também para a da madrugada).`)}
+          >
+            Salvar
+          </Btn>
+        )}
+        {!valid && <span className="text-red-500">De {FULL_SWEEP_SECONDS_MIN} a {FULL_SWEEP_SECONDS_MAX} s, o primeiro não maior que o segundo.</span>}
       </div>
-    </Box>
+      {s.sweepCategories.length ? (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+          {s.sweepCategories.map((c) => (
+            <label key={c} className="flex items-center gap-1.5">
+              <input type="checkbox" checked={categories.includes(c)} onChange={() => toggle(c)} />
+              {CATEGORY_DEFS[c].name}
+            </label>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-zinc-500">Nenhuma página de categoria configurada nesta loja (aba Lojas).</p>
+      )}
+    </div>
   );
 }
 

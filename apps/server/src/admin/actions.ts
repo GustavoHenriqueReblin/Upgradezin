@@ -1,7 +1,7 @@
-import { ENABLED_CATEGORIES, type AdminStoreState, type CategoryId, type StoreId } from '@upgradezin/shared';
+import { ENABLED_CATEGORIES, type AdminStoreState, type FullSweepSettings, type CategoryId, type StoreId } from '@upgradezin/shared';
 import { config } from '../config.ts';
 import { deleteMeta, getMeta, setMeta, type Db } from '../db/db.ts';
-import { backoffInfo, BlockedError, jitter, PageLimitError, pagesUsed, queuedAt, registerSuccess, sleep } from '../pace.ts';
+import { backoffInfo, BlockedError, PageLimitError, pagesUsed, queuedAt, registerSuccess } from '../pace.ts';
 import { attemptCounts, lastAttempt } from '../prices/attempts.ts';
 import { canReadSheet, canSweep, collectSweepPage, sheetOf, withBrowserSession } from '../prices/collect.ts';
 import { routineBusy, routineNextAt, routineSettings, setRoutineSettings } from '../prices/routine.ts';
@@ -30,6 +30,8 @@ export function storesState(db: Db, now = Date.now()): AdminStoreState[] {
         live: routine.live[id],
         busy: routineBusy(id),
         fullSweep: fullSweepOf(id),
+        fullSweepSettings: fullSweepSettings(db, id),
+        sweepCategories: sweepCategoriesOf(id),
         queue: queuedAt(id),
         pause: bo ? { until: new Date(bo.until).toISOString(), step: bo.step, reason: bo.reason } : null,
         pagesUsed: pagesUsed(id),
@@ -80,6 +82,30 @@ export function resumeRoutines(db: Db): PausedRoutines | null {
   return was;
 }
 
+/** Categorias com página configurada na loja (as que a varredura completa pode ler). */
+export const sweepCategoriesOf = (store: StoreId): CategoryId[] => ENABLED_CATEGORIES.filter((c) => sweepPaths(store, c).length > 0);
+
+const settingsKey = (store: StoreId) => `full-sweep:${store}`;
+
+/**
+ * Configuração da varredura completa da loja (meta "full-sweep:<loja>"): intervalo e categorias. Sem
+ * nada guardado: PAGE_DELAY_* e todas as categorias com página. Categoria que perdeu a página sai.
+ */
+export function fullSweepSettings(db: Db, store: StoreId): FullSweepSettings {
+  const available = sweepCategoriesOf(store);
+  const raw = getMeta(db, settingsKey(store));
+  const saved = raw ? (JSON.parse(raw) as Partial<FullSweepSettings>) : {};
+  const minS = saved.minS ?? Math.round(config.PAGE_DELAY_MIN_MS / 1000);
+  const maxS = saved.maxS ?? Math.max(minS, Math.round(config.PAGE_DELAY_MAX_MS / 1000));
+  return { minS, maxS, categories: saved.categories ? available.filter((c) => saved.categories!.includes(c)) : available };
+}
+
+/** Guarda a configuração (já validada nos limites pela rota). Devolve a configuração que vale. */
+export function saveFullSweepSettings(db: Db, store: StoreId, input: FullSweepSettings): FullSweepSettings {
+  setMeta(db, settingsKey(store), JSON.stringify({ minS: input.minS, maxS: Math.max(input.minS, input.maxS), categories: ENABLED_CATEGORIES.filter((c) => input.categories.includes(c)) }));
+  return fullSweepSettings(db, store);
+}
+
 /** Varredura completa da loja agora (para o painel das lojas). */
 export const fullSweepOf = (store: StoreId) => fullSweeps.get(store) ?? null;
 
@@ -91,15 +117,18 @@ const FULL_SWEEP_CATEGORY_MAX_PAGES = 600;
  * começo até o fim da lista (todos os caminhos, esgotados também: anúncio novo esgotado entra no
  * banco, para popular o catálogo com o que a loja tem; a rotina só lê o que está em estoque).
  * Pausa a rotina de preços e a de fichas enquanto roda (para não disputar a loja nem pesar no
- * servidor) e volta cada uma a como estava quando a última varredura completa acabar. Uma página por vez na fila da loja, com o intervalo e
- * o limite por hora de sempre. Loja em pausa recusa. Responde na hora; as páginas aparecem em
+ * servidor) e volta cada uma a como estava quando a última varredura completa acabar. Uma página por
+ * vez na fila da loja, com o intervalo da varredura (configurado no admin) e o limite por hora de
+ * sempre. Loja em pausa recusa. Responde na hora; as páginas aparecem em
  * Consultas e cada volta na Cobertura.
  */
 export function fullSweep(db: Db, store: StoreId, now = Date.now()): CollectNowResult {
   if (!ACTIVE_STORES.includes(store)) return { ok: false, error: 'Loja desligada ou não configurada.' };
   if (!canSweep(store)) return { ok: false, error: 'Esta loja ainda não tem leitor de página de categoria.' };
-  const categories = ENABLED_CATEGORIES.filter((c) => sweepPaths(store, c).length);
-  if (!categories.length) return { ok: false, error: 'Nenhuma página de categoria configurada nesta loja: configure em Lojas.' };
+  if (!sweepCategoriesOf(store).length) return { ok: false, error: 'Nenhuma página de categoria configurada nesta loja: configure em Lojas.' };
+  const { minS, maxS, categories } = fullSweepSettings(db, store);
+  if (!categories.length) return { ok: false, error: 'Nenhuma categoria marcada para a varredura completa desta loja.' };
+  const delayMs: [number, number] = [minS * 1000, maxS * 1000];
   if (fullSweeps.has(store)) return { ok: false, error: 'A varredura completa desta loja já está rodando.' };
   const bo = backoffInfo(store);
   if (bo) return { ok: false, error: `Loja em pausa até ${new Date(bo.until).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. Tire a pausa antes.` };
@@ -112,9 +141,9 @@ export function fullSweep(db: Db, store: StoreId, now = Date.now()): CollectNowR
       restartSweep(db, store, category, { full: true });
       try {
         for (let n = 0; n < FULL_SWEEP_CATEGORY_MAX_PAGES && !jobs.signal.aborted; n++) {
-          if (n > 0) await sleep(jitter(), jobs.signal);
+          // O intervalo entre páginas (o da varredura, configurado no admin) é aplicado na fila da loja.
           const s = sweepState(db, store, category);
-          const r = await collectSweepPage(store, category, s.path ?? 0, s.page, jobs.signal, { origin: 'admin' });
+          const r = await collectSweepPage(store, category, s.path ?? 0, s.page, jobs.signal, { origin: 'admin', delayMs });
           registerSuccess(store);
           if (r.roundDone) {
             console.info(`[admin ${store}] varredura completa, ${category}: volta completa${r.outOfStock ? `, ${r.outOfStock} sem estoque agora` : ''}`);

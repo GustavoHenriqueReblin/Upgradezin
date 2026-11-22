@@ -116,6 +116,20 @@ export interface SheetRoutineSettings {
 /** O que o admin manda para mudar a rotina de fichas (o que falta fica como está). */
 export type SheetRoutineInput = Partial<SheetRoutineSettings>;
 
+/**
+ * Varredura completa de uma loja (botão do admin e madrugada): intervalo aleatório entre páginas, de
+ * `minS` a `maxS` segundos (só dela; as rotinas usam o da loja), e as categorias que ela lê.
+ */
+export interface FullSweepSettings {
+  minS: number;
+  maxS: number;
+  categories: CategoryId[];
+}
+
+/** Intervalo da varredura completa no admin: de 2 segundos a 10 minutos. */
+export const FULL_SWEEP_SECONDS_MIN = 2;
+export const FULL_SWEEP_SECONDS_MAX = 600;
+
 /** Intervalo entre fichas no admin: de 10 segundos a 1 dia. */
 export const SHEET_SECONDS_MIN = 10;
 export const SHEET_SECONDS_MAX = 86_400;
@@ -166,6 +180,10 @@ export interface AdminStoreState {
   queue: { running: boolean; priority: number; routine: number };
   /** Varredura completa em andamento (todas as categorias, esgotados também): a categoria sendo lida e a posição dela. */
   fullSweep: { category: CategoryId; index: number; total: number } | null;
+  /** Configuração da varredura completa da loja (botão e madrugada). */
+  fullSweepSettings: FullSweepSettings;
+  /** Categorias com página configurada na loja (as que a varredura completa pode ler). */
+  sweepCategories: CategoryId[];
   /** Pausa valendo agora (bloqueio ou manual, reason "paused"). step -1: pausa manual sem bloqueio antes. */
   pause: { until: string; step: number; reason: BlockReason } | null;
   /** Páginas pedidas na última hora e os limites. */

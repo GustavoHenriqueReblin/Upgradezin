@@ -124,7 +124,7 @@ export function collectSweepPage(
   path: number,
   page: number,
   signal: AbortSignal,
-  opts: { origin?: 'routine' | 'admin'; maxPages?: number } = {},
+  opts: { origin?: 'routine' | 'admin'; maxPages?: number; delayMs?: [number, number] } = {},
 ): Promise<SweepPageResult> {
   const adapter = ADAPTERS[store];
   const paths = sweepPaths(store, category);
@@ -158,7 +158,7 @@ export function collectSweepPage(
       } else recordSweepFailure(getDb(), store, category, new Date().toISOString());
       throw err;
     }
-  });
+  }, opts.delayMs ? { delayMs: opts.delayMs } : {});
 }
 
 /** A loja sabe ler a ficha técnica da página do produto. */

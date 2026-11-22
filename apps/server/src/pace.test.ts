@@ -70,6 +70,19 @@ describe('fila da loja com prioridade', () => {
   });
 });
 
+describe('intervalo entre páginas da loja', () => {
+  it('consulta com intervalo próprio (varredura completa) espera ele desde a anterior, no lugar do PAGE_DELAY_*', async () => {
+    const signal = new AbortController().signal;
+    await withStore('s2', signal, async () => 1);
+    const t0 = Date.now();
+    await withStore('s2', signal, async () => 1, { delayMs: [250, 250] });
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(240);
+    const t1 = Date.now();
+    await withStore('s2', signal, async () => 1); // PAGE_DELAY_* dos testes: 1-2 ms
+    expect(Date.now() - t1).toBeLessThan(200);
+  });
+});
+
 describe('avisos para o admin', () => {
   it('a loja avisa quando começa e quando termina de ler (o admin mostra "lendo agora" na hora)', async () => {
     const seen: string[] = [];

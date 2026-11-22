@@ -6,7 +6,7 @@ import { attemptCounts, lastAttempt, listAttempts, onAttempt, pageAttempts, reco
 import { attemptOutcome } from '../prices/collect.ts';
 import { isLive, modeDelay, routineInfo, routineNextAt, routineSettings, setRoutineSettings, stopRoutine, tick, useRoutineStorage } from '../prices/routine.ts';
 import { useStoreStorage } from '../stores.ts';
-import { fullSweep, fullSweepAll, fullSweepOf, readSheetNow, resumeRoutines, storesState } from './actions.ts';
+import { fullSweep, fullSweepAll, fullSweepOf, fullSweepSettings, readSheetNow, resumeRoutines, saveFullSweepSettings, storesState } from './actions.ts';
 import { setSheetRoutine, sheetRoutineSettings, stopSheetRoutine, useSheetRoutineStorage } from '../prices/sheet-routine.ts';
 import { getMeta, setMeta } from '../db/db.ts';
 import { usePageLoader } from '../browser.ts';
@@ -216,6 +216,37 @@ describe('varredura completa e painel das lojas', () => {
       stopRoutine();
       setSheetRoutine({ enabled: false });
       stopSheetRoutine();
+    }
+  });
+
+  it('configuração: sem nada guardado, o intervalo da loja e todas as categorias com página; só as marcadas são lidas; nenhuma marcada recusa', async () => {
+    const db = getDb();
+    useStoreStorage(db);
+    useBackoffStorage([], () => {});
+    useRoutineStorage(null, () => {});
+    useSheetRoutineStorage(null, () => {});
+    db.prepare("DELETE FROM meta WHERE key LIKE 'full-sweep:%'").run();
+    // Nos testes, PAGE_DELAY_* é 1-2 ms: arredonda para 0 s.
+    expect(fullSweepSettings(db, 's1')).toEqual({ minS: 0, maxS: 0, categories: ['cpu', 'psu'] });
+    expect(storesState(db).find((x) => x.id === 's1')).toMatchObject({ sweepCategories: ['cpu', 'psu'], fullSweepSettings: { categories: ['cpu', 'psu'] } });
+    // Categoria sem página na loja (gpu) não entra; intervalo invertido vira o primeiro.
+    expect(saveFullSweepSettings(db, 's1', { minS: 0, maxS: 0, categories: ['psu', 'gpu'] })).toEqual({ minS: 0, maxS: 0, categories: ['psu'] });
+    const urls: string[] = [];
+    usePageLoader(async (_store, url) => {
+      urls.push(url);
+      return { html: fixture('s1-cpu.html'), url, title: '' };
+    });
+    try {
+      expect(fullSweep(db, 's1')).toMatchObject({ ok: true });
+      expect(fullSweepOf('s1')).toMatchObject({ category: 'psu', total: 1 });
+      for (let i = 0; i < 500 && fullSweepOf('s1'); i++) await new Promise((r) => setTimeout(r, 10));
+      expect(urls.length).toBe(6);
+      expect(urls.every((u) => u.includes('/hardware/fontes'))).toBe(true);
+      saveFullSweepSettings(db, 's1', { minS: 0, maxS: 0, categories: [] });
+      expect(fullSweep(db, 's1')).toMatchObject({ ok: false, error: expect.stringContaining('Nenhuma categoria marcada') });
+    } finally {
+      usePageLoader(null);
+      db.prepare("DELETE FROM meta WHERE key LIKE 'full-sweep:%'").run();
     }
   });
 

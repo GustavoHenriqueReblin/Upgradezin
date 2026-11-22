@@ -101,6 +101,7 @@ function makeApp() {
       storesState: () => [],
       unpause: (id) => (calls.push(['unpause', id]), true),
       pause: (id, minutes) => void calls.push(['pause', id, minutes]),
+      saveSweep: (id, settings) => (calls.push(['saveSweep', id, settings]), settings),
       sweep: (id) => (calls.push(['sweep', id]), id === 's3' ? { ok: false as const, error: 'Loja em pausa.' } : { ok: true as const, startsAt: '2026-11-20T21:00:00.000Z' }),
       routine: () => routine,
       setRoutine: (s) => (calls.push(['routine', s]), { ...routine, ...s, modes: { ...routine.modes, ...s.modes }, live: { ...routine.live, ...s.live }, seconds: { ...routine.seconds, ...s.seconds } }),
@@ -244,7 +245,7 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     expect(calls).toEqual([['unpause', 's2'], ['pause', 's2', 60]]);
   });
 
-  it('varredura completa: aceita com o horário; recusada (409) com o motivo; loja desconhecida, 404', async () => {
+  it('varredura completa: aceita com o horário; recusada (409) com o motivo; loja desconhecida, 404; com a configuração da tela, guarda antes', async () => {
     const { post } = await setup();
     const ok = await post('/api/admin/stores/s1/sweep');
     expect(ok.json()).toEqual({ ok: true, startsAt: '2026-11-20T21:00:00.000Z' });
@@ -252,7 +253,26 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     expect(no.statusCode).toBe(409);
     expect(no.json().errors).toEqual(['Loja em pausa.']);
     expect((await post('/api/admin/stores/s9/sweep')).statusCode).toBe(404);
+    const settings = { minS: 9, maxS: 18, categories: ['gpu', 'cpu'] };
+    expect((await post('/api/admin/stores/s2/sweep', settings)).statusCode).toBe(200);
+    expect(calls.slice(-2)).toEqual([['saveSweep', 's2', settings], ['sweep', 's2']]);
+    // Intervalo fora dos limites, invertido ou categoria inventada: 400, sem guardar nem começar.
+    const before = calls.length;
+    for (const bad of [{ ...settings, minS: 1 }, { ...settings, maxS: 601 }, { ...settings, minS: 20 }, { ...settings, categories: ['inventada'] }, { ...settings, extra: 1 }])
+      expect((await post('/api/admin/stores/s2/sweep', bad)).statusCode).toBe(400);
+    expect(calls.length).toBe(before);
     expect((await post('/api/admin/stores/s1/collect', { category: 'gpu', term: 'RTX 3050' })).statusCode).toBe(404); // rota antiga saiu
+  });
+
+  it('configuração da varredura completa: guarda sem começar (vale para a madrugada); inválida, 400', async () => {
+    const { app, cookie } = await setup();
+    const put = (url: string, payload: object) => app.inject({ method: 'PUT', url, headers: { cookie, 'x-admin': '1' }, payload });
+    const settings = { minS: 9, maxS: 18, categories: ['case'] };
+    const r = await put('/api/admin/stores/s1/full-sweep', settings);
+    expect(r.json()).toEqual(settings);
+    expect(calls.at(-1)).toEqual(['saveSweep', 's1', settings]);
+    expect((await put('/api/admin/stores/s1/full-sweep', { ...settings, maxS: 5 })).statusCode).toBe(400);
+    expect((await put('/api/admin/stores/s9/full-sweep', settings)).statusCode).toBe(404);
   });
 
   it('produtos e fichas: listas paginadas com filtros, cobertura, texto da página, rotina de fichas e "Ler ficha"', async () => {

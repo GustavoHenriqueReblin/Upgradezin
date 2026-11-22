@@ -203,7 +203,11 @@ export const queuedAt = (store: StoreId): { running: boolean; priority: number; 
   return { running: running.has(store), priority: list.filter((w) => w.priority).length, routine: list.filter((w) => !w.priority).length };
 };
 
-export async function withStore<T>(store: StoreId, signal: AbortSignal, fn: () => Promise<T>, opts: { priority?: boolean } = {}): Promise<T> {
+/**
+ * Uma consulta à loja, na fila dela. `delayMs`: intervalo aleatório próprio desde a consulta anterior
+ * (a varredura completa usa o configurado no admin); sem ele, PAGE_DELAY_*.
+ */
+export async function withStore<T>(store: StoreId, signal: AbortSignal, fn: () => Promise<T>, opts: { priority?: boolean; delayMs?: [number, number] } = {}): Promise<T> {
   await acquire(store, opts.priority ?? false, signal);
   try {
     // Na fila atrás de uma consulta que bloqueou: não vai à loja (antes ia, e o 2º bloqueio
@@ -214,7 +218,7 @@ export async function withStore<T>(store: StoreId, signal: AbortSignal, fn: () =
     };
     paused();
     // Intervalo aleatório entre páginas, desde o fim da consulta anterior.
-    const wait = (lastDone.get(store) ?? 0) + jitter() - Date.now();
+    const wait = (lastDone.get(store) ?? 0) + (opts.delayMs ? jitter(...opts.delayMs) : jitter()) - Date.now();
     if (wait > 0) await sleep(wait, signal);
     paused();
     emitChange('store'); // a loja começou a ler (o admin mostra "lendo agora")

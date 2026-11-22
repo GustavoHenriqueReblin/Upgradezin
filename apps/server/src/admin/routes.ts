@@ -1,4 +1,4 @@
-import { ADMIN_PAGE_SIZE_MAX, CATEGORIES, STORES, type AdminPage, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type CategoryId, type CoverageRow, type PerfGap, type AdminProductFilter, type AdminProductPage, type SheetRoutineStatus, type SheetRoutineInput, type SheetCoverageRow, type SheetPageText, type SheetProductFilter, type SheetProductPage, SHEET_SECONDS_MIN, SHEET_SECONDS_MAX, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, ROUTINE_MODES, MODE_SECONDS_MIN, MODE_SECONDS_MAX } from '@upgradezin/shared';
+import { ADMIN_PAGE_SIZE_MAX, CATEGORIES, FULL_SWEEP_SECONDS_MAX, FULL_SWEEP_SECONDS_MIN, STORES, type FullSweepSettings, type AdminPage, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type CategoryId, type CoverageRow, type PerfGap, type AdminProductFilter, type AdminProductPage, type SheetRoutineStatus, type SheetRoutineInput, type SheetCoverageRow, type SheetPageText, type SheetProductFilter, type SheetProductPage, SHEET_SECONDS_MIN, SHEET_SECONDS_MAX, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, ROUTINE_MODES, MODE_SECONDS_MIN, MODE_SECONDS_MAX } from '@upgradezin/shared';
 import { createReadStream } from 'node:fs';
 import { emitChange, onChange } from '../changes.ts';
 import type { ActivityInfo } from '@upgradezin/shared';
@@ -23,8 +23,10 @@ export interface AdminDeps {
     storesState: () => AdminStoreState[];
     unpause: (id: StoreId) => boolean;
     pause: (id: StoreId, minutes: number) => void;
-    /** "Varredura completa": desliga a rotina e lê todas as categorias da loja até o fim (esgotados também). */
+    /** "Varredura completa": pausa as rotinas e lê as categorias marcadas da loja até o fim (esgotados também). */
     sweep: (id: StoreId) => CollectNowResult;
+    /** Guarda a configuração da varredura completa da loja (intervalo e categorias; vale também para a da madrugada). */
+    saveSweep: (id: StoreId, s: FullSweepSettings) => FullSweepSettings;
     routine: () => RoutineInfo;
     setRoutine: (s: RoutineInput) => RoutineInfo;
   };
@@ -99,6 +101,12 @@ const storeParam = (id: string): StoreId | null => ((STORES as readonly string[]
 
 const PathMap = z.partialRecord(z.enum(CATEGORIES), z.string().max(300)).default({});
 /** Página de cada categoria: até 10 caminhos separados por espaço. */
+const FULL_SWEEP_ERROR = `Varredura completa: intervalo de ${FULL_SWEEP_SECONDS_MIN} a ${FULL_SWEEP_SECONDS_MAX} segundos (o primeiro não maior que o segundo) e categorias válidas.`;
+const sweepSeconds = z.number().int().min(FULL_SWEEP_SECONDS_MIN).max(FULL_SWEEP_SECONDS_MAX);
+const FullSweepBody = z
+  .object({ minS: sweepSeconds, maxS: sweepSeconds, categories: z.array(z.enum(CATEGORIES)).max(CATEGORIES.length) })
+  .strict()
+  .refine((v) => v.minS <= v.maxS);
 const SweepMap = z.partialRecord(z.enum(CATEGORIES), z.string().max(3100)).default({});
 const StoreBody = z.object({
   enabled: z.boolean(),
@@ -188,9 +196,23 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
         req.log.info({ store: id, minutes: body.data.minutes }, 'admin: loja pausada');
         return { ok: true };
       });
+      // Configuração da varredura completa (intervalo e categorias), guardada para o botão e a madrugada.
+      admin.put<{ Params: { id: string } }>('/stores/:id/full-sweep', async (req, reply) => {
+        const id = storeParam(req.params.id);
+        if (!id) return reply.code(404).send({ error: 'not-found' });
+        const body = FullSweepBody.safeParse(req.body);
+        if (!body.success) return reply.code(400).send({ error: 'invalid', errors: [FULL_SWEEP_ERROR] });
+        return deps.ops.saveSweep(id, body.data);
+      });
+      // Varredura completa agora; com corpo, guarda a configuração antes (a que está na tela).
       admin.post<{ Params: { id: string } }>('/stores/:id/sweep', async (req, reply) => {
         const id = storeParam(req.params.id);
         if (!id) return reply.code(404).send({ error: 'not-found' });
+        if (req.body !== undefined && req.body !== null) {
+          const body = FullSweepBody.safeParse(req.body);
+          if (!body.success) return reply.code(400).send({ error: 'invalid', errors: [FULL_SWEEP_ERROR] });
+          deps.ops.saveSweep(id, body.data);
+        }
         const r = deps.ops.sweep(id);
         if (!r.ok) return reply.code(409).send({ error: 'rejected', errors: [r.error] });
         req.log.info({ store: id }, 'admin: varredura completa');
