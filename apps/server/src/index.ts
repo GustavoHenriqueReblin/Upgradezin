@@ -10,7 +10,7 @@ import { AdminAuth, MIN_PASSWORD } from './admin/auth.ts';
 import { ActivityLog } from './admin/activity.ts';
 import { Backups, MergeUploads } from './admin/backup.ts';
 import { attemptTimeline, coverage, deleteTerm, listTerms, perfGaps, prioritizeTerm } from './admin/data.ts';
-import { listAttempts, onAttempt } from './prices/attempts.ts';
+import { listAttempts, onAttempt, pageAttempts } from './prices/attempts.ts';
 import { registerAdmin } from './admin/routes.ts';
 import { serverStatus } from './admin/status.ts';
 import { browserOpen, closeBrowser } from './browser.ts';
@@ -131,10 +131,10 @@ if (AdminAuth.isConfigured(config.ADMIN_USER, config.ADMIN_PASSWORD)) {
     data: {
       coverage: () => coverage(getDb()),
       perfGaps: () => perfGaps(getDb()),
-      terms: (f) => listTerms(getDb(), f),
+      terms: (f) => listTerms(getDb(), f, ACTIVE_STORES),
       deleteTerm: (id) => deleteTerm(getDb(), id),
       prioritizeTerm: (id) => prioritizeTerm(getDb(), id),
-      attempts: (f) => listAttempts(getDb(), f),
+      attempts: (f) => pageAttempts(getDb(), f),
       timeline: (hours) => attemptTimeline(getDb(), hours),
     },
     activity: () => ({

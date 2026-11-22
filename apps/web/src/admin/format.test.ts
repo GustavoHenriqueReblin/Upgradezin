@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sheetEta, shortDuration, splitSeconds, sheetSummary, specPairs, countdown, modeHint, queueLabel, matchesNever, neverCollectedIn, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground } from './format.ts';
+import { sheetEta, shortDuration, splitSeconds, sheetSummary, specPairs, countdown, modeHint, queueLabel, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground } from './format.ts';
 
 describe('formatação do admin', () => {
   it('duração', () => {
@@ -60,22 +60,6 @@ describe('lojas da rotina', () => {
   it('desligada: nenhuma, mesmo com lojas guardadas', () => {
     expect(routineStores({ enabled: true, stores: ['s1', 's3'] })).toEqual(['s1', 's3']);
     expect(routineStores({ enabled: false, stores: ['s1'] })).toEqual([]);
-  });
-});
-
-describe('termos nunca coletados', () => {
-  const stores = ['s1', 's2', 's3'];
-  const t = (runs: [string, string | null][]) => ({ runs: runs.map(([store, lastOkAt]) => ({ store, lastOkAt })) });
-  it('lojas sem coleta boa (tentativa bloqueada não conta)', () => {
-    expect(neverCollectedIn(t([['s1', '2026-11-20'], ['s2', null]]), stores)).toEqual(['s2', 's3']);
-  });
-  it('filtro: em nenhuma loja, em alguma, ou todos', () => {
-    const never = t([['s2', null]]);
-    const partial = t([['s1', '2026-11-20']]);
-    const full = t([['s1', 'a'], ['s2', 'b'], ['s3', 'c']]);
-    expect([never, partial, full].map((x) => matchesNever(x, stores, 'none'))).toEqual([true, false, false]);
-    expect([never, partial, full].map((x) => matchesNever(x, stores, 'some'))).toEqual([true, true, false]);
-    expect([never, partial, full].map((x) => matchesNever(x, stores, ''))).toEqual([true, true, true]);
   });
 });
 

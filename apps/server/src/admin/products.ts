@@ -1,14 +1,13 @@
 import { cpuPerf, effectiveCash, gpuPerf, type AdminProduct, type AdminProductFilter, type AdminProductPage, type Offer, type SheetStatus, type SheetStoreStatus, type SpecSheet, type StoreId } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
 import { SHEET_CATEGORIES, SHEET_SCOPE_DAYS } from '../prices/sheets.ts';
+import { pageOf } from './paging.ts';
 
 /**
  * Catálogo para a aba Produtos do admin: cada anúncio guardado (loja + código), com a última
  * oferta, as specs do título, o índice de desempenho e a ficha técnica. Paginado no banco.
  */
 
-export const PRODUCTS_PAGE_SIZE = 50;
-const MAX_PAGE_SIZE = 200;
 
 const EMPTY = "json_extract(ps.data, '$.specs') = '{}' AND json_extract(ps.data, '$.mpn') IS NULL";
 const SHEETABLE = `l.category IN (${SHEET_CATEGORIES.map((c) => `'${c}'`).join(', ')})`;
@@ -16,8 +15,7 @@ const SHEETABLE = `l.category IN (${SHEET_CATEGORIES.map((c) => `'${c}'`).join('
 const STATUS_SQL = `CASE WHEN NOT (${SHEETABLE}) THEN 'na' WHEN ps.store_sku IS NULL THEN 'missing' WHEN ${EMPTY} THEN 'empty' ELSE 'ok' END`;
 
 export function listProducts(db: Db, f: AdminProductFilter = {}): AdminProductPage {
-  const pageSize = Math.min(Math.max(1, f.pageSize ?? PRODUCTS_PAGE_SIZE), MAX_PAGE_SIZE);
-  const page = Math.max(1, f.page ?? 1);
+  const { page, pageSize, offset } = pageOf(f);
   const where: string[] = [];
   const args: (string | number)[] = [];
   if (f.store) where.push('l.store = ?'), args.push(f.store);
@@ -37,7 +35,7 @@ export function listProducts(db: Db, f: AdminProductFilter = {}): AdminProductPa
       `SELECT l.store, l.store_sku, l.category, l.title, l.url, l.offer, l.first_seen_at, l.last_seen_at, ps.data AS sheet, ps.fetched_at AS sheet_at, ${STATUS_SQL} AS status
        ${from} ORDER BY l.last_seen_at DESC, l.id DESC LIMIT ? OFFSET ?`,
     )
-    .all(...args, pageSize, (page - 1) * pageSize) as {
+    .all(...args, pageSize, offset) as {
     store: StoreId;
     store_sku: string;
     category: AdminProduct['category'];

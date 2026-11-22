@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { CATEGORY_DEFS, ENABLED_CATEGORIES, type AdminStoreConfig, type AdminTerm, type CoverageRow, type PerfGap, type StoreAttempt, type TimelineBucket } from '@upgradezin/shared';
+import { CATEGORY_DEFS, ENABLED_CATEGORIES, type AdminPage, type AdminStoreConfig, type AdminTerm, type CoverageRow, type PerfGap, type StoreAttempt, type TimelineBucket } from '@upgradezin/shared';
 import { ArrowUp, Trash2 } from 'lucide-react';
 import { AdminError, adminApi } from './api.ts';
 import { useLiveReload, type LiveKind } from './live.ts';
-import { attemptResult, attemptWhat, formatDuration, formatWhen, matchesNever, originText, statusText, type NeverFilter } from './format.ts';
+import { Pager } from './Pager.tsx';
+import { attemptResult, attemptWhat, formatDuration, formatWhen, originText, statusText, type NeverFilter } from './format.ts';
 
 type Props = { onUnauthorized: () => void };
 
@@ -40,14 +41,17 @@ const STATUS_TONE: Record<StoreAttempt['status'], string> = {
   error: 'text-red-600 dark:text-red-400',
 };
 
-/** Consultas: linha do tempo por hora (ok × bloqueio) e o registro de cada consulta, com filtros. Atualiza a cada consulta nova (canal ao vivo). */
+/** Consultas: linha do tempo por hora (ok × bloqueio) e o registro de cada consulta, com filtros e paginado. Atualiza a cada consulta nova (canal ao vivo). */
 export function AttemptsPanel({ onUnauthorized }: Props) {
   const names = useStoreNames(onUnauthorized);
   const [store, setStore] = useState('');
   const [status, setStatus] = useState('');
   const [origin, setOrigin] = useState('');
-  const query = new URLSearchParams({ limit: '200', ...(store ? { store } : {}), ...(status ? { status } : {}), ...(origin ? { origin } : {}) });
-  const list = useAdmin<StoreAttempt[]>(`/attempts?${query}`, onUnauthorized, ['attempt']);
+  const [page, setPage] = useState(1);
+  // Mudar um filtro volta para a 1ª página.
+  const filter = (set: (v: string) => void) => (v: string) => (set(v), setPage(1));
+  const query = new URLSearchParams({ page: String(page), ...(store ? { store } : {}), ...(status ? { status } : {}), ...(origin ? { origin } : {}) });
+  const list = useAdmin<AdminPage<StoreAttempt>>(`/attempts?${query}`, onUnauthorized, ['attempt']);
   const timeline = useAdmin<TimelineBucket[]>('/attempts/timeline?hours=48', onUnauthorized, ['attempt'], 2_000);
 
   return (
@@ -59,7 +63,8 @@ export function AttemptsPanel({ onUnauthorized }: Props) {
         title={
           <span className="flex flex-wrap items-center gap-2">
             Consultas
-            <select className={select} value={store} onChange={(e) => setStore(e.target.value)}>
+            {list.data && <span className="text-sm font-normal text-zinc-500">{list.data.total.toLocaleString('pt-BR')}</span>}
+            <select className={select} value={store} onChange={(e) => filter(setStore)(e.target.value)}>
               <option value="">todas as lojas</option>
               {[...names].map(([id, name]) => (
                 <option key={id} value={id}>
@@ -67,7 +72,7 @@ export function AttemptsPanel({ onUnauthorized }: Props) {
                 </option>
               ))}
             </select>
-            <select className={select} value={status} onChange={(e) => setStatus(e.target.value)}>
+            <select className={select} value={status} onChange={(e) => filter(setStatus)(e.target.value)}>
               <option value="">qualquer resultado</option>
               {(['ok', 'blocked', 'partial', 'limit', 'error'] as const).map((s) => (
                 <option key={s} value={s}>
@@ -75,7 +80,7 @@ export function AttemptsPanel({ onUnauthorized }: Props) {
                 </option>
               ))}
             </select>
-            <select className={select} value={origin} onChange={(e) => setOrigin(e.target.value)}>
+            <select className={select} value={origin} onChange={(e) => filter(setOrigin)(e.target.value)}>
               <option value="">qualquer origem</option>
               {(['search', 'routine', 'admin'] as const).map((o) => (
                 <option key={o} value={o}>
@@ -88,11 +93,11 @@ export function AttemptsPanel({ onUnauthorized }: Props) {
       >
         {!list.data ? (
           <p className="text-sm text-zinc-500">{list.error ? 'Não foi possível ler.' : 'Carregando…'}</p>
-        ) : !list.data.length ? (
+        ) : !list.data.items.length ? (
           <p className="text-sm text-zinc-500">Nenhuma consulta registrada com esses filtros.</p>
         ) : (
           <Table head={['Quando', 'Loja', 'O quê', 'Resultado', 'Origem', 'Duração']}>
-            {list.data.map((a) => (
+            {list.data.items.map((a) => (
               <tr key={a.id} className="border-t border-zinc-100 dark:border-zinc-800" title={a.detail}>
                 <Td>{formatWhen(a.at)}</Td>
                 <Td>{names.get(a.store) ?? a.store}</Td>
@@ -107,6 +112,7 @@ export function AttemptsPanel({ onUnauthorized }: Props) {
             ))}
           </Table>
         )}
+        {list.data && <Pager page={list.data.page} pageSize={list.data.pageSize} total={list.data.total} onPage={setPage} />}
       </Box>
     </div>
   );
@@ -221,18 +227,21 @@ export function PerfGapsPanel({ onUnauthorized }: Props) {
 
 const ORIGIN_LABEL: Record<AdminTerm['origin'], string> = { seed: 'formulário', user: 'pesquisado', text: 'texto livre' };
 
-/** Termos da rotina: última coleta por loja; apagar pesquisados e dar prioridade. */
+/** Termos da rotina: última coleta por loja, paginado; apagar pesquisados e dar prioridade. */
 export function TermsPanel({ onUnauthorized }: Props) {
   const names = useStoreNames(onUnauthorized);
   const [category, setCategory] = useState('');
   const [origin, setOrigin] = useState('');
   const [q, setQ] = useState('');
   const [never, setNever] = useState<NeverFilter>('');
+  const [page, setPage] = useState(1);
   const [message, setMessage] = useState<string | null>(null);
-  const query = new URLSearchParams({ ...(category ? { category } : {}), ...(origin ? { origin } : {}), ...(q.trim() ? { q: q.trim() } : {}) });
-  const { data, reload } = useAdmin<AdminTerm[]>(`/terms?${query}`, onUnauthorized, ['attempt', 'admin'], 2_000);
+  // Mudar um filtro volta para a 1ª página.
+  const filter = <T,>(set: (v: T) => void) => (v: T) => (set(v), setPage(1));
+  const query = new URLSearchParams({ page: String(page), ...(category ? { category } : {}), ...(origin ? { origin } : {}), ...(never ? { never } : {}), ...(q.trim() ? { q: q.trim() } : {}) });
+  const { data, reload } = useAdmin<AdminPage<AdminTerm>>(`/terms?${query}`, onUnauthorized, ['attempt', 'admin'], 2_000);
   const stores = [...names.keys()];
-  const shown = data?.filter((t) => matchesNever(t, stores, never));
+  const shown = data?.items;
 
   const act = async (fn: () => Promise<unknown>, ok: string) => {
     try {
@@ -250,7 +259,7 @@ export function TermsPanel({ onUnauthorized }: Props) {
       title={
         <span className="flex flex-wrap items-center gap-2">
           Termos
-          <select className={select} value={category} onChange={(e) => setCategory(e.target.value)}>
+          <select className={select} value={category} onChange={(e) => filter(setCategory)(e.target.value)}>
             <option value="">todas as categorias</option>
             {ENABLED_CATEGORIES.map((c) => (
               <option key={c} value={c}>
@@ -258,7 +267,7 @@ export function TermsPanel({ onUnauthorized }: Props) {
               </option>
             ))}
           </select>
-          <select className={select} value={origin} onChange={(e) => setOrigin(e.target.value)}>
+          <select className={select} value={origin} onChange={(e) => filter(setOrigin)(e.target.value)}>
             <option value="">qualquer origem</option>
             {(['seed', 'user', 'text'] as const).map((o) => (
               <option key={o} value={o}>
@@ -266,13 +275,13 @@ export function TermsPanel({ onUnauthorized }: Props) {
               </option>
             ))}
           </select>
-          <select className={select} value={never} onChange={(e) => setNever(e.target.value as NeverFilter)}>
+          <select className={select} value={never} onChange={(e) => filter(setNever)(e.target.value as NeverFilter)}>
             <option value="">qualquer coleta</option>
             <option value="none">nunca coletado em nenhuma loja</option>
             <option value="some">nunca coletado em alguma loja</option>
           </select>
-          <input className={select} placeholder="Procurar termo" value={q} onChange={(e) => setQ(e.target.value)} maxLength={60} />
-          {shown && <span className="text-sm font-normal text-zinc-500">{shown.length} termo(s)</span>}
+          <input className={select} placeholder="Procurar termo" value={q} onChange={(e) => filter(setQ)(e.target.value)} maxLength={60} />
+          {data && <span className="text-sm font-normal text-zinc-500">{data.total.toLocaleString('pt-BR')} termo(s)</span>}
         </span>
       }
     >
@@ -311,6 +320,7 @@ export function TermsPanel({ onUnauthorized }: Props) {
           ))}
         </Table>
       )}
+      {data && <Pager page={data.page} pageSize={data.pageSize} total={data.total} onPage={setPage} />}
     </Box>
   );
 }

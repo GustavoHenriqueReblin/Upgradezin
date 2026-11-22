@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, ExternalLink, FileSearch, Search } from 'lucide-react';
+import { ChevronDown, ExternalLink, FileSearch, Search } from 'lucide-react';
 import {
   CATEGORY_DEFS,
   ENABLED_CATEGORIES,
@@ -17,6 +17,7 @@ import { AdminError, adminApi } from './api.ts';
 import { Box, Table, Td } from './DataPanels.tsx';
 import { countdown, formatWhen, SHEET_STATUS_LABEL, SHEET_UNITS, sheetEta, sheetSummary, shortDuration, specPairs, splitSeconds } from './format.ts';
 import { useLiveReload } from './live.ts';
+import { Pager } from './Pager.tsx';
 import { Switch } from './Switch.tsx';
 
 type Props = { onUnauthorized: () => void };
@@ -208,7 +209,6 @@ function Catalog({ fail, onMessage }: Shared) {
   useLiveReload(['attempt', 'admin'], load, { delayMs: 2_000, fallbackMs: 60_000 });
 
   const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch, page: patch.page ?? 1 }));
-  const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
   const readSheet = (p: AdminProduct) =>
     adminApi(`/products/${p.store}/${encodeURIComponent(p.sku)}/sheet`, { method: 'POST' })
@@ -327,24 +327,7 @@ function Catalog({ fail, onMessage }: Shared) {
         </Table>
       )}
 
-      {data && data.total > 0 && (
-        <div className="mt-3 flex items-center justify-between gap-2 text-sm">
-          <span className="text-zinc-500">
-            {((data.page - 1) * data.pageSize + 1).toLocaleString('pt-BR')}–{Math.min(data.page * data.pageSize, data.total).toLocaleString('pt-BR')} de {data.total.toLocaleString('pt-BR')}
-          </span>
-          <span className="flex items-center gap-1">
-            <PageBtn disabled={data.page <= 1} onClick={() => set({ page: data.page - 1 })} label="Página anterior">
-              <ChevronLeft className="h-4 w-4" />
-            </PageBtn>
-            <span className="px-2 tabular-nums">
-              página {data.page} de {pages}
-            </span>
-            <PageBtn disabled={data.page >= pages} onClick={() => set({ page: data.page + 1 })} label="Próxima página">
-              <ChevronRight className="h-4 w-4" />
-            </PageBtn>
-          </span>
-        </div>
-      )}
+      {data && <Pager page={data.page} pageSize={data.pageSize} total={data.total} onPage={(page) => set({ page })} />}
     </Box>
   );
 }
@@ -394,9 +377,4 @@ function ProductDetail({ p }: { p: AdminProduct }) {
   );
 }
 
-const PageBtn = ({ children, label, ...rest }: { children: React.ReactNode; label: string } & React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-  <button type="button" aria-label={label} {...rest} className="rounded-lg border border-zinc-300 p-1 hover:border-accent-500 disabled:opacity-40 dark:border-zinc-700">
-    {children}
-  </button>
-);
 

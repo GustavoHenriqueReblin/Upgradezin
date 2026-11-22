@@ -24,6 +24,7 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 - Admin: todas as telas atualizam sozinhas, sem precisar trocar de aba (status, coleta, consultas, cobertura, produtos e rotina de fichas, termos, atividade, backups). Um canal ao vivo só para a página avisa quando uma consulta termina, uma loja começa ou termina uma página, entra ou sai de pausa, algo muda pelo admin ou alguém busca no site; a tela recarrega o que mostra. Também recarrega ao voltar para a aba do navegador e, por garantia, de tempos em tempos.
 
 ### Alterado
+- Admin: Consultas e Termos paginados no servidor, 50 por página, no mesmo padrão dos Produtos (total com os filtros, página anterior e próxima). O filtro "nunca coletado" dos Termos agora é feito no servidor, valendo para todas as páginas. A aba "Ao vivo" saiu; o canal ao vivo continua, atualizando as outras telas.
 - Varredura de categoria também na s2 (a página da categoria inteira, 36 itens por página): todo produto à venda nela passa a ter histórico, não só os que aparecem nos termos. Caminhos no admin (aba Lojas).
 - s2: até 3 páginas por termo na rotina (`MAX_PAGES_S2`, antes 1). A busca do site lê só a 1ª página de cada termo (`SEARCH_MAX_PAGES`): o intervalo antes da 2ª página deixava a S2 em ~16 s, quase sempre por poucos itens a mais; o resto vem do banco (rotina e varredura).
 - Varredura alterna com os termos (no máximo metade das vezes da rotina), até 20 páginas por hora por loja (`ROUTINE_SWEEP_PAGES_PER_HOUR`, antes 6) e 40 por categoria (`ROUTINE_SWEEP_MAX_PAGES`, antes 25).

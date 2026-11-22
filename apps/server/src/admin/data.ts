@@ -1,5 +1,6 @@
-import { cpuPerf, gpuPerf, type AdminTerm, type CategoryId, type CoverageRow, type Offer, type PerfGap, type StoreId, type TimelineBucket } from '@upgradezin/shared';
+import { cpuPerf, gpuPerf, type AdminPage, type AdminTerm, type CategoryId, type CoverageRow, type Offer, type PerfGap, type StoreId, type TimelineBucket } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
+import { pageOf } from './paging.ts';
 import { SHEET_CATEGORIES, sheetCounts } from '../prices/sheets.ts';
 
 /**
@@ -73,17 +74,37 @@ export function coverage(db: Db, now = Date.now()): CoverageRow[] {
 }
 
 /** Termos (sem a varredura), com a última coleta em cada loja. Filtros por categoria, origem e texto. */
-export function listTerms(db: Db, f: { category?: CategoryId; origin?: AdminTerm['origin']; q?: string } = {}): AdminTerm[] {
+/**
+ * Termos da rotina para o admin, paginados (por categoria e termo), com a última coleta em cada loja.
+ * `never`: nunca coletado em nenhuma das `stores` ('none') ou em alguma delas ('some').
+ */
+export function listTerms(
+  db: Db,
+  f: { category?: CategoryId; origin?: AdminTerm['origin']; q?: string; never?: 'none' | 'some'; page?: number; pageSize?: number } = {},
+  stores: readonly StoreId[] = [],
+): AdminPage<AdminTerm> {
+  const { page, pageSize, offset } = pageOf(f);
   const where = [`origin != 'sweep'`];
-  const args: string[] = [];
+  const args: (string | number)[] = [];
   if (f.category) where.push('category = ?'), args.push(f.category);
   if (f.origin) where.push('origin = ?'), args.push(f.origin);
   // % e _ do texto são literais (escapados com !), não curingas.
   if (f.q) where.push(`lower(term) LIKE ? ESCAPE '!'`), args.push(`%${f.q.toLowerCase().replace(/[!%_]/g, (c) => `!${c}`)}%`);
+  if (f.never && stores.length) {
+    // Em quantas das lojas o termo já teve coleta boa.
+    const okIn = `(SELECT count(DISTINCT r.store) FROM term_runs r WHERE r.term_id = search_terms.id AND r.last_ok_at IS NOT NULL AND r.store IN (${stores.map(() => '?').join(', ')}))`;
+    where.push(f.never === 'none' ? `${okIn} = 0` : `${okIn} < ?`);
+    args.push(...stores);
+    if (f.never === 'some') args.push(stores.length);
+  }
+  const sql = where.join(' AND ');
+  const total = (db.prepare(`SELECT count(*) AS n FROM search_terms WHERE ${sql}`).get(...args) as { n: number }).n;
   const rows = db
-    .prepare(`SELECT id, category, term, origin, created_at, last_requested_at FROM search_terms WHERE ${where.join(' AND ')} ORDER BY category, lower(term) LIMIT 1000`)
-    .all(...args) as { id: number; category: CategoryId; term: string; origin: AdminTerm['origin']; created_at: string; last_requested_at: string | null }[];
-  const runs = db.prepare('SELECT term_id, store, last_ok_at, last_try_at, status, count FROM term_runs').all() as {
+    .prepare(`SELECT id, category, term, origin, created_at, last_requested_at FROM search_terms WHERE ${sql} ORDER BY category, lower(term), id LIMIT ? OFFSET ?`)
+    .all(...args, pageSize, offset) as { id: number; category: CategoryId; term: string; origin: AdminTerm['origin']; created_at: string; last_requested_at: string | null }[];
+  // Coletas por loja só dos termos desta página.
+  const ids = rows.map((r) => r.id);
+  const runs = (ids.length ? db.prepare(`SELECT term_id, store, last_ok_at, last_try_at, status, count FROM term_runs WHERE term_id IN (${ids.map(() => '?').join(', ')})`).all(...ids) : []) as {
     term_id: number;
     store: StoreId;
     last_ok_at: string | null;
@@ -97,7 +118,7 @@ export function listTerms(db: Db, f: { category?: CategoryId; origin?: AdminTerm
     list.push({ store: r.store, lastOkAt: r.last_ok_at, lastTryAt: r.last_try_at, status: r.status, count: r.count });
     byTerm.set(r.term_id, list);
   }
-  return rows.map((r) => ({
+  const items = rows.map((r): AdminTerm => ({
     id: r.id,
     category: r.category,
     term: r.term,
@@ -106,6 +127,7 @@ export function listTerms(db: Db, f: { category?: CategoryId; origin?: AdminTerm
     lastRequestedAt: r.last_requested_at,
     runs: (byTerm.get(r.id) ?? []).sort((a, b) => a.store.localeCompare(b.store)),
   }));
+  return { items, total, page, pageSize };
 }
 
 /**

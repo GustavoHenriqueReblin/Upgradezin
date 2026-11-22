@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RoutineSettings } from '@upgradezin/shared';
 import { openDb } from '../db/db.ts';
 import { backoffInfo, BlockedError, clearBackoff, PageLimitError, pauseStore, registerBlock, registerSuccess, useBackoffStorage } from '../pace.ts';
-import { attemptCounts, lastAttempt, listAttempts, onAttempt, recordAttempt, type NewAttempt } from '../prices/attempts.ts';
+import { attemptCounts, lastAttempt, listAttempts, onAttempt, pageAttempts, recordAttempt, type NewAttempt } from '../prices/attempts.ts';
 import { attemptOutcome } from '../prices/collect.ts';
 import { isLive, modeDelay, routineInfo, routineNextAt, routineSettings, setRoutineSettings, stopRoutine, tick, useRoutineStorage } from '../prices/routine.ts';
 import { useStoreStorage } from '../stores.ts';
@@ -65,6 +65,11 @@ describe('registro de consultas', () => {
     expect(listAttempts(db, { origin: 'search' }).map((a) => a.store)).toEqual(['s1']);
     expect(listAttempts(db, { before: 3, limit: 1 }).map((a) => a.id)).toEqual([2]);
     expect(listAttempts(db, { since: '2026-11-20T20:10:00.000Z' })).toHaveLength(2);
+    // Admin, paginado: mais recentes primeiro, com o total dos filtros.
+    expect(pageAttempts(db, { pageSize: 2 })).toMatchObject({ total: 3, page: 1, pageSize: 2 });
+    expect(pageAttempts(db, { pageSize: 2 }).items.map((a) => a.id)).toEqual([3, 2]);
+    expect(pageAttempts(db, { pageSize: 2, page: 2 }).items.map((a) => a.id)).toEqual([1]);
+    expect(pageAttempts(db, { store: 's2', status: 'blocked' })).toMatchObject({ total: 1, pageSize: 50 });
     expect(listAttempts(db)[2]).toEqual({ id: 1, ...att({ category: 'psu', term: '750W' }) });
   });
 

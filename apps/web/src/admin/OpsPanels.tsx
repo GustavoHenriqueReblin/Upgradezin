@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { CATEGORY_DEFS, type ActivityInfo, type AdminStoreConfig, type BackupFile, type MergeReport, type StoreAttempt } from '@upgradezin/shared';
+import { CATEGORY_DEFS, type ActivityInfo, type BackupFile, type MergeReport } from '@upgradezin/shared';
 import { Database, Download, Trash2, Upload } from 'lucide-react';
 import { AdminError, adminApi, adminUpload } from './api.ts';
-import { attemptResult, attemptWhat, formatDuration, formatWhen, mergeLines, originText } from './format.ts';
+import { formatWhen, mergeLines } from './format.ts';
 import { useLiveReload } from './live.ts';
 
 type Props = { onUnauthorized: () => void };
@@ -77,52 +77,6 @@ export function ActivityPanel({ onUnauthorized }: Props) {
         )}
       </Box>
     </div>
-  );
-}
-
-/** Ao vivo: cada consulta às lojas conforme acontece (SSE). */
-export function LivePanel({ onUnauthorized }: Props) {
-  const [items, setItems] = useState<StoreAttempt[]>([]);
-  const [connected, setConnected] = useState(false);
-  const [names, setNames] = useState<Map<string, string>>(new Map());
-
-  useEffect(() => {
-    adminApi<AdminStoreConfig[]>('/stores')
-      .then((l) => setNames(new Map(l.map((s) => [s.id, s.name || s.id]))))
-      .catch((err) => err instanceof AdminError && err.status === 401 && onUnauthorized());
-    const es = new EventSource('/api/admin/live');
-    es.onopen = () => setConnected(true);
-    es.onerror = () => setConnected(false);
-    es.addEventListener('attempt', (e) => {
-      const a = JSON.parse((e as MessageEvent).data) as StoreAttempt;
-      setItems((prev) => (prev.some((x) => x.id === a.id) ? prev : [a, ...prev].slice(0, 300)));
-    });
-    return () => es.close();
-  }, [onUnauthorized]);
-
-  return (
-    <Box
-      title={
-        <span className="flex items-center gap-2">
-          Ao vivo
-          <span className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-zinc-400'}`} />
-          <span className="text-xs font-normal text-zinc-500">{connected ? 'conectado: cada consulta aparece aqui na hora' : 'reconectando…'}</span>
-        </span>
-      }
-    >
-      {!items.length ? (
-        <p className="text-sm text-zinc-500">Nenhuma consulta ainda.</p>
-      ) : (
-        <ul className="space-y-1 font-mono text-xs">
-          {items.map((a) => (
-            <li key={a.id} className={a.status === 'ok' ? '' : a.status === 'blocked' || a.status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}>
-              {new Date(a.at).toLocaleTimeString('pt-BR')} [{names.get(a.store) ?? a.store}] {attemptWhat(a)}: {attemptResult(a)} · {originText(a.origin)} · {formatDuration(a.ms / 1000)}
-              {a.detail && a.status !== 'ok' && <span className="text-zinc-500"> · {a.detail}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </Box>
   );
 }
 

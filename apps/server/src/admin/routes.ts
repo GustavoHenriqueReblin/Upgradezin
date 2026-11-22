@@ -1,4 +1,4 @@
-import { CATEGORIES, STORES, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type AdminTerm, type CategoryId, type CoverageRow, type PerfGap, type AdminProductFilter, type AdminProductPage, type SheetRoutineStatus, type SheetRoutineInput, SHEET_SECONDS_MIN, SHEET_SECONDS_MAX, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, ROUTINE_MODES, MODE_SECONDS_MIN, MODE_SECONDS_MAX } from '@upgradezin/shared';
+import { ADMIN_PAGE_SIZE_MAX, CATEGORIES, STORES, type AdminPage, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type AdminTerm, type CategoryId, type CoverageRow, type PerfGap, type AdminProductFilter, type AdminProductPage, type SheetRoutineStatus, type SheetRoutineInput, SHEET_SECONDS_MIN, SHEET_SECONDS_MAX, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, ROUTINE_MODES, MODE_SECONDS_MIN, MODE_SECONDS_MAX } from '@upgradezin/shared';
 import { createReadStream } from 'node:fs';
 import { emitChange, onChange } from '../changes.ts';
 import type { ActivityInfo } from '@upgradezin/shared';
@@ -36,10 +36,10 @@ export interface AdminDeps {
   data: {
     coverage: () => CoverageRow[];
     perfGaps: () => PerfGap[];
-    terms: (f: { category?: CategoryId; origin?: AdminTerm['origin']; q?: string }) => AdminTerm[];
+    terms: (f: { category?: CategoryId; origin?: AdminTerm['origin']; q?: string; never?: 'none' | 'some'; page?: number; pageSize?: number }) => AdminPage<AdminTerm>;
     deleteTerm: (id: number) => 'deleted' | 'not-found' | 'seed';
     prioritizeTerm: (id: number) => boolean;
-    attempts: (f: { store?: StoreId; status?: StoreAttempt['status']; origin?: StoreAttempt['origin']; before?: number; limit?: number }) => StoreAttempt[];
+    attempts: (f: { store?: StoreId; status?: StoreAttempt['status']; origin?: StoreAttempt['origin']; page?: number; pageSize?: number }) => AdminPage<StoreAttempt>;
     timeline: (hours: number) => TimelineBucket[];
   };
   activity: () => ActivityInfo;
@@ -52,17 +52,23 @@ export interface AdminDeps {
 /** Banco enviado para merge: até este tamanho. */
 const MERGE_MAX_BYTES = 300 * 1024 * 1024;
 
+/** Paginação das tabelas do admin (produtos, consultas, termos). */
+const Paging = {
+  page: z.coerce.number().int().min(1).max(100_000).optional(),
+  pageSize: z.coerce.number().int().min(1).max(ADMIN_PAGE_SIZE_MAX).optional(),
+};
 const TermsQuery = z.object({
   category: z.enum(CATEGORIES).optional(),
   origin: z.enum(['seed', 'user', 'text']).optional(),
   q: z.string().max(60).optional(),
+  never: z.enum(['none', 'some']).optional(),
+  ...Paging,
 });
 const AttemptsQuery = z.object({
   store: z.enum(STORES).optional(),
   status: z.enum(['ok', 'partial', 'blocked', 'limit', 'error']).optional(),
   origin: z.enum(['search', 'routine', 'admin']).optional(),
-  before: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().min(1).max(500).optional(),
+  ...Paging,
 });
 const ProductsQuery = z.object({
   store: z.enum(STORES).optional(),
@@ -70,8 +76,7 @@ const ProductsQuery = z.object({
   sheet: z.enum(['ok', 'empty', 'missing', 'na']).optional(),
   inStock: z.enum(['1', '0']).transform((v) => v === '1').optional(),
   q: z.string().max(80).optional(),
-  page: z.coerce.number().int().min(1).max(100_000).optional(),
-  pageSize: z.coerce.number().int().min(1).max(200).optional(),
+  ...Paging,
 });
 const TimelineQuery = z.object({ hours: z.coerce.number().int().min(1).max(720).default(48) });
 const IdParam = z.coerce.number().int().positive();

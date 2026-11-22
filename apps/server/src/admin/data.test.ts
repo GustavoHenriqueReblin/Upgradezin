@@ -46,25 +46,44 @@ describe('termos', () => {
     ensureTerms(db, [{ category: 'gpu', term: 'Zotac RTX 3050 100%' }], 'text', '2026-11-20T10:00:00.000Z');
     saveCollection(db, { store: 's1', category: 'gpu', termId: idOf(seed, { category: 'gpu', term: 'NVIDIA GeForce' }), offers: [offer('1', 's1')], at: '2026-11-20T11:00:00.000Z', complete: true });
 
-    const all = listTerms(db);
+    const all = listTerms(db).items;
     expect(all.map((t) => [t.term, t.origin])).toEqual([
       ['NVIDIA GeForce', 'seed'],
       ['Zotac RTX 3050 100%', 'text'],
     ]);
     expect(all[0]!.runs).toEqual([{ store: 's1', lastOkAt: '2026-11-20T11:00:00.000Z', lastTryAt: '2026-11-20T11:00:00.000Z', status: 'ok', count: 1 }]);
-    expect(listTerms(db, { origin: 'text' }).map((t) => t.term)).toEqual(['Zotac RTX 3050 100%']);
-    expect(listTerms(db, { q: 'zotac' })).toHaveLength(1);
-    expect(listTerms(db, { q: '100%' })).toHaveLength(1); // % é literal, não curinga
-    expect(listTerms(db, { q: '%' })).toHaveLength(1);
-    expect(listTerms(db, { category: 'cpu' })).toEqual([]);
+    const terms = (f: Parameters<typeof listTerms>[1]) => listTerms(db, f, ['s1', 's2']).items.map((t) => t.term);
+    expect(terms({ origin: 'text' })).toEqual(['Zotac RTX 3050 100%']);
+    expect(terms({ q: 'zotac' })).toHaveLength(1);
+    expect(terms({ q: '100%' })).toHaveLength(1); // % é literal, não curinga
+    expect(terms({ q: '%' })).toHaveLength(1);
+    expect(terms({ category: 'cpu' })).toEqual([]);
+    // Nunca coletado: em nenhuma das lojas (o de texto livre) ou em alguma (os dois: nenhum na s2).
+    expect(terms({ never: 'none' })).toEqual(['Zotac RTX 3050 100%']);
+    expect(terms({ never: 'some' })).toEqual(['NVIDIA GeForce', 'Zotac RTX 3050 100%']);
+    expect(listTerms(db, { never: 'some' }, ['s1']).items.map((t) => t.term)).toEqual(['Zotac RTX 3050 100%']); // só a s1: o seed já coletou
 
     const [s, t] = all;
     expect(prioritizeTerm(db, s!.id, '2026-11-20T21:00:00.000Z')).toBe(true);
-    expect(listTerms(db)[0]!.lastRequestedAt).toBe('2026-11-20T21:00:00.000Z');
+    expect(listTerms(db).items[0]!.lastRequestedAt).toBe('2026-11-20T21:00:00.000Z');
     expect(deleteTerm(db, s!.id)).toBe('seed');
     expect(deleteTerm(db, t!.id)).toBe('deleted');
     expect(deleteTerm(db, t!.id)).toBe('not-found');
     expect(prioritizeTerm(db, 999)).toBe(false);
+  });
+
+  it('paginado: total dos filtros, 50 por página por padrão, na ordem de categoria e termo', () => {
+    const db = openDb(':memory:');
+    ensureTerms(db, Array.from({ length: 120 }, (_, i) => ({ category: 'psu' as const, term: `Fonte ${String(i).padStart(3, '0')}W` })), 'text');
+    const p1 = listTerms(db);
+    expect(p1).toMatchObject({ total: 120, page: 1, pageSize: 50 });
+    expect(p1.items).toHaveLength(50);
+    expect(p1.items[0]!.term).toBe('Fonte 000W');
+    const p3 = listTerms(db, { page: 3 });
+    expect(p3.items.map((t) => t.term)).toEqual(Array.from({ length: 20 }, (_, i) => `Fonte ${100 + i}W`));
+    expect(listTerms(db, { page: 2, pageSize: 10 }).items[0]!.term).toBe('Fonte 010W');
+    expect(listTerms(db, { pageSize: 500 }).pageSize).toBe(200); // teto
+    expect(listTerms(db, { page: 9 }).items).toEqual([]); // depois do fim: vazio, com o total
   });
 });
 

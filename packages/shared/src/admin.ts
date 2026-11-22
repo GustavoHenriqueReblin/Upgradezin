@@ -232,12 +232,19 @@ export interface AdminProduct {
   sheetAt?: string;
 }
 
-export interface AdminProductPage {
-  items: AdminProduct[];
+/** Uma página de uma tabela do admin (produtos, consultas, termos): os itens, o total com os filtros e onde está. */
+export interface AdminPage<T> {
+  items: T[];
   total: number;
   page: number;
   pageSize: number;
 }
+
+/** Itens por página nas tabelas do admin (padrão e máximo). */
+export const ADMIN_PAGE_SIZE = 50;
+export const ADMIN_PAGE_SIZE_MAX = 200;
+
+export type AdminProductPage = AdminPage<AdminProduct>;
 
 /** Filtros da lista de produtos. */
 export interface AdminProductFilter {

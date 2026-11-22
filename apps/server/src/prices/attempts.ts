@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
-import type { AttemptKind, AttemptOrigin, AttemptStatus, StoreAttempt, StoreId } from '@upgradezin/shared';
+import type { AdminPage, AttemptKind, AttemptOrigin, AttemptStatus, StoreAttempt, StoreId } from '@upgradezin/shared';
+import { pageOf } from '../admin/paging.ts';
 import type { Db } from '../db/db.ts';
 
 /**
@@ -72,11 +73,9 @@ const fromRow = (r: Row): StoreAttempt => ({
   ...(r.detail ? { detail: r.detail } : {}),
 });
 
-/** Consultas mais recentes primeiro, com filtros. `before`: id, para paginar. */
-export function listAttempts(
-  db: Db,
-  f: { store?: StoreId; status?: AttemptStatus; origin?: AttemptOrigin; since?: string; before?: number; limit?: number } = {},
-): StoreAttempt[] {
+type AttemptFilter = { store?: StoreId; status?: AttemptStatus; origin?: AttemptOrigin; since?: string };
+
+function attemptWhere(f: AttemptFilter & { before?: number }): { sql: string; args: (string | number)[] } {
   const where: string[] = [];
   const args: (string | number)[] = [];
   if (f.store) where.push('store = ?'), args.push(f.store);
@@ -84,10 +83,23 @@ export function listAttempts(
   if (f.origin) where.push('origin = ?'), args.push(f.origin);
   if (f.since) where.push('at >= ?'), args.push(f.since);
   if (f.before) where.push('id < ?'), args.push(f.before);
-  const rows = db
-    .prepare(`SELECT * FROM store_attempts ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ?`)
-    .all(...args, Math.min(Math.max(f.limit ?? 100, 1), 500)) as unknown as Row[];
+  return { sql: where.length ? `WHERE ${where.join(' AND ')}` : '', args };
+}
+
+/** Consultas mais recentes primeiro, com filtros. `before`: id (só as anteriores a ela). */
+export function listAttempts(db: Db, f: AttemptFilter & { before?: number; limit?: number } = {}): StoreAttempt[] {
+  const w = attemptWhere(f);
+  const rows = db.prepare(`SELECT * FROM store_attempts ${w.sql} ORDER BY id DESC LIMIT ?`).all(...w.args, Math.min(Math.max(f.limit ?? 100, 1), 500)) as unknown as Row[];
   return rows.map(fromRow);
+}
+
+/** Consultas para o admin, paginadas (mais recentes primeiro), com o total dos filtros. */
+export function pageAttempts(db: Db, f: AttemptFilter & { page?: number; pageSize?: number } = {}): AdminPage<StoreAttempt> {
+  const { page, pageSize, offset } = pageOf(f);
+  const w = attemptWhere(f);
+  const total = (db.prepare(`SELECT count(*) AS n FROM store_attempts ${w.sql}`).get(...w.args) as { n: number }).n;
+  const rows = db.prepare(`SELECT * FROM store_attempts ${w.sql} ORDER BY id DESC LIMIT ? OFFSET ?`).all(...w.args, pageSize, offset) as unknown as Row[];
+  return { items: rows.map(fromRow), total, page, pageSize };
 }
 
 /** Última consulta da loja com um dos status (ex. última coleta boa, último bloqueio). */

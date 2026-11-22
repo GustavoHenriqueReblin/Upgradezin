@@ -79,17 +79,8 @@ export function mergeLines(r: MergeReport): string[] {
 /** Lojas em que a rotina roda de fato: as marcadas, se ela estiver ligada; senão, nenhuma. */
 export const routineStores = <T extends string>(r: { enabled: boolean; stores: T[] }): T[] => (r.enabled ? r.stores : []);
 
-/** Lojas em que o termo nunca teve coleta boa (entre as lojas passadas). */
-export const neverCollectedIn = (t: { runs: { store: string; lastOkAt: string | null }[] }, stores: string[]): string[] =>
-  stores.filter((s) => !t.runs.some((r) => r.store === s && r.lastOkAt));
-
 /** Filtro de coleta da aba Termos: nunca coletado em nenhuma loja, ou em alguma delas. */
 export type NeverFilter = '' | 'none' | 'some';
-export function matchesNever(t: { runs: { store: string; lastOkAt: string | null }[] }, stores: string[], f: NeverFilter): boolean {
-  if (!f) return true;
-  const missing = neverCollectedIn(t, stores).length;
-  return f === 'none' ? missing === stores.length : missing > 0;
-}
 
 /** Contagem até `target`: "00:08:22 (22:32)"; passou da hora, "00:00:00". Hora entre parênteses no fuso local. */
 export function countdown(target: string | number, now = Date.now()): string {

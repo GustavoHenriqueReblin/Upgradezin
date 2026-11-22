@@ -8,7 +8,7 @@ import { openDb } from '../db/db.ts';
 import { adminStores, saveStoreConfig, useStoreStorage } from '../stores.ts';
 import { AdminAuth, readCookie, sessionCookie } from './auth.ts';
 import { Backups, MergeUploads } from './backup.ts';
-import { listAttempts, onAttempt } from '../prices/attempts.ts';
+import { listAttempts, onAttempt, pageAttempts } from '../prices/attempts.ts';
 import { attemptTimeline, coverage, perfGaps, deleteTerm, listTerms, prioritizeTerm } from './data.ts';
 import { listProducts, sheetStoreStatus } from './products.ts';
 import { registerAdmin } from './routes.ts';
@@ -115,7 +115,7 @@ function makeApp() {
       terms: (f) => listTerms(db, f),
       deleteTerm: (id) => deleteTerm(db, id),
       prioritizeTerm: (id) => prioritizeTerm(db, id),
-      attempts: (f) => listAttempts(db, f),
+      attempts: (f) => pageAttempts(db, f),
       timeline: (hours) => attemptTimeline(db, hours),
     },
     activity: () => ({ recent: [], people: 0, searchesOpen: 0, watchesOpen: 0, atLimit: { force: 0, text: 0, sheets: 0, share: 0 } }),
@@ -313,10 +313,10 @@ describe('rotas de dados (cobertura, termos, consultas)', () => {
     const cookie = cookieOf(await login(app));
     const get = (url: string) => app.inject({ url, headers: { cookie } });
     expect((await get('/api/admin/coverage')).json()).toEqual([]);
-    expect((await get('/api/admin/terms?category=gpu')).json()).toEqual([]);
-    expect((await get('/api/admin/terms?category=inventada')).statusCode).toBe(400);
-    expect((await get('/api/admin/attempts?store=s2&status=blocked&limit=10')).json()).toEqual([]);
-    expect((await get('/api/admin/attempts?limit=9999')).statusCode).toBe(400);
+    expect((await get('/api/admin/terms?category=gpu&never=some&page=1&pageSize=20')).json()).toEqual({ items: [], total: 0, page: 1, pageSize: 20 });
+    for (const q of ['category=inventada', 'never=talvez', 'page=0', 'pageSize=500']) expect((await get(`/api/admin/terms?${q}`)).statusCode).toBe(400);
+    expect((await get('/api/admin/attempts?store=s2&status=blocked&page=2')).json()).toEqual({ items: [], total: 0, page: 2, pageSize: 50 });
+    for (const q of ['page=0', 'pageSize=9999', 'status=talvez']) expect((await get(`/api/admin/attempts?${q}`)).statusCode).toBe(400);
     expect((await get('/api/admin/attempts/timeline?hours=48')).json()).toEqual([]);
     expect((await get('/api/admin/attempts/timeline?hours=0')).statusCode).toBe(400);
     const del = await app.inject({ method: 'DELETE', url: '/api/admin/terms/999', headers: { cookie, 'x-admin': '1' } });
