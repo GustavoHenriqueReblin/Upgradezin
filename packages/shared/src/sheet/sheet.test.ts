@@ -451,6 +451,16 @@ describe('campos pelo título do anúncio', () => {
       architecture: 'Arrow Lake',
     });
     expect(readTitle('cpu', 'Processador AMD Ryzen 7 5800X3D, 8-Core, 16-Threads, 3.4GHz (4.5GHz Turbo), Cache 100MB, AM4')).not.toHaveProperty('l3Mb');
+    expect(readSheet('gpu', 'Board size: 331.9 x 150 x 70.4 mm\nBox size: 460 x 290 x 115 mm').lengthMm).toBe(332);
+    expect(readSheet('gpu', 'Dimensões:\nComprimento: 250 mm\nAltura: 118 mm\nLargura: 42 mm').lengthMm).toBe(250);
+    expect(readSheet('gpu', 'Minimum System Power Requirement (W): 550').psuW).toBe(550);
+    // Clock com o MHz no rótulo; PCIe sem o "PCIe 8-pin" do conector de energia.
+    expect(readSheet('gpu', 'Boost Clock (MHz): 2595\nBase Clock(MHz): 2310\nSupplementary Power Connectors: 1x PCIe 8-pin cable\nPCI Express Gen 4: Yes')).toMatchObject({
+      boostMhz: 2595,
+      baseMhz: 2310,
+      pcie: '4.0',
+    });
+    expect(readSheet('gpu', 'Clock:\nBoost: 2595 MHz\nBase: 2310 MHz')).toMatchObject({ boostMhz: 2595, baseMhz: 2310 });
     expect(readSheet('cpu', 'Intel Smart Cache LLC: 30MB\nTotal L2 Cache: 30MB')).toMatchObject({ l3Mb: 30, l2Mb: 30 });
     expect(readTitle('gpu', 'Placa de Video Palit GeForce RTX 5060 White OC, 8GB, GDDR7, 128-bit, NE75060U19P1-GB2063M')).toMatchObject({
       chip: 'RTX 5060',

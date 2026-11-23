@@ -236,18 +236,23 @@ const gpu: Reader = (doc) => {
     const m = v.match(re);
     return inRange(m ? thousands(m[1]!) : undefined, 300, 4000);
   };
+  // Também o número sozinho com a unidade no rótulo ("Boost Clock (MHz): 2595").
+  const mhzIn = (v: string, l: string) => mhzOf(v, /(\d[\d.,]*)\s*mhz/) ?? (/mhz/.test(l) ? mhzOf(v, /^\s*(\d[\d.,]*)\s*$/) : undefined);
   const boostMhz =
-    pick(doc, [/boost/], (v) => mhzOf(v, /(\d[\d.,]*)\s*mhz/)) ??
+    pick(doc, [/boost/], mhzIn) ??
     pick(doc, [/clock|velocidade do clock|frequencia/], (v) => mhzOf(v, /boost\s*:?\s*(?:ate\s*)?(\d[\d.,]*)\s*mhz/) ?? mhzOf(v, /(\d[\d.,]*)\s*mhz\s*\(?boost/)) ??
     pick(doc, [/^clock$|^clock do motor|core clock|velocidade do clock de gpu|clock do nucleo|clock grafico|gpu clock/], (v) => mhzOf(v, /(\d[\d.,]*)\s*mhz/)) ??
     mhzOf(doc.all, /(\d[\d.,]*)\s*mhz\s*\(?boost/) ??
     mhzOf(doc.all, /boost(?: clock)?\s*:?\s*(?:ate\s*)?(\d[\d.,]*)\s*mhz/);
-  const baseMhz = pick(doc, [/clock|base/], (v, l) => (/base/.test(l) ? mhzOf(v, /(\d[\d.,]*)\s*mhz/) : mhzOf(v, /base\s*:?\s*(?:ate\s*)?(\d[\d.,]*)\s*mhz/)));
+  const baseMhz = pick(doc, [/clock|base/], (v, l) => (/base/.test(l) ? mhzIn(v, l) :mhzOf(v, /base\s*:?\s*(?:ate\s*)?(\d[\d.,]*)\s*mhz/)));
   // "Consumo de energia: 600W" em algumas fichas é a fonte recomendada: acima de 450 W não é a placa.
   const tdpW = pick(doc, [/^tdp|potencia (da placa|total|grafica|da placa grafica)|consumo (de energia|da placa|maximo)|total board power|tbp|power consumption|^consumo$/], (v) =>
     inRange(numberWith(v, /w(?:atts?)?\b/), 20, 450),
   );
-  const psuW = pick(doc, [/psu recomendada|fonte (de alimentacao )?recomendada|recommended psu|^fonte|alimentacao recomendada|consumo de energia|power supply requirement/], (v) => inRange(numberWith(v, /w(?:atts?)?\b/), 300, 1600));
+  // Também "Minimum System Power Requirement (W): 550" (a unidade no rótulo).
+  const psuW = pick(doc, [/psu recomendada|fonte (de alimentacao )?recomendada|recommended psu|^fonte|alimentacao recomendada|consumo de energia|power supply requirement|system power requirement/], (v, l) =>
+    inRange(numberWith(v, /w(?:atts?)?\b/) ?? (/\(w\)/.test(l) ? firstInt(v) : undefined), 300, 1600),
+  );
   // Comprimento: a maior medida das dimensões da placa (em cm, se a ficha usa cm).
   const lengthOf = (v: string) => {
     if (/caixa|embalagem|box/.test(v)) return undefined;
@@ -260,9 +265,11 @@ const gpu: Reader = (doc) => {
     return nums.length ? Math.round(Math.max(...nums)) : undefined;
   };
   const lengthMm =
-    pick(doc, [/dimens|card size|product size|tamanho d[aoe] (placa|cartao|produto)|^comprimento|^tamanho$|^length/], lengthOf) ??
+    // Também "Board size: 331.9 x 150 x 70.4 mm".
+    pick(doc, [/dimens|card size|board size|product size|tamanho d[aoe] (placa|cartao|produto)|^comprimento|^tamanho$|^length/], lengthOf) ??
     lengthOf(doc.lines.find((l) => /^dimens/.test(l) && /\d/.test(l)) ?? '');
-  const pcieM = doc.all.match(/pci[- ]?e(?:xpress)?\s*:?\s*(?:gen\s*)?(\d)(?:\.\d)?(?:\s*(?:x\s*(\d+)|(\d+)\s*x))?/);
+  // Não o conector de energia ("1x PCIe 8-pin cable").
+  const pcieM = doc.all.match(/pci[- ]?e(?:xpress)?\s*:?\s*(?:gen\s*)?(\d)(?!\s*-?\s*pin)(?:\.\d)?(?:\s*(?:x\s*(\d+)|(\d+)\s*x))?/);
   const lanes = doc.all.match(/uses?\s*x\s*(\d+)|\(x(\d+)\)/);
   const pcie = pcieM ? `${pcieM[1]}.0${lanes ? ` x${lanes[1] ?? lanes[2]}` : pcieM[2] || pcieM[3] ? ` x${pcieM[2] ?? pcieM[3]}` : ''}` : undefined;
   const power16Pin = /12v-?2x6|12vhpwr|16\s*-?\s*pin|12\s*\+\s*4\s*pin/.test(doc.all) ? true : /conector[^\n]{0,40}\b[68]\s*-?\s*pin|8 ?pin|\b[68]\s*pinos/.test(doc.all) ? false : undefined;
