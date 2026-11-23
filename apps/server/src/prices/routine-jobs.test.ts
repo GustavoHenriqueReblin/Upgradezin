@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Offer } from '@upgradezin/shared';
-import { fixture } from '../adapters/fixtures.ts';
+import { fixture, s1CpuListPage } from '../adapters/fixtures.ts';
 import { usePageLoader } from '../browser.ts';
 import { getDb } from '../db/instance.ts';
 import { useBackoffStorage } from '../pace.ts';
@@ -29,7 +29,7 @@ describe('rotina de preços: só páginas de categoria', () => {
     const urls: string[] = [];
     usePageLoader(async (_store, url) => {
       urls.push(url);
-      return { html: fixture('s1-cpu.html'), url, title: '' };
+      return { html: s1CpuListPage(url), url, title: '' };
     });
     setRoutineSettings({ enabled: true, stores: ['s1'] });
     await tick(routineNextAt('s1')!);

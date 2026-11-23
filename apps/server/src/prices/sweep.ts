@@ -124,9 +124,19 @@ export interface SweepPageRun {
  * aconteceu: quantas ofertas gravou, se a lista do caminho acabou, se a volta acabou e quantos
  * anúncios passaram a "sem estoque" no fim dela.
  */
-export function recordSweepPage(db: Db, run: SweepPageRun): { saved: number; listEnded: boolean; roundDone: boolean; outOfStock: number } {
+export function recordSweepPage(db: Db, run: SweepPageRun): { saved: number; listEnded: boolean; roundDone: boolean; outOfStock: number; repeated: boolean } {
   const { store, category, path, paths, page, totalPages, inStock, offers, at } = run;
   const prev = sweepState(db, store, category);
+  // Página que só traz o que esta volta já viu (a loja devolveu de novo uma página anterior): a lista
+  // não anda mais. Para aqui, como no teto, sem marcar nada como esgotado (o resto pode não ter sido lido).
+  const seenAt = db.prepare('SELECT last_seen_at FROM listings WHERE store = ? AND store_sku = ?');
+  const repeated =
+    page > 1 &&
+    offers.length > 0 &&
+    inProgress(prev) &&
+    !!prev.startedAt &&
+    offers.every((o) => ((seenAt.get(store, o.storeSku) as { last_seen_at: string } | undefined)?.last_seen_at ?? '') >= prev.startedAt!);
+  if (repeated) console.warn(`[${store}] ${category} pág ${page}: só produtos que esta volta já viu (a loja repetiu a página); fim da lista aqui`);
   const full = !!prev.full;
   const maxPages = full ? Math.max(run.maxPages, FULL_SWEEP_MAX_PAGES) : run.maxPages;
   // Esgotado só atualiza o anúncio que já existe (não cria anúncio novo de produto que não dá para
@@ -137,8 +147,8 @@ export function recordSweepPage(db: Db, run: SweepPageRun): { saved: number; lis
   // Volta começada antes de o início ser guardado: não dá para saber o que ela já viu, então o fim
   // dela não marca nada como esgotado (antes, marcava tudo o que não estava na última página).
   const capped = inProgress(prev) && (!!prev.capped || !prev.startedAt);
-  const atCap = page >= maxPages && page < totalPages && (full || inStock > 0);
-  const listEnded = (!full && inStock === 0) || page >= totalPages || page >= maxPages;
+  const atCap = repeated || (page >= maxPages && page < totalPages && (full || inStock > 0));
+  const listEnded = repeated || (!full && inStock === 0) || page >= totalPages || page >= maxPages;
   const mode = full ? { full: true } : {};
   let outOfStock = 0;
   if (!listEnded) {
@@ -149,7 +159,7 @@ export function recordSweepPage(db: Db, run: SweepPageRun): { saved: number; lis
     if (!capped && !atCap) outOfStock = markOutOfStock(db, store, category, started, at);
     saveState(db, store, category, { page: 1, doneAt: at });
   }
-  return { saved: keep.length, listEnded, roundDone: listEnded && path + 1 >= paths, outOfStock };
+  return { saved: keep.length, listEnded, roundDone: listEnded && path + 1 >= paths, outOfStock, repeated };
 }
 
 /** Erro numa página (fora bloqueio): a categoria espera e depois retoma da mesma página. */

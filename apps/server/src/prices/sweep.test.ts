@@ -52,6 +52,23 @@ describe('rotina de preços pelas páginas de categoria', () => {
     expect(next(T0 + 25 * H)).toEqual({ category: 'psu', path: 0, page: 1 });
   });
 
+  it('página que só repete o que a volta já viu (a loja devolveu de novo a mesma página): fim da lista ali, sem marcar nada como esgotado', () => {
+    const db = openDb(':memory:');
+    // Volta anterior: o "9" estava em estoque.
+    page(db, 'psu', 1, 1, [offer('9', 300)], T0 - 30 * H);
+    page(db, 'psu', 1, 200, [offer('1', 400)], T0);
+    expect(page(db, 'psu', 2, 200, [offer('2', 500), offer('3', 600)], T0 + 1)).toMatchObject({ listEnded: false, repeated: false });
+    // A página 3 veio igual à 2: a lista não anda mais.
+    expect(page(db, 'psu', 3, 200, [offer('2', 500), offer('3', 600)], T0 + 2)).toMatchObject({ listEnded: true, roundDone: true, repeated: true, outOfStock: 0 });
+    expect(inStockOf(db, '9')).toBe(true); // não visto, mas a lista pode não ter sido lida inteira
+    expect(sweepState(db, 's1', 'psu')).toEqual({ page: 1, doneAt: iso(T0 + 2) });
+    // Volta completa (varredura): a mesma regra, não vai até o teto de 200.
+    restartSweep(db, 's1', 'psu', { full: true });
+    page(db, 'psu', 1, 200, [offer('1', 400)], T0 + 10);
+    expect(page(db, 'psu', 2, 200, [offer('2', 500)], T0 + 11)).toMatchObject({ listEnded: false });
+    expect(page(db, 'psu', 3, 200, [offer('2', 500)], T0 + 12)).toMatchObject({ roundDone: true, repeated: true });
+  });
+
   it('a lista acaba na primeira página sem nada em estoque (as lojas listam os em estoque primeiro)', () => {
     const db = openDb(':memory:');
     page(db, 'psu', 1, 20, [offer('1', 400)], T0);

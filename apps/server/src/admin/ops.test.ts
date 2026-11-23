@@ -10,7 +10,7 @@ import { fullSweep, fullSweepAll, fullSweepOf, probePage, fullSweepSettings, rea
 import { setSheetRoutine, sheetRoutineSettings, stopSheetRoutine, useSheetRoutineStorage } from '../prices/sheet-routine.ts';
 import { getMeta, setMeta } from '../db/db.ts';
 import { usePageLoader } from '../browser.ts';
-import { fixture } from '../adapters/fixtures.ts';
+import { fixture, s1CpuListPage } from '../adapters/fixtures.ts';
 import { getDb } from '../db/instance.ts';
 import { sweepState } from '../prices/sweep.ts';
 import { saveCollection } from '../prices/prices.ts';
@@ -213,7 +213,7 @@ describe('varredura completa e painel das lojas', () => {
     const urls: string[] = [];
     usePageLoader(async (_store, url) => {
       urls.push(url);
-      return { html: fixture('s1-cpu.html'), url, title: '' };
+      return { html: s1CpuListPage(url), url, title: '' };
     });
     try {
       expect(fullSweep(db, 's1')).toMatchObject({ ok: true });
