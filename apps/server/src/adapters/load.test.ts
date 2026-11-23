@@ -135,7 +135,9 @@ describe('todas as lojas pelo mesmo caminho (loadPage)', () => {
     expect(r.totalPages).toBe(61);
     // Resposta sem os produtos (a loja limitou): bloqueio, não "0 resultados".
     fakeChrome(() => ({ html: '', rsc: '<html><title>Site em Manutenção</title></html>' }));
-    await expect(s2.sweepPage!({ category: 'psu', url: 'https://www.s2.example/hardware/fonte', page: 3, signal: signal() })).rejects.toBeInstanceOf(BlockedError);
+    const err = await s2.sweepPage!({ category: 'psu', url: 'https://www.s2.example/hardware/fonte', page: 3, signal: signal() }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BlockedError);
+    expect((err as BlockedError).message).toBe('Página de manutenção: Site em Manutenção'); // reconhecida na resposta do clique
   });
 
   it('S3: espera os cards aparecerem e lê do HTML', async () => {

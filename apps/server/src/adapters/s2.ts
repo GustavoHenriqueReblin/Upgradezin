@@ -212,7 +212,11 @@ async function readS2Page(url: URL, signal: AbortSignal, onNeedsHuman?: () => vo
   if (!hasProducts && redirect) throw new SearchRedirectError('s2', redirect);
   if (items.length === 0) await saveDebugHtml('s2', loaded.rsc ?? loaded.html, 'no-items');
   // Página sem dados de produto não é "0 resultados": a loja limitou o acesso. Respeita e para.
-  if (!hasProducts) throw new BlockedError('s2', 'unavailable', 'Página sem dados de produto');
+  if (!hasProducts) {
+    // Pelo clique, a página de manutenção vem na resposta (o título da aba continua o da página anterior).
+    const maintenance = loaded.rsc?.match(/<title>([^<]*manuten[^<]*)<\/title>/i)?.[1];
+    throw new BlockedError('s2', 'unavailable', maintenance ? `Página de manutenção: ${maintenance.trim().slice(0, 60)}` : 'Página sem dados de produto');
+  }
   return { items, totalPages };
 }
 
