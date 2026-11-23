@@ -31,7 +31,7 @@ export const GPU_PERF: Record<string, number> = {
   // Polaris antigas e as RX da Mancer (TechPowerUp): RX 480 ~6% abaixo da RX 580, RX 470 ~6% abaixo da RX 570,
   // RX 460 um pouco abaixo da RX 560; RX 5500 (OEM, "Streaky V2") no nível da RX 5500 XT 8 GB e da GTX 1650 Super;
   // RX 560 XT (Polaris 10 cortada, "Streaky") no nível da RX 470D, da GTX 1060 3 GB e da GTX 1650.
-  'RX 5500': 53, 'RX 480': 47, 'RX 470': 42, 'RX 560 XT': 40, 'RX 460': 19,
+  'RX 5500': 53, 'RX 480': 47, 'RX 470': 43, 'RX 560 XT': 40, 'RX 460': 19,
   'Arc B580': 120, 'Arc B570': 105, 'Arc A770': 105, 'Arc A750': 95, 'Arc A580': 85, 'Arc A380': 35, 'Arc A310': 25,
 };
 
@@ -115,7 +115,7 @@ export function cpuLinesAbove(socket: Socket, min: number): { family: CpuFamily;
  */
 export const GPU_PCIE_X8 = new Set([
   'RTX 5060 Ti', 'RTX 5060', 'RTX 5050', 'RTX 4060 Ti', 'RTX 4060', 'RTX 3050',
-  'RX 7650 GRE', 'RX 7600 XT', 'RX 7600', 'RX 6650 XT', 'RX 6600 XT', 'RX 6600', 'RX 6500 XT', 'RX 6400', 'RX 5500 XT',
+  'RX 7650 GRE', 'RX 7600 XT', 'RX 7600', 'RX 6650 XT', 'RX 6600 XT', 'RX 6600', 'RX 6500 XT', 'RX 6400', 'RX 5500 XT', 'RX 5500', 'RX 560', 'RX 460',
   'Arc B580', 'Arc B570', 'Arc A380', 'Arc A310',
 ]);
 

@@ -11,7 +11,7 @@ import { dec, firstInt, isNo, isYes, numberWith, pick, sheetDoc, thousands, type
  *
  * READER_VERSION: mudou o leitor ou os campos, sobe o número: o servidor relê as fichas guardadas.
  */
-export const READER_VERSION = 7;
+export const READER_VERSION = 8;
 
 type Reader = (doc: SheetDoc) => SheetValues;
 
@@ -96,7 +96,8 @@ const cpu: Reader = (doc) => {
   const l3 =
     // "Esconderijo: Cache inteligente Intel de 20 MB" (tradução automática de "Cache"), "Cache Inteligente Intel (L3) [MB]".
     pick(doc, [/cache l3|l3 cache|\(l3\)|cache inteligente|^esconderijo/], (v) => inRange(numberWith(v, /mb/), 1, 1024)) ??
-    pick(doc, [/smart cache$|^cache$|^cache \d+ ?mb/], (v, l) => inRange(numberWith(`${l} ${v}`.replace(/cache l2.*/, ''), /mb/), 1, 1024));
+    // "Intel Smart Cache LLC: 30MB" (LLC = o último nível, o L3).
+    pick(doc, [/smart cache( llc)?$|\bllc\b|^cache$|^cache \d+ ?mb/],(v, l) => inRange(numberWith(`${l} ${v}`.replace(/cache l2.*/, ''), /mb/), 1, 1024));
   const l2 = pick(doc, [/cache l2|l2 cache|total l2/], (v, l) => inRange(numberWith(/l2/.test(v) && !/l2/.test(l) ? v.split(/l2/).pop()! : v, /mb/), 0.5, 256));
   // "Voltagem / TDP: 125W"; "Processor Base Power(W): 125" (a unidade no rótulo).
   const tdp = pick(doc, [/^tdp|\btdp\b|default tdp|tdp padrao|processor base power|potencia (basica|base) do processador|^potencia termica/], (v, l) =>

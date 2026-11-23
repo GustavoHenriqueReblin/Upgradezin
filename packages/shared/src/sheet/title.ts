@@ -57,7 +57,9 @@ function cpu(title: string, t: string): SheetValues {
   const boost = num(boostM?.[1] ?? boostM?.[2]);
   const all = [...t.matchAll(/(\d[.,]\d{1,2})\s*ghz/g)].map((m) => num(m[1])!);
   const base = boost !== undefined && all.length >= 2 ? all.find((n) => n < boost) : undefined;
-  const igpuName = t.match(/radeon\s*(?:vega\s*\d+\s*)?graphics|(?:intel\s*)?uhd\s*graphics\s*\d*/)?.[0];
+  // "Cache 30MB": na Intel é o Smart Cache (L3); na AMD é L2 + L3 somados, então fica de fora.
+  const cache = s.cpuBrand === 'intel' ? num(t.match(/\bcache\s*(?:de\s*)?(\d{1,3})\s*mb\b/)?.[1]) : undefined;
+  const igpuName =t.match(/radeon\s*(?:vega\s*\d+\s*)?graphics|(?:intel\s*)?uhd\s*graphics\s*\d*/)?.[0];
   return {
     ...(s.socket && { socket: s.socket }),
     ...(fam && { architecture: ARCH_OF[fam] }),
@@ -65,6 +67,7 @@ function cpu(title: string, t: string): SheetValues {
     ...(s.threads && { threads: s.threads }),
     ...(base && { baseGhz: base }),
     ...(boost && { boostGhz: boost }),
+    ...(cache && cache >= 2 && cache <= 128 && { l3Mb: cache }),
     ...(s.igpu === false ? { igpu: 'Não' } : igpuName ? { igpu: igpuName.replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\bUhd\b/, 'UHD').trim() } : s.igpu ? { igpu: 'Sim' } : {}),
   };
 }

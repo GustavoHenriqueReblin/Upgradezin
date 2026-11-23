@@ -153,5 +153,7 @@ describe('placas novas na tabela (nov/2026)', () => {
     expect([GPU_POWER['RX 9050'], GPU_POWER['RX 7650 GRE']]).toEqual([92, 170]);
     expect(GPU_PCIE_X8.has('RX 7650 GRE')).toBe(true);
     expect(GPU_PCIE_X8.has('RX 9050')).toBe(false); // PCIe 5.0 x16
+    expect(GPU_PCIE_X8.has('RX 460')).toBe(true); // Baffin: PCIe 3.0 x8 (TechPowerUp)
+    expect(GPU_PCIE_X8.has('RX 480')).toBe(false); // Ellesmere: x16
   });
 });

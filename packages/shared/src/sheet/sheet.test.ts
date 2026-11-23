@@ -443,6 +443,15 @@ describe('campos pelo título do anúncio', () => {
     expect(readTitle('cpu', 'Processador AMD Ryzen 7 5800X3D, 3.4GHz (4.5GHz Turbo), 8-Cores 16-Threads, AM4, Sem Cooler, Sem vídeo')).toMatchObject({ baseGhz: 3.4, boostGhz: 4.5, igpu: 'Não' });
     expect(readTitle('cpu', 'Processador Intel Core i5-12400F, 2.5GHz (4.4GHz Turbo), LGA1700')).toMatchObject({ architecture: 'Alder Lake', igpu: 'Não', socket: 'LGA1700' });
     expect(readTitle('cpu', 'Processador AMD Ryzen 5 8600G, AM5')).toMatchObject({ architecture: 'Zen 4', igpu: 'Sim' });
+    // "Cache 30MB": L3 na Intel; na AMD ("Cache 100MB" do 5800X3D) é L2 + L3, fica de fora.
+    expect(readTitle('cpu', 'Processador Intel Core Ultra 5 250K, 4.2GHz (5.3GHz Turbo), Cache 30MB, 18 Núcleos, 18 Threads, LGA 1851, Com Vídeo Integrado - BX80768250K')).toMatchObject({
+      l3Mb: 30,
+      baseGhz: 4.2,
+      cores: 18,
+      architecture: 'Arrow Lake',
+    });
+    expect(readTitle('cpu', 'Processador AMD Ryzen 7 5800X3D, 8-Core, 16-Threads, 3.4GHz (4.5GHz Turbo), Cache 100MB, AM4')).not.toHaveProperty('l3Mb');
+    expect(readSheet('cpu', 'Intel Smart Cache LLC: 30MB\nTotal L2 Cache: 30MB')).toMatchObject({ l3Mb: 30, l2Mb: 30 });
     expect(readTitle('gpu', 'Placa de Video Palit GeForce RTX 5060 White OC, 8GB, GDDR7, 128-bit, NE75060U19P1-GB2063M')).toMatchObject({
       chip: 'RTX 5060',
       vramGb: 8,
