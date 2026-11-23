@@ -186,8 +186,10 @@ function StoreCard({ s, act }: { s: AdminStoreState; act: (fn: () => Promise<unk
         ))}
       </div>
 
+      {/* Testes de página da S2 (página 2 direto e 5 páginas por um endereço próprio): fora da tela; a rota e a lógica continuam. Para voltar, descomente.
       {s.id === 's2' && <ProbeButton s={s} act={act} category="psu" page={2} />}
       {s.id === 's2' && <ProbeButton s={s} act={act} category="psu" page={1} pages={5} path="/hardware/fonte?product_category=6444" />}
+      */}
 
       <FullSweepForm key={JSON.stringify(s.fullSweepSettings)} s={s} act={act} />
     </Box>
