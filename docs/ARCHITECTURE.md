@@ -255,7 +255,7 @@ Proteções: branco e não branco nunca se juntam; specs contraditórias (chip, 
 
 No banco, `listings.product_key` (exato) e `listings.group_key` (grupo), por categoria (`gpu:DUALRTX5070O12G`), são recalculadas sobre todos os anúncios da categoria (`prices/identity.ts`): ao subir (5 s depois) e 30 s depois de uma coleta da categoria, juntando as seguidas (~2 s para todas as categorias com ~12,7 mil anúncios). Em nov/2026, nas placas de vídeo vistas em 14 dias, 35% dos anúncios casam com outra loja no nível exato e 44% no grupo (antes: 24% e 37%).
 
-**Fichas juntadas:** a ficha de um produto junta as páginas lidas de todos os anúncios dele (nível exato), campo a campo ([§8.3](#83-fichas-técnicas)). A rotina de fichas pula o produto que já tem a ficha completa por outra loja.
+**Fichas juntadas:** a ficha de um produto junta as páginas lidas de todos os anúncios dele (nível exato), campo a campo ([§8.3](#83-fichas-técnicas)). A rotina de fichas pula o produto que já tem a ficha completa por outra loja, e deixa de fora por 6 h o produto cuja página deu erro (sem ser bloqueio da loja), para não travar a fila nele. Com 2 falhas seguidas (horas entre elas, então uma queda de rede não conta), a oferta daquela loja sai do app (busca, ofertas da categoria e página do produto): a página quebrada levaria quem clica em "Ver na Loja" a uma página de erro. A página abrindo de novo (rotina ou "Ler ficha") a traz de volta (`prices/page-errors.ts`).
 
 A melhor oferta do grupo é a em estoque com menor preço à vista com cupom. Cada loja aparece uma vez no grupo, com a melhor oferta dela.
 
@@ -331,6 +331,7 @@ Migrações versionadas por `PRAGMA user_version` em `db.ts` (só acrescentar no
 | `store_attempts` | cada consulta a uma loja (busca por texto, página de categoria, ficha técnica): quando, de onde veio, resultado, ofertas, motivo do bloqueio, duração; 90 dias ([§9.3](#93-admin-admin)) |
 | `store_configs` | configuração de cada loja (antes `STORE_*` no `.env`): ligada, nome, site, caminho da busca, caminhos por categoria e páginas de categoria (JSON), cores (JSON) e data da alteração |
 | `sheet_pages` | cada página de produto lida pela rotina de fichas (loja + código): categoria, texto da ficha (`sheetText`; null: a página não tinha ficha) e a data. Lida uma vez; o texto é relido quando o leitor muda ([§8.3](#83-fichas-técnicas)) |
+| `page_errors` | página de produto que deu erro sem ser bloqueio da loja (loja + código): falhas seguidas, a última e a mensagem. Fora da fila de fichas por 6 h; com 2 falhas seguidas, a oferta sai do app até a página abrir de novo. Não entra no merge de backups (estado do servidor) |
 | `sheet_<categoria>` | os campos lidos de cada página (loja + código), uma coluna por campo da categoria (`packages/shared/src/sheet/fields.ts`). As colunas seguem a lista: ao subir, o servidor cria as que faltam e apaga as que saíram (`syncSheetTables`) |
 | `shared_builds` | montagem compartilhada por link: código curto (`/m/<id>`), JSON da montagem (peças, ofertas, quantidade) e data. Sem dono nem expiração: quem tem o link vê |
 

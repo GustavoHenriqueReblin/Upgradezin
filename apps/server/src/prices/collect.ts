@@ -10,6 +10,7 @@ import { BlockedError, PageLimitError, registerBlock, withStore } from '../pace.
 import { storeConfig, sweepPaths } from '../stores.ts';
 import { recordAttempt, type NewAttempt } from './attempts.ts';
 import { saveCollection } from './prices.ts';
+import { clearPageError } from './page-errors.ts';
 import { savePage } from './sheets.ts';
 import { recordSweepFailure, recordSweepPage } from './sweep.ts';
 
@@ -189,6 +190,7 @@ export async function sheetOf(
       const html = await adapter.productSheet!({ sku, ...(url && { url }) }, signal);
       const text = html ? sheetText(html) : '';
       const values = savePage(db, { store, sku, category, text: text || null });
+      clearPageError(db, store, sku); // a página abriu: se estava fora do app por erro, volta
       // Página sem ficha: guarda a página inteira para conferir se faltou no anúncio ou no leitor (só com DEBUG_DUMPS).
       if (!text) await saveDebugHtml(store, lastPageHtml(store) ?? html ?? '', `ficha-${category}-${sku}`);
       logAttempt(base, t0, { count: text ? 1 : 0 });

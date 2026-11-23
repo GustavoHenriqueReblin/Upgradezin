@@ -280,14 +280,15 @@ export function catalogProducts(db: Db, category: CategoryId, since: string): Sh
  * Próximos anúncios da loja para a rotina abrir a página e ler a ficha: vistos desde `since`, com
  * a página ainda não lida e de produto sem ficha completa (a ficha completa por outra loja não
  * precisa desta). Produto achado há menos tempo primeiro (o que a coleta acabou de encontrar), em
- * estoque antes.
+ * estoque antes. `skip`: códigos a deixar de fora (a página deu erro há pouco).
  */
-export function nextSheets(db: Db, store: StoreId, since: string, limit = 1): { sku: string; category: CategoryId }[] {
+export function nextSheets(db: Db, store: StoreId, since: string, limit = 1, skip: ReadonlySet<string> = new Set()): { sku: string; category: CategoryId }[] {
   const out: { sku: string; category: CategoryId; inStock: boolean; first: string }[] = [];
   for (const category of ENABLED_CATEGORIES) {
     for (const p of catalogProducts(db, category, since)) {
       if (p.state === 'complete') continue;
-      for (const l of p.listings) if (l.store === store && !l.read) out.push({ sku: l.sku, category, inStock: l.inStock, first: l.firstSeenAt });
+      for (const l of p.listings)
+        if (l.store === store && !l.read && !skip.has(l.sku)) out.push({ sku: l.sku, category, inStock: l.inStock, first: l.firstSeenAt });
     }
   }
   out.sort((a, b) => Number(b.inStock) - Number(a.inStock) || b.first.localeCompare(a.first));

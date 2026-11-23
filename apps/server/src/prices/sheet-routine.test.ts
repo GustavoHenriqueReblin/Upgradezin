@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Offer, SheetRoutineSettings } from '@upgradezin/shared';
 import { fixture } from '../adapters/fixtures.ts';
 import { usePageLoader } from '../browser.ts';
@@ -7,6 +7,9 @@ import { clearBackoff, pauseStore, useBackoffStorage } from '../pace.ts';
 import { useStoreStorage } from '../stores.ts';
 import { saveCollection } from './prices.ts';
 import { routineNextAt, setRoutineSettings, stopRoutine } from './routine.ts';
+import { PAGE_ERROR_SKIP_MS } from './page-errors.ts';
+import { productPage } from './product-page.ts';
+import { recentOffers } from './prices.ts';
 import { setSheetRoutine, sheetDelay, sheetNextAt, sheetRoutineSettings, sheetTick, stopSheetRoutine, useSheetRoutineStorage } from './sheet-routine.ts';
 import { productSheet } from './sheets.ts';
 
@@ -93,6 +96,55 @@ describe('rotina de fichas técnicas (separada da coleta)', () => {
     clearBackoff('s1');
     setSheetRoutine({ enabled: false });
     expect(sheetNextAt('s1')).toBeNull();
+  });
+
+  it('página que dá erro (ex.: a loja redireciona o endereço para ele mesmo) sai da fila por 6 h; a rotina segue para o próximo; na 2ª falha a oferta sai do app, e volta quando a página abre', async () => {
+    useStoreStorage(getDb());
+    useBackoffStorage([], () => {});
+    const db = getDb();
+    db.exec('DELETE FROM page_errors');
+    const inApp = () => recentOffers(db, 'gpu', '2000-01-01').some((o) => o.storeSku === '701');
+    let broken = true;
+    const urls: string[] = [];
+    usePageLoader(async (_store, url) => {
+      urls.push(url);
+      if (url.endsWith('/701') && broken) throw new Error('extensão: Frame with ID 0 is showing error page');
+      return { html: sheetPage(250), url, title: '' };
+    });
+    gpusInCatalog('702');
+    gpusInCatalog('701'); // achado por último: vem primeiro na fila
+    setSheetRoutine({ enabled: true, stores: ['s1'], seconds: 60 });
+    await sheetTick(sheetNextAt('s1')!);
+    expect(urls.at(-1)).toMatch(/\/701$/);
+    await sheetTick(sheetNextAt('s1')!);
+    expect(urls.at(-1)).toMatch(/\/702$/); // não tenta a 701 de novo
+    await sheetTick(sheetNextAt('s1')!);
+    expect(urls.filter((u) => u.endsWith('/701'))).toHaveLength(1); // a 701 continua de fora (o resto da fila segue)
+    expect(inApp()).toBe(true); // uma falha só (pode ser a rede): a oferta continua no app
+    // Passado o tempo, tenta de novo: 2ª falha seguida, a oferta sai do app.
+    const later = (ms: number) => vi.spyOn(Date, 'now').mockReturnValue(Date.now() + ms);
+    let spy = later(PAGE_ERROR_SKIP_MS + 1_000);
+    try {
+      await sheetTick(sheetNextAt('s1')!);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(urls.filter((u) => u.endsWith('/701'))).toHaveLength(2);
+    expect(inApp()).toBe(false);
+    const l = db.prepare("SELECT id, product_key FROM listings WHERE store = 's1' AND store_sku = '701'").get() as { id: number; product_key: string | null };
+    const key = l.product_key ?? `id:${l.id}`;
+    expect(productPage(db, key, ['s1'])).toBeUndefined(); // nem na página do produto
+    // A página voltou a abrir: a ficha é lida, o registro some e a oferta volta.
+    broken = false;
+    spy = later(2 * PAGE_ERROR_SKIP_MS + 2_000);
+    try {
+      await sheetTick(sheetNextAt('s1')!);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(urls.filter((u) => u.endsWith('/701'))).toHaveLength(3);
+    expect(inApp()).toBe(true);
+    expect(db.prepare('SELECT count(*) AS n FROM page_errors').get()).toEqual({ n: 0 });
   });
 
   it('intervalo: os segundos mais até 20%', () => {

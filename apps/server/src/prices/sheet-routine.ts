@@ -4,6 +4,7 @@ import { getDb } from '../db/instance.ts';
 import { backoffInfo, BlockedError, PageLimitError, pageLimitUntil, pagesUsed, registerSuccess } from '../pace.ts';
 import { ACTIVE_STORES } from '../stores.ts';
 import { canReadSheet, sheetOf, withBrowserSession } from './collect.ts';
+import { BROKEN_AFTER, PAGE_ERROR_SKIP_MS, recentPageErrors, recordPageError } from './page-errors.ts';
 import { nextSheets, SHEET_SCOPE_DAYS } from './sheets.ts';
 
 /**
@@ -11,7 +12,8 @@ import { nextSheets, SHEET_SCOPE_DAYS } from './sheets.ts';
  * aba Fichas). Em cada loja, abre a página de um produto do catálogo (todas as categorias) cuja
  * ficha ainda não está completa a cada `seconds` segundos (+ até 20% aleatório), contados do fim da
  * anterior. Cada página é lida uma vez: o texto fica guardado e é relido quando o leitor muda
- * (prices/sheets.ts). Ordem: o produto que a coleta achou há menos tempo, em estoque antes.
+ * (prices/sheets.ts). Ordem: o produto que a coleta achou há menos tempo, em estoque antes. Produto
+ * cuja página deu erro fica de fora por um tempo (prices/page-errors.ts).
  *
  * Divide com o resto só o que é da loja: a fila (uma página por vez; o "Ler ficha" do admin passa
  * na frente), o intervalo entre páginas, o limite de páginas por hora e a pausa por bloqueio.
@@ -118,7 +120,7 @@ async function readOne(store: StoreId, signal: AbortSignal): Promise<void> {
   }
   const now = Date.now();
   const iso = (ms: number) => new Date(ms).toISOString();
-  const [next] = nextSheets(getDb(), store, iso(now - SHEET_SCOPE_DAYS * 86_400_000));
+  const [next] = nextSheets(getDb(), store, iso(now - SHEET_SCOPE_DAYS * 86_400_000), 1, recentPageErrors(getDb(), store, now));
   if (!next) {
     nextAt.set(store, Date.now() + IDLE_MS); // nada a ler: confere de novo depois (produto novo no catálogo)
     return;
@@ -128,7 +130,13 @@ async function readOne(store: StoreId, signal: AbortSignal): Promise<void> {
     registerSuccess(store);
     console.info(`[ficha ${store}] ${next.category} ${next.sku}: ${!r?.hasSheet ? 'página sem ficha' : `${Object.keys(r.values).length} campos`}`);
   } catch (err) {
-    if (!signal.aborted && !(err instanceof BlockedError) && !(err instanceof PageLimitError)) console.error(`[ficha ${store}] ${next.category} ${next.sku}:`, err);
+    if (!signal.aborted && !(err instanceof BlockedError) && !(err instanceof PageLimitError)) {
+      // Erro da página (não da loja): fica de fora por um tempo, para não travar a fila nela; com
+      // falhas seguidas, a oferta sai do app até a página abrir de novo.
+      const fails = recordPageError(getDb(), store, next.sku, err instanceof Error ? err.message : String(err));
+      const hidden = fails >= BROKEN_AFTER ? ', oferta fora do app' : '';
+      console.error(`[ficha ${store}] ${next.category} ${next.sku} (falha ${fails}, fora da fila por ${PAGE_ERROR_SKIP_MS / 3_600_000} h${hidden}):`, err);
+    }
   }
   nextAt.set(store, Date.now() + sheetDelay(settings.seconds));
 }

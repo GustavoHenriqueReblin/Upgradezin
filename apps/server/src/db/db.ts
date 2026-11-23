@@ -240,6 +240,18 @@ const MIGRATIONS: (string | Rebuild)[] = [
   );
   DELETE FROM meta WHERE key = 'sheet-reader';
   `,
+  // 14: página de produto que dá erro sem ser bloqueio (prices/page-errors.ts): fora da fila de fichas
+  // por um tempo e, com falhas seguidas, a oferta sai do app até a página abrir de novo
+  `
+  CREATE TABLE page_errors (
+    store     TEXT NOT NULL,
+    store_sku TEXT NOT NULL,
+    fails     INTEGER NOT NULL,             -- falhas seguidas
+    last_at   TEXT NOT NULL,                -- última falha
+    detail    TEXT,                         -- mensagem do erro
+    PRIMARY KEY (store, store_sku)
+  );
+  `,
 ];
 
 export type Db = DatabaseSync;

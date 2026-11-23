@@ -1,6 +1,7 @@
 import { effectiveCash, stripAccents, termMatches, type CategoryId, type ListingHistory, type Offer, type PricePoint, type StoreId } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
 import { emitCollected } from './events.ts';
+import { NOT_BROKEN } from './page-errors.ts';
 
 /**
  * Preços no banco (docs/ARCHITECTURE.md §8.3): a rotina grava aqui cada página de categoria lida
@@ -115,7 +116,7 @@ export function markOutOfStock(db: Db, store: StoreId, category: CategoryId, see
  */
 export function matchingListings(db: Db, store: StoreId, category: CategoryId, terms: string[], seenSince: string): Offer[] {
   const rows = db
-    .prepare('SELECT offer FROM listings WHERE store = ? AND category = ? AND last_seen_at >= ?')
+    .prepare(`SELECT offer FROM listings WHERE store = ? AND category = ? AND last_seen_at >= ? AND ${NOT_BROKEN}`)
     .all(store, category, seenSince) as { offer: string }[];
   const out: Offer[] = [];
   for (const r of rows) {
@@ -135,14 +136,17 @@ export function titleMatches(db: Db, store: StoreId, category: CategoryId, text:
   const words = fold(text).split(/[\s,]+/).filter(Boolean);
   if (!words.length) return [];
   const rows = db
-    .prepare('SELECT title, offer FROM listings WHERE store = ? AND category = ? AND last_seen_at >= ?')
+    .prepare(`SELECT title, offer FROM listings WHERE store = ? AND category = ? AND last_seen_at >= ? AND ${NOT_BROKEN}`)
     .all(store, category, seenSince) as { title: string; offer: string }[];
   return rows.filter((r) => words.every((w) => fold(r.title).includes(w))).map((r) => JSON.parse(r.offer) as Offer);
 }
 
-/** Ofertas da categoria em todas as lojas, vistas desde `seenSince` (a última oferta de cada anúncio). */
+/**
+ * Ofertas da categoria em todas as lojas, vistas desde `seenSince` (a última oferta de cada anúncio).
+ * Como na busca, sem os anúncios com a página quebrada (prices/page-errors.ts).
+ */
 export function recentOffers(db: Db, category: CategoryId, seenSince: string): Offer[] {
-  const rows = db.prepare('SELECT offer FROM listings WHERE category = ? AND last_seen_at >= ?').all(category, seenSince) as { offer: string }[];
+  const rows = db.prepare(`SELECT offer FROM listings WHERE category = ? AND last_seen_at >= ? AND ${NOT_BROKEN}`).all(category, seenSince) as { offer: string }[];
   return rows.map((r) => JSON.parse(r.offer) as Offer);
 }
 

@@ -1,5 +1,6 @@
 import { effectiveCash, type CategoryId, type Offer, type ProductPage, type StoreId } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
+import { NOT_BROKEN } from './page-errors.ts';
 import { withHistoryStats } from './prices.ts';
 import { productSheet } from './sheets.ts';
 
@@ -11,8 +12,8 @@ export function productPage(db: Db, key: string, stores: readonly StoreId[]): Pr
   const byId = /^id:(\d{1,12})$/.exec(key);
   const rows = (
     byId
-      ? db.prepare('SELECT store, store_sku, category, title, offer FROM listings WHERE id = ? AND product_key IS NULL').all(Number(byId[1]))
-      : db.prepare('SELECT store, store_sku, category, title, offer FROM listings WHERE product_key = ? ORDER BY last_seen_at DESC').all(key)
+      ? db.prepare(`SELECT store, store_sku, category, title, offer FROM listings WHERE id = ? AND product_key IS NULL AND ${NOT_BROKEN}`).all(Number(byId[1]))
+      : db.prepare(`SELECT store, store_sku, category, title, offer FROM listings WHERE product_key = ? AND ${NOT_BROKEN} ORDER BY last_seen_at DESC`).all(key)
   ) as { store: StoreId; store_sku: string; category: CategoryId; title: string; offer: string }[];
   const live = rows.filter((r) => stores.includes(r.store));
   const newest = live[0];

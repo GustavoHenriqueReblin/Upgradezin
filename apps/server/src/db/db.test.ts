@@ -64,11 +64,19 @@ describe('migrações', () => {
       INSERT INTO listings (id, store, store_sku, category, title, url, model_key, offer, first_seen_at, last_seen_at) VALUES (7, 's1', 'a', 'gpu', 'Placa', 'u', 'k', '{}', 't', 't');
       INSERT INTO meta VALUES ('sheet-reader', 'x'), ('sheet-routine', '{}');
     `);
-    expect(migrate(db)).toEqual([13]);
+    expect(migrate(db, 13)).toEqual([13]);
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((t) => t.name);
     expect(tables).not.toContain('product_sheets');
     expect(db.prepare("SELECT name FROM pragma_table_info('sheet_pages')").all().map((c) => (c as { name: string }).name)).toEqual(['store', 'store_sku', 'category', 'text', 'fetched_at']);
     expect(db.prepare('SELECT count(*) n FROM listings').get()).toEqual({ n: 1 });
     expect(db.prepare('SELECT key FROM meta').all()).toEqual([{ key: 'sheet-routine' }]); // a configuração da rotina fica
+  });
+
+  it('14: páginas de produto com erro (falhas seguidas, a última e a mensagem), vazia', () => {
+    const db = new DatabaseSync(':memory:');
+    migrate(db, 13);
+    expect(migrate(db)).toEqual([14]);
+    expect(db.prepare("SELECT name FROM pragma_table_info('page_errors')").all().map((c) => (c as { name: string }).name)).toEqual(['store', 'store_sku', 'fails', 'last_at', 'detail']);
+    expect(db.prepare('SELECT count(*) n FROM page_errors').get()).toEqual({ n: 0 });
   });
 });
