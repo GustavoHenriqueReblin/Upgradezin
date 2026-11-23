@@ -178,7 +178,8 @@ export function s2SheetFromHtml(html: string): string | null {
  */
 function specsFromDescription(document: Document): string | null {
   const block = Array.from(document.querySelectorAll('.description-rich-text')).find((d) =>
-    Array.from(d.querySelectorAll('strong')).some((s) => /^especifica[cç](?:o|õ)es(?: t[eé]cnicas)?:?$/i.test(s.textContent?.trim() ?? '')),
+    // "Especificações", "ESPECIFICAÇÃO", "Especificações técnicas".
+    Array.from(d.querySelectorAll('strong')).some((s) => /^especifica[cç](?:[aã]o|[oõ]es)(?: t[eé]cnicas?)?:?$/i.test(s.textContent?.trim() ?? '')),
   );
   if (!block) return null;
   const rows = Array.from(block.querySelectorAll('p'))

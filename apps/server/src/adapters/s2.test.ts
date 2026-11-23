@@ -147,6 +147,9 @@ describe('S2: ficha técnica da página do produto', () => {
       noiseDba: 30,
       sockets: 'LGA1200,LGA2066,LGA1151,AM4,AM3',
     });
+    // Título no singular e em maiúsculas.
+    const singular = page.replace('<strong>Especificações</strong>', '<strong>ESPECIFICAÇÃO</strong>');
+    expect(s2SheetFromHtml(singular)).toContain('<p>Dimensões:84 x 129 x 158,5 mm</p>');
     // Sem tabela e sem o bloco: sem ficha.
     expect(s2SheetFromHtml('<html><body><div class="description-rich-text"><p>Só marketing.</p></div></body></html>')).toBeNull();
   });
