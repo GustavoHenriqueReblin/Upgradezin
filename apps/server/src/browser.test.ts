@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { OpenedTab, Tab } from './browser-ext.ts';
-import { closeBrowser, loadPage, useTabOpener } from './browser.ts';
+import { chromeArgs, chromeEnv, type OpenedTab, type Tab } from './browser-ext.ts';
+import { closeBrowser, loadPage, useTabOpener, windowArgs } from './browser.ts';
 
 /**
  * Aba falsa: `links` diz quais links a página aberta tem; `rscOf` o que o site devolveria ao clicar
@@ -79,5 +79,26 @@ describe('aba mantida nas páginas de uma lista (keepTab)', () => {
     expect(t.counts()).toEqual({ opened: 1, closed: 1 });
     await loadPage('s2', `${BASE}/fonte?page=3`, { keepTab: true });
     expect(t.log.at(-1)).toBe(`aba2 goto ${BASE}/fonte?page=3`);
+  });
+});
+
+describe('Chrome da loja: como o site enxerga o navegador', () => {
+  it('em português: idioma da interface, idioma enviado aos sites e o do sistema (o Chrome no Linux ignora --lang)', () => {
+    const args = chromeArgs([]);
+    expect(args).toContain('--lang=pt-BR');
+    expect(args).toContain('--accept-lang=pt-BR,pt,en-US,en');
+    const env = chromeEnv({ PATH: '/bin', LANG: 'C.UTF-8' });
+    expect(env).toMatchObject({ PATH: '/bin', LANG: 'pt_BR.UTF-8' });
+    expect(env.LANGUAGE?.startsWith('pt_BR')).toBe(true);
+  });
+
+  it('janela escondida: fora da tela só no Windows; no Linux (tela virtual), no canto da tela', () => {
+    expect(windowArgs('s2', true, 'win32')).toContain('--window-position=-32000,-32000');
+    const linux = windowArgs('s2', true, 'linux');
+    expect(linux).toContain('--window-position=0,0');
+    expect(linux.some((a) => a.includes('-32000'))).toBe(false);
+    expect(linux).toContain('--disable-backgrounding-occluded-windows');
+    // Visível: uma loja ao lado da outra, em qualquer sistema.
+    expect(windowArgs('s3', false, 'linux')).toContain('--window-position=900,0');
   });
 });

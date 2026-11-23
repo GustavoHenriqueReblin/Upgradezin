@@ -17,17 +17,19 @@ import { BlockedError, sleep } from './pace.ts';
 
 export { ExtSetupError, type Tab } from './browser-ext.ts';
 
-// Janela fora da área visível: para o site é um Chrome normal com janela, o usuário não vê.
 // Não minimizar: janela minimizada/escondida tem o JS desacelerado e o desafio da loja trava;
 // as duas flags de desempenho evitam essa desaceleração.
-const HIDE_ARGS = ['--window-position=-32000,-32000', '--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows'];
+const KEEP_RUNNING = ['--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows'];
 
 /**
- * Posição e tamanho da janela. Escondida: fora da tela. Visível: uma loja ao lado da outra
- * (sobrepostas), para dar para acompanhar.
+ * Posição e tamanho da janela. Escondida: no Windows, fora da área visível (para o site é um
+ * Chrome normal com janela, o usuário não vê). No Linux o servidor já roda numa tela virtual que
+ * ninguém vê, então a janela fica no canto dela: uma posição como -32000 não existe num monitor de
+ * verdade, e o site enxerga (window.screenX). Visível: uma loja ao lado da outra (sobrepostas),
+ * para dar para acompanhar.
  */
-function windowArgs(store: StoreId): string[] {
-  if (config.BROWSER_HIDE_WINDOW) return ['--window-size=1366,768', ...HIDE_ARGS];
+export function windowArgs(store: StoreId, hide = config.BROWSER_HIDE_WINDOW, platform: NodeJS.Platform = process.platform): string[] {
+  if (hide) return ['--window-size=1366,768', platform === 'win32' ? '--window-position=-32000,-32000' : '--window-position=0,0', ...KEEP_RUNNING];
   const x = { s1: 0, s2: 450, s3: 900 }[store] ?? 0;
   return ['--window-size=1000,800', `--window-position=${x},0`];
 }

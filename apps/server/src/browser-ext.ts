@@ -182,7 +182,23 @@ function startUrl(store: StoreId): string {
   return `http://127.0.0.1:${config.EXT_PORT}/start?${new URLSearchParams({ store, token: TOKEN })}`;
 }
 
-/** Abre o Chrome da loja (perfil fixo) com a aba de controle, e espera a extensão conectar. */
+/**
+ * Argumentos do Chrome da loja, além do perfil e da extensão. Em português, como o navegador de
+ * quem compra nessas lojas: --lang vale no Windows; --accept-lang é o idioma que os sites recebem
+ * (navigator.languages e o cabeçalho Accept-Language) em qualquer sistema.
+ */
+export function chromeArgs(windowArgs: string[]): string[] {
+  return ['--no-first-run', '--no-default-browser-check', '--lang=pt-BR', '--accept-lang=pt-BR,pt,en-US,en', ...windowArgs];
+}
+
+/**
+ * Ambiente do Chrome da loja. No Linux, o Chrome ignora --lang e usa o idioma do sistema (no
+ * serviço, inglês): sem isto, o site via um navegador em inglês com fuso de São Paulo.
+ */
+export function chromeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...env, LANG: 'pt_BR.UTF-8', LANGUAGE: 'pt_BR:pt:en_US:en' };
+}
+
 /** Última vez que a extensão de cada loja não conectou: por um minuto, falha na hora (sem abrir outro Chrome). */
 const failedAt = new Map<StoreId, number>();
 
@@ -202,8 +218,9 @@ function openStart(store: StoreId, windowArgs: string[]) {
   mkdirSync(dir, { recursive: true });
   // --load-extension: o Chromium e o Chrome for Testing carregam a extensão sozinhos; o Chrome
   // comum ignora (nele, instalar uma vez com pnpm chrome-setup).
-  const proc = spawn(config.CHROME_PATH, [`--user-data-dir=${dir}`, `--load-extension=${EXTENSION_DIR}`, '--no-first-run', '--no-default-browser-check', '--lang=pt-BR', ...windowArgs, startUrl(store)], {
+  const proc = spawn(config.CHROME_PATH, [`--user-data-dir=${dir}`, `--load-extension=${EXTENSION_DIR}`, ...chromeArgs(windowArgs), startUrl(store)], {
     stdio: 'ignore',
+    env: chromeEnv(process.env),
   });
   if (!running) {
     procs.set(store, proc);
