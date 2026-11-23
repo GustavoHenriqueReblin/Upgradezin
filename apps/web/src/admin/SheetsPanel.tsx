@@ -14,13 +14,14 @@ import {
   type SheetProductPage,
   type SheetRoutineInput,
   type SheetRoutineStatus,
+  type SheetFilterState,
   type SheetState,
   type StoreId,
   type StoreInterval,
 } from '@upgradezin/shared';
 import { AdminError, adminApi } from './api.ts';
 import { Box, Table, Td } from './DataPanels.tsx';
-import { countdown, fieldLabels, formatWhen, intervalLabel, SHEET_STATE_LABEL, sheetEta } from './format.ts';
+import { countdown, fieldLabels, formatWhen, intervalLabel, SHEET_FILTER_LABEL, SHEET_STATE_LABEL, sheetEta } from './format.ts';
 import { IntervalInputs } from './IntervalInputs.tsx';
 import { useLiveReload } from './live.ts';
 import { Pager } from './Pager.tsx';
@@ -45,6 +46,8 @@ const pct = (x: number, total: number) => (total ? Math.round((x / total) * 100)
 export function SheetsPanel({ onUnauthorized }: Props) {
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [category, setCategory] = useState<CategoryId>('cpu');
+  // A situação filtrada vale para todas as categorias (trocar de categoria não volta a "qualquer situação").
+  const [state, setState] = useState<SheetFilterState | ''>('');
   const fail = useCallback(
     (err: unknown) => {
       if (err instanceof AdminError && err.status === 401) return onUnauthorized();
@@ -58,7 +61,7 @@ export function SheetsPanel({ onUnauthorized }: Props) {
       {message && <p className={`rounded-lg px-3 py-2 text-sm ${message.ok ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-red-500/10 text-red-700 dark:text-red-300'}`}>{message.text}</p>}
       <SheetRoutine fail={fail} onMessage={setMessage} />
       <Coverage fail={fail} onPick={setCategory} />
-      <Products key={category} category={category} onCategory={setCategory} fail={fail} onMessage={setMessage} />
+      <Products key={category} category={category} onCategory={setCategory} state={state} onState={setState} fail={fail} onMessage={setMessage} />
     </div>
   );
 }
@@ -210,14 +213,20 @@ function Coverage({ fail, onPick }: { fail: (err: unknown) => void; onPick: (c: 
 }
 
 interface Filters {
-  state: string;
   q: string;
   page: number;
 }
 
-/** Produtos de uma categoria com os campos da ficha. */
-function Products({ category, onCategory, fail, onMessage }: Shared & { category: CategoryId; onCategory: (c: CategoryId) => void }) {
-  const [filters, setFilters] = useState<Filters>({ state: '', q: '', page: 1 });
+/** Produtos de uma categoria com os campos da ficha. A situação vem do painel (fica ao trocar de categoria). */
+function Products({
+  category,
+  onCategory,
+  state,
+  onState,
+  fail,
+  onMessage,
+}: Shared & { category: CategoryId; onCategory: (c: CategoryId) => void; state: SheetFilterState | ''; onState: (s: SheetFilterState | '') => void }) {
+  const [filters, setFilters] = useState<Filters>({ q: '', page: 1 });
   const [text, setText] = useState('');
   const [data, setData] = useState<SheetProductPage | null>(null);
   const [stores, setStores] = useState<Map<string, string>>(new Map());
@@ -231,10 +240,10 @@ function Products({ category, onCategory, fail, onMessage }: Shared & { category
   }, [fail]);
   const load = useCallback(() => {
     const q = new URLSearchParams({ category, page: String(filters.page) });
-    if (filters.state) q.set('state', filters.state);
+    if (state) q.set('state', state);
     if (filters.q) q.set('q', filters.q);
     adminApi<SheetProductPage>(`/sheets/products?${q}`).then(setData).catch(fail);
-  }, [category, filters, fail]);
+  }, [category, state, filters, fail]);
   useEffect(load, [load]);
   useLiveReload(['attempt', 'admin'], load, { delayMs: 3_000, fallbackMs: 60_000 });
   const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch, page: patch.page ?? 1 }));
@@ -256,11 +265,19 @@ function Products({ category, onCategory, fail, onMessage }: Shared & { category
             </option>
           ))}
         </select>
-        <select className={select} value={filters.state} onChange={(e) => set({ state: e.target.value })} aria-label="Situação da ficha">
+        <select
+          className={select}
+          value={state}
+          onChange={(e) => {
+            onState(e.target.value as SheetFilterState | '');
+            set({ page: 1 });
+          }}
+          aria-label="Situação da ficha"
+        >
           <option value="">qualquer situação</option>
-          {(['complete', 'incomplete', 'unread'] as const).map((s) => (
+          {(['complete', 'incomplete', 'exhausted', 'unread'] as const).map((s) => (
             <option key={s} value={s}>
-              {SHEET_STATE_LABEL[s]}
+              {SHEET_FILTER_LABEL[s]}
             </option>
           ))}
         </select>

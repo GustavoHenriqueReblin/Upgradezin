@@ -52,6 +52,16 @@ body {
   background-color: transparent !important;
 }
 
+/* Selects: a seta própria, com folga da borda direita (a nativa fica colada). */
+select:not([multiple]):not([size]) {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23a8a29e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 1rem;
+  padding-right: 2.1rem;
+}
+
 ::selection {
   background: rgb(249 115 22 / 0.35);
   color: #fff;

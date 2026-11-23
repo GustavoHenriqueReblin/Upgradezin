@@ -68,6 +68,14 @@ export function textHasCode(text: string[], code: string): boolean {
   return false;
 }
 
+/** Dois part numbers do mesmo código: um contém o outro ou os dois começam pelos mesmos 6 caracteres. */
+function similarCodes(a: string, b: string): boolean {
+  if (a.includes(b) || b.includes(a)) return true;
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i++;
+  return i >= 6;
+}
+
 /** Linhas (séries) das placas de vídeo das marcas conhecidas, palavra a palavra. */
 const GPU_LINES = new Set(
   (
@@ -229,7 +237,12 @@ export function identifyProducts(items: IdentityItem[]): Identity {
     for (const y of pool) {
       if (y.store === x.store || white.get(y.id) !== white.get(x.id) || conflict(x.specs, y.specs)) continue;
       const h = hay.get(y.id)!;
-      if (h.all.includes(m) && (textHasCode(h.title, m) || textHasCode(h.url, m))) u.union(x.id, y.id);
+      // No endereço, só de anúncio sem part number próprio ou com um parecido (variante do mesmo código:
+      // "90MB1ER0-M0EAY0" × "-M1EAY0", "KYBER750G-BKCTW" × "-BKCBR"). Com outro bem diferente, o endereço
+      // é de outro produto que a loja tinha nessa página (o "…hyper-t20-…-rr-t20-20fk-r1" de um anúncio
+      // que hoje é o Hyper 212 Spectrum, RR-212A-20PD-R1).
+      const own = mpn.get(y.id);
+      if (h.all.includes(m) && (textHasCode(h.title, m) || ((!own || similarCodes(own, m)) && textHasCode(h.url, m)))) u.union(x.id, y.id);
     }
   }
 

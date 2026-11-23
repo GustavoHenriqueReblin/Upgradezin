@@ -159,13 +159,36 @@ function couponFromCategories(cats?: { name?: string }[]): Offer['coupon'] {
 export function s2SheetFromHtml(html: string): string | null {
   const { document } = parseHTML(html);
   const table = document.querySelector('th.name-field')?.closest('table');
-  if (!table) return null;
+  if (!table) return specsFromDescription(document);
   const rows = Array.from(table.querySelectorAll('tr'))
     .map((tr) => {
       const label = tr.querySelector('th')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
       const value = tr.querySelector('td')?.innerHTML.trim() ?? '';
       // "Rótulo: valor" (com os dois-pontos, venha o rótulo com ou sem eles), como o leitor da ficha lê.
       return label || value ? `<p>${label ? `${label.replace(/\s*:?\s*$/, '')}:` : ''}${value}</p>` : '';
+    })
+    .filter(Boolean);
+  return rows.length ? rows.join('\n') : null;
+}
+
+/**
+ * Sem a tabela: a ficha no texto da descrição, num bloco que abre com "Especificações", um parágrafo por
+ * campo com o rótulo em negrito ("<p><strong>Dimensões</strong><br>84 x 129 x 158,5 mm</p>"). Vira
+ * "Dimensões: 84 x 129 x 158,5 mm", como a da tabela. null quando não há esse bloco.
+ */
+function specsFromDescription(document: Document): string | null {
+  const block = Array.from(document.querySelectorAll('.description-rich-text')).find((d) =>
+    Array.from(d.querySelectorAll('strong')).some((s) => /^especifica[cç](?:o|õ)es(?: t[eé]cnicas)?:?$/i.test(s.textContent?.trim() ?? '')),
+  );
+  if (!block) return null;
+  const rows = Array.from(block.querySelectorAll('p'))
+    .map((p) => {
+      const strong = p.querySelector('strong');
+      const label = strong?.textContent?.replace(/\s+/g, ' ').trim().replace(/\s*:$/, '') ?? '';
+      if (!strong || !label || /^especifica/i.test(label)) return p.textContent?.trim() ? `<p>${p.innerHTML.trim()}</p>` : '';
+      // O valor: o parágrafo sem o rótulo e sem a quebra logo depois dele.
+      const value = p.innerHTML.replace(strong.outerHTML, '').replace(/^\s*(?:<\/?span[^>]*>\s*)*(?:<br\s*\/?>\s*)?/i, '').trim();
+      return value ? `<p>${label}:${value}</p>` : '';
     })
     .filter(Boolean);
   return rows.length ? rows.join('\n') : null;

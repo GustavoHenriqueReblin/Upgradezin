@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sheetEta, shortDuration, SHEET_STATE_LABEL, fieldLabels, specPairs, countdown, intervalLabel, queueLabel, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground, probeLabel } from './format.ts';
+import { sheetEta, shortDuration, SHEET_STATE_LABEL, SHEET_FILTER_LABEL, fieldLabels, specPairs, countdown, intervalLabel, queueLabel, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground, probeLabel } from './format.ts';
 
 describe('formatação do admin', () => {
   it('resultado do teste de página', () => {
@@ -96,6 +96,7 @@ describe('rotina: contagem e modos', () => {
 describe('ficha técnica e specs na aba Produtos', () => {
   it('situação da ficha e nomes dos campos que faltam', () => {
     expect(SHEET_STATE_LABEL).toEqual({ complete: 'completa', incomplete: 'incompleta', unread: 'não lida' });
+    expect(SHEET_FILTER_LABEL.exhausted).toBe('só a web completa');
     expect(fieldLabels('cpu', ['architecture', 'tdpW'])).toBe('Arquitetura, TDP');
     expect(fieldLabels('gpu', ['lengthMm', 'outro'])).toBe('Comprimento, outro');
   });

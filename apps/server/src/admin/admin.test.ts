@@ -341,6 +341,9 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     expect(cov.find((r) => r.category === 'cpu')).toMatchObject({ products: 2, incomplete: 1, unread: 1 });
     const sheets = await app.inject({ url: '/api/admin/sheets/products?category=cpu&state=incomplete', headers: { cookie } });
     expect(sheets.json()).toMatchObject({ total: 1, items: [{ state: 'incomplete', values: { socket: 'AM4', cores: 6 } }] });
+    // Só a web completa: a incompleta com todas as páginas lidas (a única loja dela).
+    const web = await app.inject({ url: '/api/admin/sheets/products?category=cpu&state=exhausted', headers: { cookie } });
+    expect(web.json()).toMatchObject({ total: 1, items: [{ state: 'incomplete', listings: [{ read: true }] }] });
     for (const q of ['', 'category=nada', 'category=cpu&state=talvez', 'category=cpu&page=0']) {
       expect((await app.inject({ url: `/api/admin/sheets/products?${q}`, headers: { cookie } })).statusCode).toBe(400);
     }

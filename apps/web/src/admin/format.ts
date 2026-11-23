@@ -1,4 +1,4 @@
-import { CATEGORY_DEFS, SHEET_FIELDS, type CategoryId, type MergeReport, type ProbeResult, type SheetState, type StoreInterval, type Specs, type StoreAttempt } from '@upgradezin/shared';
+import { CATEGORY_DEFS, SHEET_FIELDS, type CategoryId, type MergeReport, type ProbeResult, type SheetFilterState, type SheetState, type StoreInterval, type Specs, type StoreAttempt } from '@upgradezin/shared';
 
 /** "3 d 4 h", "2 h 15 min", "40 s". */
 export function formatDuration(totalS: number): string {
@@ -122,6 +122,8 @@ export function sheetEta(missing: number, interval: StoreInterval): string {
 }
 
 export const SHEET_STATE_LABEL: Record<SheetState, string> = { complete: 'completa', incomplete: 'incompleta', unread: 'não lida' };
+/** Opções do filtro de situação da lista de fichas (as situações e "só a web completa"). */
+export const SHEET_FILTER_LABEL: Record<SheetFilterState, string> = { ...SHEET_STATE_LABEL, exhausted: 'só a web completa' };
 
 /** Nomes dos campos da ficha ("architecture,tdpW" -> "Arquitetura, TDP"). */
 export function fieldLabels(category: CategoryId, keys: string[]): string {

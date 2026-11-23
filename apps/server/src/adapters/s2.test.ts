@@ -123,6 +123,34 @@ describe('S2: ficha técnica da página do produto', () => {
     });
   });
 
+  it('sem a tabela: o bloco "Especificações" da descrição, um parágrafo por campo com o rótulo em negrito', () => {
+    // Como na página do MasterAir MA410P (nov/2026): a descrição de marketing num bloco, a ficha em outro.
+    const page = `<html><body>
+      <div class="description-rich-text description-rich-text-product"><h3>Alto Desempenho de Ventoinha</h3><p>Texto de marketing com 4 heat pipes.</p></div>
+      <div class="description-rich-text description-rich-text-product">
+        <p><span style="font-size: medium;"><strong>Especificações</strong></span></p>
+        <p><strong>Marca</strong><br>Cooler Master</p>
+        <p><strong>Modelo</strong><br>MAP-T4PN-220PC-R1</p>
+        <p><strong>Soquetes</strong><br>Intel: LGA1200, LGA2066, LGA1151<br>AMD: AM4, AM3+</p>
+        <p><strong>Dimensões</strong><br>84 x 129 x 158,5 mm</p>
+        <p><strong>Dimensões da ventoinha</strong><br>120 x 120 x 25 mm</p>
+        <p><strong>Nível de ruído da ventoinha</strong><br>6 a 30 dBA</p>
+      </div></body></html>`;
+    const html = s2SheetFromHtml(page)!;
+    expect(html).toContain('<p>Dimensões:84 x 129 x 158,5 mm</p>');
+    expect(html).not.toContain('marketing');
+    expect(readSheet('cooler', sheetText(html))).toMatchObject({
+      brand: 'Cooler Master',
+      model: 'MAP-T4PN-220PC-R1',
+      type: 'ar',
+      heightMm: 159,
+      noiseDba: 30,
+      sockets: 'LGA1200,LGA2066,LGA1151,AM4,AM3',
+    });
+    // Sem tabela e sem o bloco: sem ficha.
+    expect(s2SheetFromHtml('<html><body><div class="description-rich-text"><p>Só marketing.</p></div></body></html>')).toBeNull();
+  });
+
   it('página sem a tabela: sem ficha', () => {
     expect(s2SheetFromHtml('<html><body><p>Produto</p></body></html>')).toBeNull();
   });

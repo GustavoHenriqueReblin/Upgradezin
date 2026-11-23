@@ -55,6 +55,8 @@ describe('campos por categoria', () => {
     expect(isMainFor(height, { type: 'water' })).toBe(false);
     expect(missingMain('cooler', { type: 'water', radiatorMm: 360, tdpW: 250, noiseDba: 30, sockets: 'AM5' })).toEqual([]);
     expect(missingMain('cooler', { type: 'ar', tdpW: 250 })).toEqual(['heightMm', 'noiseDba', 'sockets']);
+    // Sem o TDP suportado (opcional): completa.
+    expect(missingMain('cooler', { type: 'ar', heightMm: 155, noiseDba: 25, sockets: 'AM4' })).toEqual([]);
   });
 
   it('valor para mostrar com a unidade', () => {

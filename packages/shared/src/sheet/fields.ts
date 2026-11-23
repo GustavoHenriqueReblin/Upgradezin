@@ -123,7 +123,8 @@ export const SHEET_FIELDS: Record<CategoryId, SheetField[]> = {
     f('type', 'Tipo', 'text', undefined, M),
     f('heightMm', 'Altura', 'int', 'mm', ['type', 'ar']),
     f('radiatorMm', 'Radiador', 'int', 'mm', ['type', 'water']),
-    f('tdpW', 'TDP suportado', 'int', 'W', M),
+    // TDP suportado: opcional (a loja quase nunca informa).
+    f('tdpW', 'TDP suportado', 'int', 'W'),
     f('noiseDba', 'Ruído', 'real', 'dBA', M),
     f('sockets', 'Soquetes', 'list', undefined, M),
     f('fans', 'Ventoinhas', 'int'),

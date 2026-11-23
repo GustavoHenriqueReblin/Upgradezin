@@ -83,7 +83,7 @@ const ProductsQuery = z.object({
 });
 const SheetProductsQuery = z.object({
   category: z.enum(CATEGORIES),
-  state: z.enum(['complete', 'incomplete', 'unread']).optional(),
+  state: z.enum(['complete', 'incomplete', 'unread', 'exhausted']).optional(),
   q: z.string().max(80).optional(),
   ...Paging,
 });

@@ -358,9 +358,12 @@ export interface SheetProduct {
 export type SheetProductPage = AdminPage<SheetProduct>;
 
 /** Filtros da lista de fichas (uma categoria por vez: cada uma tem seus campos). */
+/** Situação no filtro da lista: as da ficha e "só a web completa" (incompleta com a página de todas as lojas lida). */
+export type SheetFilterState = SheetState | 'exhausted';
+
 export interface SheetProductFilter {
   category: CategoryId;
-  state?: SheetState;
+  state?: SheetFilterState;
   q?: string;
   page?: number;
   pageSize?: number;

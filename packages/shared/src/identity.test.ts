@@ -73,6 +73,31 @@ describe('mesmo produto em lojas diferentes', () => {
     expect(together(r.exact)).toEqual([['s1x', 's3x']]);
   });
 
+  it('código só no endereço de um anúncio com outro part number: o endereço é de outro produto (página reaproveitada pela loja)', () => {
+    const r = identifyProducts([
+      item('t20', 's2', 'Cooler Para Processador Cooler Master Hyper T20 90mm Preto, RR-T20-20FK-R1', { mpn: 'RR-T20-20FK-R1' }),
+      item('spec', 's3', 'Cooler para Processador Cooler Master Hyper 212 Spectrum, Intel-AMD, RGB, RR-212A-20PD-R1', {
+        mpn: 'RR-212A-20PD-R1',
+        url: 'https://s3.example/produto/15212/cooler-para-processador-cooler-master-hyper-t20-92mm-intel-amd-rr-t20-20fk-r1',
+      }),
+      item('spec2', 's2', 'Cooler Para Processador Cooler Master Hyper 212 Spectrum RGB, RR-212A-20PD-R1', { mpn: 'RR-212A-20PD-R1' }),
+    ]);
+    expect(together(r.exact)).toEqual([['spec', 'spec2'], ['t20']]);
+    // Sem part number próprio, o código no endereço ainda junta.
+    const s = identifyProducts([
+      item('a', 's2', 'Cooler Master Hyper T20, RR-T20-20FK-R1', { mpn: 'RR-T20-20FK-R1' }),
+      item('b', 's3', 'Cooler Master Hyper T20', { url: 'https://s3.example/produto/1/cooler-master-hyper-t20-rr-t20-20fk-r1' }),
+    ]);
+    expect(together(s.exact)).toEqual([['a', 'b']]);
+    // Part number parecido (variante regional do mesmo código): o endereço com o código da outra loja junta.
+    const v = identifyProducts([
+      item('br', 's1', 'Fonte Xpg Kyber, 750w, 80 Plus Gold, Kyber750g-bkcbr', { mpn: 'KYBER750G-BKCBR' }),
+      item('tw', 's1', 'Fonte Xpg Kyber, 750w, 80 Plus Gold, Kyber750g-bkctw', { mpn: 'KYBER750G-BKCTW' }),
+      item('s3', 's3', 'Fonte XPG Kyber 750W Gold', { mpn: 'KYBER750G-BKCTW-X', url: 'https://s3.example/produto/1/fonte-xpg-kyber-750w-kyber750g-bkcbr' }),
+    ]);
+    expect(v.exact.get('s3')).toBe(v.exact.get('br'));
+  });
+
   it('branca e preta com o mesmo código no começo ficam separadas', () => {
     const r = identifyProducts([
       item('p', 's1', 'Memória Corsair Vengeance 32GB Preta', { mpn: 'CMK32GX4M2E3200C16' }),

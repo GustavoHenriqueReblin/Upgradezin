@@ -1,4 +1,4 @@
-import type { SheetPageText, SheetProductFilter, SheetProductPage, SheetStoreStatus, StoreId } from '@upgradezin/shared';
+import type { SheetPageText, SheetProduct, SheetProductFilter, SheetProductPage, SheetStoreStatus, StoreId } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
 import { catalogProducts, pageText, SHEET_SCOPE_DAYS, sheetQueueSizes } from '../prices/sheets.ts';
 import { pageOf } from './paging.ts';
@@ -26,8 +26,10 @@ export function sheetStoreStatus(db: Db, stores: { id: StoreId; name: string; ca
 export function listSheetProducts(db: Db, f: SheetProductFilter, now = Date.now()): SheetProductPage {
   const { page, pageSize, offset } = pageOf(f);
   const q = f.q?.trim().toLowerCase();
+  // "Só a web completa": incompleta com a página de todas as lojas já lida (como na cobertura).
+  const inState = (p: SheetProduct) => !f.state || (f.state === 'exhausted' ? p.state === 'incomplete' && p.listings.every((l) => l.read) : p.state === f.state);
   const all = catalogProducts(db, f.category, since(now)).filter(
-    (p) => (!f.state || p.state === f.state) && (!q || p.listings.some((l) => l.title.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q))),
+    (p) => inState(p) && (!q || p.listings.some((l) => l.title.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q))),
   );
   return { items: all.slice(offset, offset + pageSize), total: all.length, page, pageSize };
 }
