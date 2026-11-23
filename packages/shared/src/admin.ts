@@ -337,8 +337,8 @@ export interface SheetProduct {
   title: string;
   state: SheetState;
   values: SheetValues;
-  /** De qual página (loja + código) veio cada campo. */
-  origin: Record<string, { store: StoreId; sku: string }>;
+  /** De qual página (loja + código) veio cada campo; from: do título desse anúncio, ou o valor padrão da categoria. */
+  origin: Record<string, { store: StoreId; sku: string; from?: 'title' | 'default' }>;
   /** Campos principais que faltam. */
   missing: string[];
   listings: {

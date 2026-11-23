@@ -392,7 +392,15 @@ function ProductDetail({ p, names, fail, onMessage }: Shared & { p: SheetProduct
                 <dt className="text-zinc-500">{f.label}</dt>
                 <dd className={p.missing.includes(f.key) ? 'text-amber-600 dark:text-amber-400' : ''}>
                   {v || (p.missing.includes(f.key) ? 'falta (principal)' : '—')}
-                  {v && from && p.listings.length > 1 && <span className="text-zinc-500"> · {name(from.store)}</span>}
+                  {v && from?.from === 'default' && <span className="text-zinc-500"> · padrão</span>}
+                  {v && from && from.from !== 'default' && (p.listings.length > 1 || from.from === 'title') && (
+                    <span className="text-zinc-500">
+                      {' '}
+                      · {from.from === 'title' ? 'título' : ''}
+                      {from.from === 'title' && p.listings.length > 1 ? ' ' : ''}
+                      {p.listings.length > 1 ? name(from.store) : ''}
+                    </span>
+                  )}
                 </dd>
               </Fragment>
             );

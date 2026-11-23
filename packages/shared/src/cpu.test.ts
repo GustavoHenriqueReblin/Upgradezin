@@ -58,6 +58,10 @@ describe('extractCpuSpecs', () => {
     expect(extractCpuSpecs('Processador AMD Ryzen 5 5500, 6-Cores, Cooler Wraith Stealth, AM4').cooler).toBe(true);
     expect(extractCpuSpecs('Processador AMD Ryzen 7 5700X, AM4 - 100-100000926WOF').cooler).toBe(false);
     expect(extractCpuSpecs('Processador Intel Core i5 12400, LGA 1700, Com Cooler').cooler).toBe(true);
+    // Abreviado: "S/ Cooler S/ Vídeo" (sem cooler, sem vídeo), "C/ Cooler".
+    const short = extractCpuSpecs('Processador Intel Core i5 12400 Lga1700 S/ Cooler S/ Vídeo');
+    expect([short.cooler, short.igpu]).toEqual([false, false]);
+    expect(extractCpuSpecs('Processador AMD Ryzen 5 5600GT AM4 C/ Cooler').cooler).toBe(true);
     expect(extractCpuSpecs('Processador Intel Core i5-12400, LGA 1700').cooler).toBeUndefined();
   });
   it('desbloqueado: Intel K, todo Ryzen', () => {

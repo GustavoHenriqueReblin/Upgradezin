@@ -80,7 +80,11 @@ describe('ficha técnica juntada entre lojas (mesmo produto)', () => {
     savePage(db, { store: 's2', sku: '2', category: 'gpu', text: 'Dimensões: 231 x 120 x 50 mm' });
     expect(productSheet(db, 's2', '2')!.values.lengthMm).toBe(231);
     expect(productSheet(db, 's1', '1')!.values.lengthMm).toBe(229);
-    expect(productSheet(db, 's1', '9')).toBeUndefined(); // outro produto, nada lido
+    // Outro produto, nada lido: só o que o título diz (chip, marca e o consumo de referência do chip).
+    const other = productSheet(db, 's1', '9')!;
+    expect(other.sources).toEqual([]);
+    expect(other.values).toMatchObject({ chip: 'RTX 5070', tdpW: 250 });
+    expect(other.origin.chip).toEqual({ store: 's1', sku: '9', from: 'title' });
   });
 
   it('a rotina pula o produto com ficha completa; incompleta, a página das outras lojas continua na fila', () => {

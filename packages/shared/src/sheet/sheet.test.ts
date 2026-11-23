@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fieldColumn, formatSheetValue, isMainFor, missingMain, sheetFields, SHEET_FIELDS } from './fields.ts';
 import { readSheet } from './read.ts';
+import { readTitle } from './title.ts';
 import { norm, numberWith, pick, sheetDoc, sheetText, thousands } from './text.ts';
 
 /** Fichas no formato das lojas (texto como a página traz, nov/2026). */
@@ -373,9 +374,107 @@ describe('leitor da ficha', () => {
     expect(psu('Eficiência 80 plus: 80 Plus Platinum').efficiency).toBe('80 Plus Platinum');
   });
 
+  it('gabinete, cooler e fonte: mais formatos das fichas (nov/2026, 4ª leva)', () => {
+    const kase = (...l: string[]) => readSheet('case', lines(...l));
+    // Lista de formatos uma por linha: "Micro ATX" não vira título de seção.
+    expect(kase('Compatibilidade de Placa-mãe:', 'Mini ITX', 'Micro ATX', 'ATX', 'Suporte para placas mãe com conectores traseiros: Sim').mbFormats).toBe('ATX,Micro-ATX,Mini-ITX');
+    // Rótulo no plural, e não o "ATX" do tipo.
+    expect(kase('- Tipo: Mid Tower ATX', '- Placas-mãe: ATX, Micro-ATX, Mini-ITX').mbFormats).toBe('ATX,Micro-ATX,Mini-ITX');
+    // Formatos no rótulo; a fonte ATX do valor não conta.
+    expect(kase('Placas-mãe Micro-ATX / ITX: Fonte de alimentação padrão ATX').mbFormats).toBe('Micro-ATX,Mini-ITX');
+    // Um formato por linha com sim/não.
+    expect(kase('Compatibilidade com placas-mãe mATX: Sim', 'Compatibilidade com placas-mãe ATX: Sim', 'Compatibilidade com placas-mãe EATX: Não').mbFormats).toBe('ATX,Micro-ATX');
+    // Placa de vídeo no plural; não o cooler da mesma frase.
+    expect(kase('- Suporta placas de vídeo de até 325 mm (sem radiador frontal) .').maxGpuMm).toBe(325);
+    expect(kase('O gabinete suporta placas de vídeo de grande porte, coolers a ar de até 168mm e radiadores de 360mm.').maxGpuMm).toBeUndefined();
+    // Radiador em texto corrido: não a GPU da mesma frase.
+    expect(kase('Suporte a Radiador (Water Cooler):', 'Topo: 120 / 240 / 360 mm', 'Ele oferece suporte para fans e radiadores em diversas localizações. Na parte superior, há suporte para radiadores de até 360mm. A compatibilidade com um cooler de CPU de 175mm e uma GPU de 420mm permite componentes de alta performance.').radiators).toBe('120,240,360');
+
+    const cooler = (...l: string[]) => readSheet('cooler', lines(...l));
+    // Ruído com "dB" no rótulo, os valores na linha seguinte, ou sem dois-pontos.
+    expect(cooler('Radiador: 240 mm', 'Nível de ruído db(A): 28').noiseDba).toBe(28);
+    expect(cooler('Radiador: 240 mm', 'Nível de ruído (dB(A)) @ 25 % / 50% /100% rpm:', '17,3 / 29,4 / 36,9').noiseDba).toBe(36.9);
+    expect(cooler('Radiador: 240 mm', 'Nível de ruído 36.9 dBA ± 10%').noiseDba).toBe(36.9);
+    // Medidas do radiador no lugar do comprimento, com "*".
+    expect(cooler('Bomba: 3000 RPM', 'Radiador: Comprimento: 397*120*27mm').radiatorMm).toBe(360);
+    expect(cooler('Water Cooler', 'Dimensões do radiador: 277*120*27').radiatorMm).toBe(240);
+
+    const psu = (...l: string[]) => readSheet('psu', lines(...l));
+    // Rótulo com número e a contagem "4x" depois.
+    expect(psu('Conector 24 Pinos: 1x 24 pinos', 'Conector 4+4 Pinos: 2x 4+4 pinos', 'Conector PCIe 6+2 Pinos: 4x 6+2 pinos', 'Conectores SATA: 9x')).toMatchObject({ eps: 2, pcie8: 4, sata: 9 });
+    expect(psu('Conector Placa-mãe 24 Pinos: 1x', 'Conector CPU 4+4 Pinos: 1x', 'Conector PCIe 6+2 Pinos: 3x')).toMatchObject({ eps: 1, pcie8: 3 });
+    expect(psu('1 x CPU8Pinos x 1', '1 x CPU8(4+4)Pinos x 1').eps).toBe(2);
+    // "4 SATA: 3 cabos": 3 cabos de 4.
+    expect(psu('4 SATA: 3 cabos (550 mm + 100 mm + 100 mm + 100 mm)', '2 SATA+2MOLEX: 1 cabo (550 mm + 100 mm)').sata).toBe(14);
+  });
+
   it('marca e modelo; sem nada reconhecido, nada (nunca chuta)', () => {
     expect(readSheet('ssd', lines('MARCA: LEXAR', 'MODELO: NQ100 256GB', 'P/N: LNQ100X256G-RNNNG'))).toEqual({ brand: 'Lexar', model: 'LNQ100X256G-RNNNG' });
     expect(readSheet('cpu', 'Garantia: 12 meses')).toEqual({});
     expect(readSheet('gpu', '')).toEqual({});
+  });
+});
+
+describe('campos pelo título do anúncio', () => {
+  it('fonte, placa-mãe, memória, processador, placa de vídeo e SSD (títulos reais, nov/2026)', () => {
+    expect(readTitle('psu', 'Fonte ASRock Phantom Gaming, 750W, 80 Plus Gold, Cybenetics Platinum, Full Modular, ATX 3.1, PCIe 5.1, Preto, PG-750G')).toMatchObject({
+      watts: 750,
+      efficiency: '80 Plus Gold',
+      modular: 'Total',
+      standard: 'ATX 3.1',
+    });
+    expect(readTitle('psu', 'Fonte MSI MAG A650BN, 650W, 80 Plus Bronze')).not.toHaveProperty('modular');
+    expect(readTitle('motherboard', 'Placa Mãe ASRock H510M-HDV/M.2, Chipset H510, Intel LGA 1200, mATX, DDR4, 90-MXBFT0-A0BAY1Z')).toMatchObject({
+      chipset: 'H510',
+      socket: 'LGA1200',
+      formFactor: 'Micro-ATX',
+      ramType: 'DDR4',
+    });
+    expect(readTitle('ram', 'Memoria Patriot Viper Venom, 8GB (1x8GB), DDR5, 6000MHz, C40, Preto, PVV58G600C40')).toMatchObject({ capacityGb: 8, modules: 1, type: 'DDR5', mhz: 6000, cl: 40 });
+    expect(readTitle('cpu', 'Processador Amd Ryzen 7 5800x3d Am4 4.5ghz 8 Cores 16 Threads 100mb S/ Cooler S/ Vídeo')).toMatchObject({
+      socket: 'AM4',
+      architecture: 'Zen 3',
+      cores: 8,
+      threads: 16,
+      igpu: 'Não',
+    });
+    // Um GHz sozinho pode ser base ou turbo: só com o par.
+    expect(readTitle('cpu', 'Processador Amd Ryzen 7 5800x3d Am4 4.5ghz 8 Cores')).not.toHaveProperty('baseGhz');
+    expect(readTitle('cpu', 'Processador AMD Ryzen 7 5800X3D, 3.4GHz (4.5GHz Turbo), 8-Cores 16-Threads, AM4, Sem Cooler, Sem vídeo')).toMatchObject({ baseGhz: 3.4, boostGhz: 4.5, igpu: 'Não' });
+    expect(readTitle('cpu', 'Processador Intel Core i5-12400F, 2.5GHz (4.4GHz Turbo), LGA1700')).toMatchObject({ architecture: 'Alder Lake', igpu: 'Não', socket: 'LGA1700' });
+    expect(readTitle('cpu', 'Processador AMD Ryzen 5 8600G, AM5')).toMatchObject({ architecture: 'Zen 4', igpu: 'Sim' });
+    expect(readTitle('gpu', 'Placa de Video Palit GeForce RTX 5060 White OC, 8GB, GDDR7, 128-bit, NE75060U19P1-GB2063M')).toMatchObject({
+      chip: 'RTX 5060',
+      vramGb: 8,
+      memType: 'GDDR7',
+      busBits: 128,
+      tdpW: 145,
+    });
+    expect(readTitle('ssd', 'SSD Apacer AS2280F4, 1TB, M.2 2280, PCIe 5.0 NVMe, Leitura 12000MBs e Gravação 11800MBs, AP1TBAS2280F4-1')).toMatchObject({
+      capacityGb: 1000,
+      formFactor: 'M.2 2280',
+      interface: 'NVMe PCIe 5.0',
+      readMbs: 12000,
+      writeMbs: 11800,
+    });
+    expect(readTitle('ssd', 'SSD Kingston A400, 480GB, SATA, Leitura 500MB/s, 2,5 polegadas')).toMatchObject({ formFactor: '2,5"', interface: 'SATA' });
+  });
+
+  it('gabinete e cooler; placas-mãe só com o formato no título (não pela torre)', () => {
+    expect(readTitle('case', 'Gabinete Gamer Mid Tower, Vidro Temperado, ATX, Sem Fans')).toMatchObject({ formFactor: 'Mid Tower', mbFormats: 'ATX,Micro-ATX,Mini-ITX', fansIncluded: 0 });
+    expect(readTitle('case', 'Gabinete Gamer Mid-Tower Vidro Temperado')).not.toHaveProperty('mbFormats');
+    expect(readTitle('case', 'Gabinete Gamer Mini Tower, M-ATX, 3 Fans')).toMatchObject({ formFactor: 'Mini Tower', mbFormats: 'Micro-ATX,Mini-ITX', fansIncluded: 3 });
+    expect(readTitle('cooler', 'Water Cooler Rise Mode Frost 360mm, AM5/AM4/LGA1700, TDP 250W')).toMatchObject({ type: 'water', radiatorMm: 360, tdpW: 250 });
+    // O "360W" do código é "360 White", não TDP.
+    expect(readTitle('cooler', 'Water Cooler Round5 Boreah White, ARGB, 360mm, Intel-AMD, R5-WC-BOREAH-360W-2254')).not.toHaveProperty('tdpW');
+  });
+
+  it('ventoinhas inclusas com a posição atrás de um rótulo (leitor da ficha)', () => {
+    const text = [
+      'Refrigeração: Frontal: 120 mm x 3 ou 140 mm x 2 (Incluso 3x Frost Fan de 120mm)',
+      'superior: 120 mm x 2 (não incluso)',
+      'Traseira: 120 mm x 1 (Incluso 1x fan frost de 120 mm)',
+    ].join('\n');
+    expect(readSheet('case', text).fansIncluded).toBe(4);
   });
 });

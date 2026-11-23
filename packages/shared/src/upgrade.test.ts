@@ -140,6 +140,14 @@ describe('placas novas na tabela (nov/2026)', () => {
     const { GPU_POWER } = await import('./hardware.ts');
     const { GPU_PCIE_X8 } = await import('./perf.ts');
     expect(GPU_PERF['RX 9050']).toBeGreaterThan(GPU_PERF['RX 6600']!);
+    // Polaris antigas e as RX da Mancer: em volta das referências que a TechPowerUp e os testes públicos dão.
+    expect(GPU_PERF['RX 480']).toBeLessThan(GPU_PERF['RX 580']!);
+    expect(GPU_PERF['RX 470']).toBeLessThan(GPU_PERF['RX 570']!);
+    expect(GPU_PERF['RX 460']).toBeLessThan(GPU_PERF['RX 560']!);
+    expect(GPU_PERF['RX 5500']).toBeLessThanOrEqual(GPU_PERF['RX 5500 XT']!);
+    expect(GPU_PERF['RX 5500']).toBeGreaterThanOrEqual(GPU_PERF['GTX 1650 Super']!);
+    expect(GPU_PERF['RX 560 XT']).toBe(GPU_PERF['GTX 1650']);
+    expect(GPU_PERF['GTX 950']).toBeGreaterThan(GPU_PERF['GTX 750 Ti']!);
     expect(GPU_PERF['RX 7650 GRE']).toBeGreaterThan(GPU_PERF['RX 7600']!);
     expect(GPU_PERF['RX 7650 GRE']).toBeLessThan(GPU_PERF['RX 7600 XT']!);
     expect([GPU_POWER['RX 9050'], GPU_POWER['RX 7650 GRE']]).toEqual([92, 170]);

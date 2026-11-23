@@ -1,7 +1,7 @@
 import { extractGpuModel } from '../gpu.ts';
 import type { CategoryId } from '../types.ts';
 import { SHEET_FIELDS, type SheetValues } from './fields.ts';
-import { dec, firstInt, isNo, numberWith, pick, sheetDoc, thousands, type SheetDoc } from './text.ts';
+import { dec, firstInt, isNo, isYes, numberWith, pick, sheetDoc, thousands, type SheetDoc } from './text.ts';
 
 /**
  * Leitor da ficha técnica: do texto da ficha (sheetText) tira os campos fixos da categoria
@@ -11,7 +11,7 @@ import { dec, firstInt, isNo, numberWith, pick, sheetDoc, thousands, type SheetD
  *
  * READER_VERSION: mudou o leitor ou os campos, sobe o número: o servidor relê as fichas guardadas.
  */
-export const READER_VERSION = 6;
+export const READER_VERSION = 7;
 
 type Reader = (doc: SheetDoc) => SheetValues;
 
@@ -339,12 +339,13 @@ function psuConnectors(doc: SheetDoc) {
   const segments = doc.lines.flatMap((l) => (l.match(/\d\s*x\s*\S/g) ?? []).length >= 2 ? l.replace(/^[^:]{1,30}:\s*/, '').split(/,\s*(?=\d)/) : [l]);
   for (const raw of segments) {
     // O tipo pela linha inteira ("SATA: 6"); a contagem sem o rótulo.
-    const l = raw.replace(/^[^:\d]{1,40}:\s*(?=\d)/, '');
+    // O rótulo pode ter número ("Conector PCIe 6+2 Pinos: 4x", "Conector CPU 4+4 Pinos: 1x").
+    const l = raw.replace(/^[^:\d]{1,40}:\s*(?=\d)/, '').replace(/^[^:]{1,50}:\s*(?=\d{1,2}\s*x?\s*$|\d{1,2}\s*x\b)/, '');
     const kind: keyof typeof counts | null = /12v-?2x6|12vhpwr|16\s*pin|\b12\s*\+\s*4|p16\b/.test(raw)
       ? 'pcie16'
       : /pci-?\s*e|pcie|\bgpu\b|\bvga\b/.test(raw)
         ? 'pcie8'
-        : /\beps\b|\bcpu\b|\bp8\b|\bp4\b|atx\s*12v\s*\(?4\s*\+\s*4|auxiliar/.test(raw) && !/24|20\s*\+\s*4/.test(raw)
+        : /\beps\b|\bcpu\b|\bcpu\s*\d|\bp8\b|\bp4\b|atx\s*12v\s*\(?4\s*\+\s*4|auxiliar|\b4\s*\+\s*4\b/.test(raw) && !/24|20\s*\+\s*4/.test(raw)
           ? 'eps'
           : /\bs-?ata\b/.test(raw) && !/hdd|ssd|disco/.test(raw)
             ? 'sata'
@@ -374,7 +375,10 @@ function psuConnectors(doc: SheetDoc) {
     const cables = /^\d{1,2}\s*x?\s*cabos?\b/.test(l);
     const token = kind === 'sata' ? /\bs-?ata\b/g : kind === 'pcie8' ? /6\s*\+\s*2/g : null;
     const reps = token ? (l.match(token) ?? []).length : 1;
-    if (total) n = Number(total[1]);
+    // "4 SATA: 3x cabos (…)": 3 cabos de 4.
+    const perLabel = raw.match(/^(\d)\s*s-?ata\s*:\s*(\d{1,2})\s*x?\s*cabos?\b/);
+    if (perLabel) n = Number(perLabel[1]) * Number(perLabel[2]);
+    else if (total) n = Number(total[1]);
     else if (conns || cablesInside) {
       /* já é o total */
     } else if (per && (cables || /\bcabo|com \d (conectores|portas)/.test(l))) n *= Number(per[1]);
@@ -439,8 +443,14 @@ const caseReader: Reader = (doc) => {
     const m = doc.all.match(/\b(full|mid|mini|micro)[- ]?tower\b/);
     return m ? `${m[1]![0]!.toUpperCase()}${m[1]!.slice(1)} Tower` : undefined;
   })();
-  const mbText = (
-    pick(doc, [/placa[- ]mae|motherboard|compatibilidade (de|com) placa|suporte (a|de) placa|form factor/], (v) => (/itx|atx/.test(v) ? v : undefined)) ??
+  // Um formato por linha com sim/não ("Compatibilidade com placas-mãe mATX: Sim" / "… EATX: Não"): só os "sim".
+  const yesNo = doc.pairs.filter((p) => /placas?[- ]mae\s+(e-?atx|atx|m-?atx|micro[- ]?atx|mini[- ]?itx|itx)$/.test(p.label) && /^(sim|nao)\b/.test(p.value));
+  // Os formatos no valor ou no próprio rótulo ("Placas-mãe Micro-ATX / ITX: …"); a fonte ATX não conta.
+  const mbText = (yesNo.length ? yesNo.filter((p) => isYes(p.value)).map((p) => p.label.replace(/^.*placas?[- ]mae\s+/, '')).join(' | ') : undefined) ?? (
+    pick(doc, [/placas?[- ]mae|motherboard|compatibilidade (de|com) placa|suporte (a|de|para) placa|form factor/], (v, l) => {
+      const t = `${l.replace(/^.*?(placas?[- ]mae|motherboard|placa|form factor)/, '')} | ${v.replace(/fonte[^|]*/g, '')}`;
+      return /itx|atx/.test(t) ? t : undefined;
+    }) ??
     doc.all.match(/[^\n]*\b(?:e-?atx|m-?atx|micro[- ]?atx|mini[- ]?itx|atx)\b[^\n]*/)?.[0] ??
     ''
   ).replace(/fonte[^|]*/, '');
@@ -462,7 +472,7 @@ const caseReader: Reader = (doc) => {
     const limit = inClearance || /max|ate\b|suport|compat|limite|liberac|liquidac|espaco|superior da|≤|<=/.test(l);
     // Medida em mm ou cm, com decimal ("163,5 mm", "31,5 cm").
     const mm = (m: RegExpMatchArray | null) => (m ? Math.round(dec(m[1]!) * (/cm/.test(m[2]!) ? 10 : 1)) : undefined);
-    const g = l.match(/(?:gpu|vga|placa\s+de\s+video|placas?\s+graficas?|graphics card)[^0-9]{0,40}?(\d{2,3}(?:[.,]\d+)?)\s*(mm|cm)\b/);
+    const g = l.match(/(?:gpu|vga|placas?\s+de\s+video|placas?\s+graficas?|graphics card)(?:(?!cooler|processador|cpu\b|radiador|fonte)[^0-9]){0,40}?(\d{2,3}(?:[.,]\d+)?)\s*(mm|cm)\b/);
     // "GPU: 350 mm" (o rótulo sozinho já é o limite).
     if (g && (limit || /comprimento/.test(l) || /^(gpu|vga|placa de video)\s*:/.test(l)) && !maxGpuMm) maxGpuMm = inRange(mm(g), 150, 600);
     const c = l.match(/(?:cooler|cpu|processador)[^0-9]{0,40}?(\d{2,3}(?:[.,]\d+)?)\s*(mm|cm)\b/);
@@ -560,7 +570,8 @@ const caseReader: Reader = (doc) => {
       if (seen.has(key)) continue;
       seen.add(key);
       const n = fanCount(l);
-      if (/^(?:\w+\s){0,2}?(painel |cooler |coolers |fans? |ventoinhas? )?(frente|frontal|frontais|traseir[ao]|superior|topo|top|base|inferior|lateral)/.test(l)) sum += n;
+      // Também atrás de um rótulo ("Refrigeração: Frontal: 120 mm x 3 (Incluso 3x …)").
+      if (/^(?:[^:\d]{1,25}:\s*)?(?:\w+\s){0,2}?(painel |cooler |coolers |fans? |ventoinhas? )?(frente|frontal|frontais|traseir[ao]|superior|topo|top|base|inferior|lateral)/.test(l)) sum += n;
       else max = Math.max(max, n);
     }
     return sum || max || undefined;
@@ -586,7 +597,9 @@ const caseReader: Reader = (doc) => {
     if (!inRad) continue;
     // "Water Cooler - Topo (mm): 240": a unidade no rótulo.
     const re = /\(mm\)/.test(l) ? /\b(\d{3}(?:\s*\/\s*\d{3})*)\b/g : /\b(\d{3}(?:\s*\/\s*\d{3})*)\s*mm/g;
-    for (const m of l.matchAll(re)) for (const n of m[1]!.split('/').map(Number)) if ([120, 140, 240, 280, 360, 420].includes(n)) radiators.add(n);
+    // Texto corrido: sem as medidas de placa de vídeo e de cooler da mesma frase ("… radiadores de até 360mm … uma GPU de 420mm").
+    const text = l.length > 120 ? l.replace(/(?:gpu|vga|placas? de video|cooler (?:de )?(?:cpu|processador))[^0-9|]{0,25}\d{3}\s*mm/g, '') : l;
+    for (const m of text.matchAll(re)) for (const n of m[1]!.split('/').map(Number)) if ([120, 140, 240, 280, 360, 420].includes(n)) radiators.add(n);
   }
   return clean({
     formFactor,
@@ -634,7 +647,7 @@ const cooler: Reader = (doc) => {
   if (water) {
     const named = doc.all.match(/radiador[^\n\d]{0,30}(120|140|240|280|360|420)\s*m/) ?? doc.all.match(/\b(120|140|240|280|360|420)\s*mm\b(?!\s*x)/);
     // "396 x 120 x 27", "277.5mm x 119.2mm x 27mm", "(C) 277 x (L) 119,6 x (A) 27 mm", "143 x 315 x 30 mm".
-    const DIMS = /(\d{2,3})(?:[.,]\d+)?\s*(?:mm)?\s*(?:\([a-z]\))?\s*x\s*(?:\([a-z]\)\s*)?(\d{2,3})(?:[.,]\d+)?/;
+    const DIMS = /(\d{2,3})(?:[.,]\d+)?\s*(?:mm)?\s*(?:\([a-z]\))?\s*[x*]\s*(?:\([a-z]\)\s*)?(\d{2,3})(?:[.,]\d+)?/;
     // Comprimento e largura, em qualquer ordem: a maior medida e a seguinte.
     const lenWid = (v: string): [number, number] | undefined => {
       const m = v.match(DIMS);
@@ -659,7 +672,8 @@ const cooler: Reader = (doc) => {
     // Só o comprimento: "Dimensões do radiador: Comprimento: 275 mm" (ventoinha de 120).
     const lenOnly = doc.pairs.find((p) => /radiador/.test(`${p.section} ${p.label}`) && /comprimento/.test(`${p.label} ${p.value}`) && !notRad.test(p.label));
     const len1 = lenOnly ? inRange(numberWith(lenOnly.value, /mm/), 150, 500) : undefined;
-    const lw = (dimLine && lenWid(dimLine.value)) ?? (len1 ? ([len1, 120] as [number, number]) : undefined);
+    // "Radiador: Comprimento: 397*120*27mm": as medidas inteiras no lugar do comprimento.
+    const lw = (dimLine && lenWid(dimLine.value)) ?? (lenOnly && radShaped(lenOnly.value, 115) ? lenWid(lenOnly.value) : undefined) ?? (len1 ? ([len1, 120] as [number, number]) : undefined);
     if (lw) {
       const [len, wid] = lw;
       const fan = wid >= 135 ? 140 : 120;
@@ -669,10 +683,17 @@ const cooler: Reader = (doc) => {
     if (!radiatorMm && named) radiatorMm = Number(named[1]);
   }
   const tdpW = pick(doc, [/^tdp|tdp suportado|tdp maximo|capacidade (termica|de dissipacao)|dissipacao/], (v) => inRange(numberWith(v, /w\b/), 50, 500));
-  const noiseDba = pick(doc, [/ruido|noise|nivel de som|acustic/], (v) => {
+  // O maior valor em dB ("17 ~ 32 dBA"); com o "dB" só no rótulo ("Nível de ruído (dB(A)): 28" ou
+  // "@ 25% / 50% / 100%:" / "17,3 / 29,4 / 36,9"), os números do valor.
+  const noiseIn = (v: string, unitInLabel = false) => {
     const all = [...v.matchAll(/(\d{1,2}(?:[.,]\d+)?)\s*(?:~|-|a)?\s*(?:(\d{1,2}(?:[.,]\d+)?)\s*)?db/g)].map((m) => dec(m[2] ?? m[1]!));
+    if (!all.length && unitInLabel) all.push(...[...v.matchAll(/(?<![\d.,])(\d{1,2}(?:[.,]\d+)?)(?![\d.,]|\s*(?:%|rpm|mm|v\b|w\b|a\b))/g)].map((m) => dec(m[1]!)));
     return inRange(all.length ? Math.max(...all) : undefined, 5, 70);
-  });
+  };
+  const noiseDba =
+    pick(doc, [/ruido|noise|nivel de som|acustic/], (v, l) => noiseIn(v, /db/.test(l))) ??
+    // Sem dois-pontos: "Nível de ruído 36.9 dBA ± 10%".
+    noiseIn(doc.lines.filter((l) => /ruido|noise/.test(l) && !/:/.test(l)).join(' | '));
   const sockText = doc.pairs.filter((p) => /soquete|socket|compatib|plataforma|suporte|intel|amd/.test(p.label)).map((p) => `${p.label}: ${p.value}`).join(' \n ') || doc.all;
   // "LGA 1700/1851", "Intel: 1851 / 1700 / 1200": cada número de soquete Intel vira LGA.
   const expanded = sockText

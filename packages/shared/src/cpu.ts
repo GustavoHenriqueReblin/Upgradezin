@@ -129,7 +129,8 @@ export function extractCpuSpecs(title: string): CpuSpecs & { socket?: Socket } {
   if (threads) specs.threads = Number(threads);
 
   // Vídeo integrado: o título manda; senão, pelo sufixo do modelo.
-  if (/sem\s*(?:video|graficos?)\s*integrad/.test(t)) specs.igpu = false;
+  // Também "Sem Vídeo" e "S/ Vídeo".
+  if (/(?:sem|s\/)\s*(?:video|graficos?)(?:\s*integrad\w*)?\b/.test(t)) specs.igpu = false;
   else if (/com\s*(?:video|graficos?)\s*integrad|radeon\s*graphics|uhd\s*graphics/.test(t)) specs.igpu = true;
   else if (p) {
     const suffix = p.model.replace(/^\d+/, '');
@@ -139,8 +140,8 @@ export function extractCpuSpecs(title: string): CpuSpecs & { socket?: Socket } {
   }
 
   // Cooler: só quando o anúncio diz. Part number AMD "WOF" = sem fan (sem cooler).
-  if (/sem\s*cooler|\bwof\b|\d+wof\b/.test(t)) specs.cooler = false;
-  else if (/com\s*cooler|cooler\s*wraith|\bwraith\b|cooler\s*(?:box|original|incluso)/.test(t)) specs.cooler = true;
+  if (/(?:sem|s\/)\s*cooler|\bwof\b|\d+wof\b/.test(t)) specs.cooler = false;
+  else if (/(?:com|c\/)\s*cooler|cooler\s*wraith|\bwraith\b|cooler\s*(?:box|original|incluso)/.test(t)) specs.cooler = true;
 
   if (p) specs.unlocked = p.brand === 'amd' ? p.line !== 'Athlon' : /K/.test(p.model.replace(/^\d+/, ''));
 

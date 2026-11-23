@@ -106,3 +106,38 @@ describe('produtos, fila e cobertura', () => {
     for (const c of Object.keys(SHEET_FIELDS)) expect(cols(db, `sheet_${c}`).length).toBeGreaterThan(2);
   });
 });
+
+describe('ficha completada pelo título e pelo padrão da categoria', () => {
+  const page = (sku: string, values: Record<string, string | number>, hasSheet = true) => ({ store: 's3' as StoreId, sku, at: NOW, hasSheet, values });
+
+  it('o que a página não trouxe vem do título; a página vale mais; fonte sem "modular" na página nem no título: não modular', () => {
+    const titles = [{ store: 's3' as StoreId, sku: '1', title: 'Fonte ASRock Phantom Gaming, 750W, 80 Plus Gold, Cybenetics Platinum, Full Modular, ATX 3.1, PCIe 5.1, Preto, PG-750G' }];
+    const m = mergeSources('psu', [page('1', { efficiency: '80 Plus Gold', standard: 'ATX 3.1', eps: 2, pcie8: 3, sata: 9 })], titles);
+    expect(m.values).toMatchObject({ watts: 750, modular: 'Total', efficiency: '80 Plus Gold', eps: 2 });
+    expect(m.origin.watts).toEqual({ store: 's3', sku: '1', from: 'title' });
+    expect(m.origin.efficiency).toEqual({ store: 's3', sku: '1' });
+    expect(m.missing).toEqual([]);
+    const plain = mergeSources('psu', [page('2', { watts: 500, eps: 1, pcie8: 2, sata: 4 })], [{ store: 's3', sku: '2', title: 'Fonte XYZ 500W 80 Plus Bronze ATX' }]);
+    expect(plain.values.modular).toBe('Não');
+    expect(plain.origin.modular).toEqual({ store: 's3', sku: '2', from: 'default' });
+    expect(plain.missing).toEqual([]);
+    // Sem página com ficha lida: sem padrão (a página ainda pode dizer).
+    expect(mergeSources('psu', [], [{ store: 's3', sku: '3', title: 'Fonte XYZ 500W' }]).values.modular).toBeUndefined();
+  });
+
+  it('gabinete: só tamanho e placas-mãe são principais; sem ventoinhas na página nem no título, 0', () => {
+    const m = mergeSources('case', [page('1', { mbFormats: 'ATX,Micro-ATX,Mini-ITX', maxGpuMm: 330 })], [{ store: 's3', sku: '1', title: 'Gabinete Gamer Rise Mode Galaxy, Mid Tower, Vidro Temperado, ATX, Preto' }]);
+    expect(m.values).toMatchObject({ formFactor: 'Mid Tower', fansIncluded: 0 });
+    expect(m.missing).toEqual([]);
+  });
+
+  it('a lista de produtos usa os títulos: o produto lido e incompleto fica completo pelo título', () => {
+    const db = openDb(':memory:');
+    const o = { ...offer('s3', '1'), title: 'Memória DDR5 Patriot Viper Venom, 8GB, 6000MHz, Preto, PVV58G600C40' };
+    seen(db, 's3', 'ram', [o], NOW);
+    savePage(db, { store: 's3', sku: '1', category: 'ram', text: 'Capacidade: 8GB\nFrequência: 6000 MHz\nLatência: CL40' });
+    const [p] = catalogProducts(db, 'ram', SINCE);
+    expect(p!.values.type).toBe('DDR5');
+    expect(p!.state).toBe('complete');
+  });
+});

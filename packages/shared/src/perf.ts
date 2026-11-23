@@ -17,7 +17,7 @@ export const GPU_PERF: Record<string, number> = {
   'RTX 2080 Ti': 125, 'RTX 2080 Super': 108, 'RTX 2080': 104, 'RTX 2070 Super': 98, 'RTX 2070': 88, 'RTX 2060 Super': 86, 'RTX 2060': 75,
   'GTX 1660 Ti': 64, 'GTX 1660 Super': 63, 'GTX 1660': 56, 'GTX 1650 Super': 50, 'GTX 1650': 40, 'GTX 1630': 25,
   'GTX 1080 Ti': 95, 'GTX 1080': 75, 'GTX 1070 Ti': 68, 'GTX 1070': 62, 'GTX 1060': 48, 'GTX 1050 Ti': 33, 'GTX 1050': 26,
-  'GTX 750 Ti': 18, 'GTX 750': 15, 'GT 1030': 14, 'GT 740': 8, 'GT 730': 6, 'GT 710': 4,
+  'GTX 950': 22, 'GTX 750 Ti': 18, 'GTX 750': 15, 'GT 1030': 14, 'GT 740': 8, 'GT 730': 6, 'GT 710': 4,
   // Antigas que ainda aparecem à venda (estoque velho e placas "para vídeo"): só para o PC importado.
   'GT 705': 3, 'GT 610': 3, 'GT 340': 3, 'GT 240': 3, 'GT 220': 2, 'GT 210': 1,
   // RX 9050 (TechPowerUp: 4% acima da RX 6600, 2% abaixo da RX 5700 XT) e RX 7650 GRE (entre a RX 7600, 98%, e a 7600 XT, 104%).
@@ -28,6 +28,10 @@ export const GPU_PERF: Record<string, number> = {
   'RX 6650 XT': 112, 'RX 6600 XT': 108, 'RX 6600': 95, 'RX 6500 XT': 40, 'RX 6400': 33,
   'RX 5700 XT': 95, 'RX 5700': 85, 'RX 5600 XT': 75, 'RX 5600': 70, 'RX 5500 XT': 55,
   'RX 590': 55, 'RX 580': 50, 'RX 570': 45, 'RX 560': 22, 'RX 550': 15,
+  // Polaris antigas e as RX da Mancer (TechPowerUp): RX 480 ~6% abaixo da RX 580, RX 470 ~6% abaixo da RX 570,
+  // RX 460 um pouco abaixo da RX 560; RX 5500 (OEM, "Streaky V2") no nível da RX 5500 XT 8 GB e da GTX 1650 Super;
+  // RX 560 XT (Polaris 10 cortada, "Streaky") no nível da RX 470D, da GTX 1060 3 GB e da GTX 1650.
+  'RX 5500': 53, 'RX 480': 47, 'RX 470': 42, 'RX 560 XT': 40, 'RX 460': 19,
   'Arc B580': 120, 'Arc B570': 105, 'Arc A770': 105, 'Arc A750': 95, 'Arc A580': 85, 'Arc A380': 35, 'Arc A310': 25,
 };
 

@@ -66,6 +66,9 @@ export interface SheetDoc {
 const BULLET = /^[-•*·–>]+\s*/;
 /** Linha que é só um título de seção sem dois-pontos ("Memória", "Armazenamento"): curta, sem número. */
 const HEADING = /^[a-z][a-z /&()-]{1,28}$/;
+/** Linha que é um valor, não título, mesmo curta e sem número: item de lista ("Mini ITX" / "Micro ATX" / "ATX"). */
+const VALUE_ITEM = /^(e-?atx|atx|micro[- ]?atx|m-?atx|mini[- ]?itx|itx|mini[- ]?dtx|ssi[- ]?eeb|sata|nvme|pcie|ddr)$/;
+const isHeading = (l: string) => HEADING.test(l) && !VALUE_ITEM.test(l);
 
 export function sheetDoc(text: string): SheetDoc {
   const lines = text
@@ -97,7 +100,7 @@ export function sheetDoc(text: string): SheetDoc {
     }
     // Título sem dois-pontos e o valor na linha seguinte ("Chipset" / "AMD B850"), como em algumas fichas.
     // (Não quando o rótulo anterior ainda espera o valor: "Fator de forma:" / "M-ATX".)
-    if (HEADING.test(l) && lines[i + 1] && !/:/.test(lines[i + 1]!) && !(current && !current.value)) {
+    if (isHeading(l) && lines[i + 1] && !/:/.test(lines[i + 1]!) && !(current && !current.value)) {
       current = { label: l, value: '', section };
       pairs.push(current);
       extra = 0;
@@ -105,7 +108,7 @@ export function sheetDoc(text: string): SheetDoc {
       continue;
     }
     // Título sem dois-pontos e itens com rótulo abaixo ("Dimensões" / "- Altura: 485 mm"): é a seção.
-    if (HEADING.test(l) && /:/.test(lines[i + 1] ?? '') && !(current && !current.value)) {
+    if (isHeading(l) && /:/.test(lines[i + 1] ?? '') && !(current && !current.value)) {
       section = l;
       current = null;
       continue;

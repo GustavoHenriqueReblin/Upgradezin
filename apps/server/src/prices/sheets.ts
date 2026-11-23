@@ -5,6 +5,8 @@ import {
   missingMain,
   READER_VERSION,
   readSheet,
+  readTitle,
+  SHEET_DEFAULTS,
   sheetFields,
   SHEET_FIELDS,
   type CategoryId,
@@ -30,7 +32,9 @@ import { getMeta, setMeta, type Db } from '../db/db.ts';
  *
  * A ficha de um produto junta as páginas de todos os anúncios dele (listings.product_key: o mesmo
  * produto nas várias lojas), campo a campo: a página da própria loja primeiro, depois as outras, da
- * lida há menos tempo. Nenhuma loja tem preferência.
+ * lida há menos tempo. Nenhuma loja tem preferência. O que nenhuma página trouxe vem do título dos
+ * anúncios (readTitle) e, por fim, do valor padrão da categoria (SHEET_DEFAULTS, só com página lida).
+ * Título e padrão entram na hora de juntar, sem gravar: mudou o leitor do título, vale na hora.
  */
 
 /** A rotina lê a ficha dos produtos vistos nas lojas nos últimos dias (os que saíram do catálogo ficam de fora). */
@@ -160,16 +164,39 @@ export interface SheetSource {
   values: SheetValues;
 }
 
+/** Título de um anúncio do produto. */
+export interface SheetTitle {
+  store: StoreId;
+  sku: string;
+  title: string;
+}
+
 export interface ProductSheet {
   values: SheetValues;
-  /** De qual página veio cada campo. */
-  origin: Record<string, { store: StoreId; sku: string }>;
+  /** De qual página veio cada campo (from: do título do anúncio, ou o valor padrão). */
+  origin: Record<string, { store: StoreId; sku: string; from?: 'title' | 'default' }>;
   missing: string[];
   sources: SheetSource[];
 }
 
-/** Junta as páginas, campo a campo, na ordem dada (a primeira com o campo vale). */
-export function mergeSources(category: CategoryId, sources: SheetSource[]): Omit<ProductSheet, 'sources'> {
+/** Campos do título, guardados por título (a lista de produtos junta tudo a cada consulta). */
+const titleCache = new Map<string, SheetValues>();
+function titleValues(category: CategoryId, title: string): SheetValues {
+  const key = `${category}|${title}`;
+  let v = titleCache.get(key);
+  if (!v) {
+    if (titleCache.size > 50_000) titleCache.clear();
+    v = readTitle(category, title);
+    titleCache.set(key, v);
+  }
+  return v;
+}
+
+/**
+ * Junta as páginas, campo a campo, na ordem dada (a primeira com o campo vale); depois o que os
+ * títulos dos anúncios dizem; depois o padrão da categoria, se alguma página com ficha foi lida.
+ */
+export function mergeSources(category: CategoryId, sources: SheetSource[], titles: SheetTitle[] = []): Omit<ProductSheet, 'sources'> {
   const values: SheetValues = {};
   const origin: ProductSheet['origin'] = {};
   for (const s of sources) {
@@ -179,6 +206,20 @@ export function mergeSources(category: CategoryId, sources: SheetSource[]): Omit
       origin[k] = { store: s.store, sku: s.sku };
     }
   }
+  for (const t of titles) {
+    for (const [k, v] of Object.entries(titleValues(category, t.title))) {
+      if (values[k] !== undefined) continue;
+      values[k] = v;
+      origin[k] = { store: t.store, sku: t.sku, from: 'title' };
+    }
+  }
+  const read = sources.find((s) => s.hasSheet);
+  if (read)
+    for (const [k, v] of Object.entries(SHEET_DEFAULTS[category] ?? {})) {
+      if (values[k] !== undefined) continue;
+      values[k] = v;
+      origin[k] = { store: read.store, sku: read.sku, from: 'default' };
+    }
   return { values, origin, missing: missingMain(category, values) };
 }
 
@@ -198,7 +239,8 @@ function sourcesOf(db: Db, category: CategoryId, rows: { store: StoreId; store_s
 
 /**
  * Ficha do produto de um anúncio: a página dele e as dos outros anúncios do mesmo produto, juntas
- * (a dele primeiro, depois a lida há menos tempo). undefined: nenhuma página lida.
+ * (a dele primeiro, depois a lida há menos tempo), e os títulos. undefined: nenhuma página lida e
+ * nada no título.
  */
 export function productSheet(db: Db, store: StoreId, sku: string): (ProductSheet & { category: CategoryId }) | undefined {
   const l = db.prepare('SELECT id, category, product_key FROM listings WHERE store = ? AND store_sku = ?').get(store, sku) as
@@ -206,11 +248,15 @@ export function productSheet(db: Db, store: StoreId, sku: string): (ProductSheet
     | undefined;
   if (!l) return undefined;
   const rows = l.product_key
-    ? (db.prepare('SELECT store, store_sku FROM listings WHERE product_key = ?').all(l.product_key) as { store: StoreId; store_sku: string }[])
-    : [{ store, store_sku: sku }];
-  const sources = sourcesOf(db, l.category, rows).sort((a, b) => Number(b.store === store && b.sku === sku) - Number(a.store === store && a.sku === sku) || b.at.localeCompare(a.at));
-  if (!sources.length) return undefined;
-  return { category: l.category, ...mergeSources(l.category, sources), sources };
+    ? (db.prepare('SELECT store, store_sku, title FROM listings WHERE product_key = ?').all(l.product_key) as { store: StoreId; store_sku: string; title: string }[])
+    : (db.prepare('SELECT store, store_sku, title FROM listings WHERE id = ?').all(l.id) as { store: StoreId; store_sku: string; title: string }[]);
+  const own = (a: { store: StoreId; sku: string }) => Number(a.store === store && a.sku === sku);
+  const sources = sourcesOf(db, l.category, rows).sort((a, b) => own(b) - own(a) || b.at.localeCompare(a.at));
+  const titles = rows.map((r) => ({ store: r.store, sku: r.store_sku, title: r.title })).sort((a, b) => own(b) - own(a));
+  const merged = mergeSources(l.category, sources, titles);
+  // Sem página lida: o que o título diz, se diz algo.
+  if (!sources.length && !Object.keys(merged.values).length) return undefined;
+  return { category: l.category, ...merged, sources };
 }
 
 // ---------- produtos por categoria (cobertura, fila, admin) ----------
@@ -255,7 +301,11 @@ export function catalogProducts(db: Db, category: CategoryId, since: string): Sh
       .filter((r) => r.page !== null)
       .map((r) => ({ store: r.store, sku: r.store_sku, at: r.fetched_at!, hasSheet: !!r.has_sheet, values: fromRow(category, r) }))
       .sort((a, b) => b.at.localeCompare(a.at));
-    const merged = mergeSources(category, sources);
+    const merged = mergeSources(
+      category,
+      sources,
+      g.map((r) => ({ store: r.store, sku: r.store_sku, title: r.title })),
+    );
     return {
       key,
       category,

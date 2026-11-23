@@ -25,7 +25,8 @@ describe('página do produto', () => {
   it('junta os anúncios da chave: ficha de todas as páginas, ofertas em estoque e mais baratas primeiro, título do visto há menos tempo', () => {
     const page = productPage(setup(), 'ram:KF432C16BB', ['s1', 's2', 's3'])!;
     expect(page).toMatchObject({ key: 'ram:KF432C16BB', category: 'ram', title: 'Memória s2 b', image: 'https://s2.example/b.jpg' });
-    expect(page.values).toEqual({ capacityGb: 16, modules: 2, type: 'DDR4', mhz: 3200 });
+    // Mais a marca que o título dá ("Memória s2 b").
+    expect(page.values).toMatchObject({ capacityGb: 16, modules: 2, type: 'DDR4', mhz: 3200 });
     expect(page.offers.map((o) => [o.store, o.inStock])).toEqual([
       ['s2', true],
       ['s1', true],
