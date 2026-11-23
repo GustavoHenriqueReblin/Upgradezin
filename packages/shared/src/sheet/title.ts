@@ -182,10 +182,11 @@ export function readTitle(category: CategoryId, title: string): SheetValues {
 }
 
 /**
- * Valor que vale quando nem a página nem o título dizem, depois de ler a página: fonte não modular (a
- * modular sempre diz), gabinete sem ventoinhas (o que vem com ventoinhas sempre diz).
+ * Valor que vale quando nem a página nem o título dizem, depois de ler a página: fonte não modular e sem
+ * certificação (a modular e a certificada sempre dizem), gabinete sem ventoinhas (o que vem com
+ * ventoinhas sempre diz).
  */
 export const SHEET_DEFAULTS: Partial<Record<CategoryId, SheetValues>> = {
-  psu: { modular: 'Não' },
+  psu: { modular: 'Não', efficiency: 'Sem certificação' },
   case: { fansIncluded: 0 },
 };

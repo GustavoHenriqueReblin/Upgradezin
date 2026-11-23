@@ -96,15 +96,16 @@ export const SHEET_FIELDS: Record<CategoryId, SheetField[]> = {
     f('readMbs', 'Leitura', 'int', 'MB/s', M),
     f('writeMbs', 'Escrita', 'int', 'MB/s', M),
   ],
+  // Fonte se escolhe pela potência, pelo selo e por ser modular; padrão e conectores, quando a loja diz.
   psu: [
     f('watts', 'Potência', 'int', 'W', M),
     f('efficiency', 'Eficiência', 'text', undefined, M),
     f('modular', 'Modular', 'text', undefined, M),
-    f('standard', 'Padrão', 'text', undefined, M),
-    f('eps', 'Conectores CPU (EPS)', 'int', undefined, M),
-    f('pcie8', 'Conectores PCIe 6+2', 'int', undefined, M),
+    f('standard', 'Padrão', 'text'),
+    f('eps', 'Conectores CPU (EPS)', 'int'),
+    f('pcie8', 'Conectores PCIe 6+2', 'int'),
     f('pcie16', 'Conectores 16 pinos', 'int'),
-    f('sata', 'Conectores SATA', 'int', undefined, M),
+    f('sata', 'Conectores SATA', 'int'),
   ],
   // Gabinete se escolhe pelo tamanho (mid, mini tower) e pela placa-mãe que cabe; o resto, quando a loja diz.
   case: [

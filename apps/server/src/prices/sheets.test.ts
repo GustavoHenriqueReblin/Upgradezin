@@ -121,6 +121,10 @@ describe('ficha completada pelo título e pelo padrão da categoria', () => {
     expect(plain.values.modular).toBe('Não');
     expect(plain.origin.modular).toEqual({ store: 's3', sku: '2', from: 'default' });
     expect(plain.missing).toEqual([]);
+    // Só potência, eficiência e modular são principais; sem selo na página nem no título: sem certificação.
+    const tfx = mergeSources('psu', [page('4', { watts: 500, standard: 'ATX' })], [{ store: 's3', sku: '4', title: 'Fonte BRX TFX 500W, Bivolt Manual, TFX500W MANUAL' }]);
+    expect(tfx.values).toMatchObject({ efficiency: 'Sem certificação', modular: 'Não' });
+    expect(tfx.missing).toEqual([]);
     // Sem página com ficha lida: sem padrão (a página ainda pode dizer).
     expect(mergeSources('psu', [], [{ store: 's3', sku: '3', title: 'Fonte XYZ 500W' }]).values.modular).toBeUndefined();
   });
