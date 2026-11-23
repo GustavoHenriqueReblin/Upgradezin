@@ -32,13 +32,15 @@ async function info(tabId) {
  * carregar para o Chrome (anúncios e rastreadores puxando sem parar), e os dados já estão no HTML.
  * Quem precisa de algo que o script da página monta depois espera com waitFor.
  */
-async function waitReady(tabId, timeout) {
+async function waitReady(tabId, timeout, oldUrl = '', sawLoading = false) {
   const until = Date.now() + timeout;
   while (Date.now() < until) {
     const t = await chrome.tabs.get(tabId).catch(() => null);
     if (!t) return false;
-    if (t.status === 'complete' && t.url && t.url !== 'about:blank') return true;
-    const ready = await inPage(tabId, () => location.href !== 'about:blank' && document.readyState !== 'loading').catch(() => false);
+    // Viu carregar: o "complete" é do documento novo, mesmo que ele volte ao endereço antigo.
+    if (t.status === 'loading') sawLoading = true;
+    if (t.status === 'complete' && t.url && t.url !== 'about:blank' && (t.url !== oldUrl || sawLoading)) return true;
+    const ready = await inPage(tabId, (old) => location.href !== 'about:blank' && location.href !== old && document.readyState !== 'loading', [oldUrl]).catch(() => false);
     if (ready) return true;
     await sleep(200);
   }
@@ -59,14 +61,21 @@ const ops = {
     return { tabId: tab.id, sameWindow: tab.windowId === me.windowId, tabsInWindow: tabs.length, url: 'about:blank', title: '' };
   },
   async goto({ tabId, url, timeout }) {
+    // Aba que já estava numa página (a mantida aberta entre as páginas de uma lista): até o documento
+    // novo entrar, a aba ainda responde com o anterior, já pronto. Sem descontar o endereço antigo,
+    // a leitura saía do documento anterior (ex.: a categoria lida antes, vista como redirecionamento).
+    const before = (await chrome.tabs.get(tabId)).url ?? '';
+    const oldUrl = before && before !== 'about:blank' && before !== url ? before : '';
     await chrome.tabs.update(tabId, { url });
     // Espera o carregamento começar antes de esperar o documento novo (senão pega o da aba anterior).
+    let sawLoading = false;
     for (let i = 0; i < 20; i++) {
       const t = await chrome.tabs.get(tabId);
-      if (t.status === 'loading' || (t.url && t.url !== 'about:blank')) break;
+      sawLoading = t.status === 'loading';
+      if (sawLoading || (t.url && t.url !== 'about:blank' && t.url !== oldUrl)) break;
       await sleep(100);
     }
-    const loaded = await waitReady(tabId, timeout);
+    const loaded = await waitReady(tabId, timeout, oldUrl, sawLoading);
     return { loaded, ...(await info(tabId)) };
   },
   /**
