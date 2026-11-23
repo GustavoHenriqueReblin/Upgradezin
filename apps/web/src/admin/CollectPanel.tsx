@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { CATEGORY_DEFS, FULL_SWEEP_SECONDS_MAX, FULL_SWEEP_SECONDS_MIN, MODE_SECONDS_MAX, MODE_SECONDS_MIN, ROUTINE_MODES, type AdminStoreState, type CategoryId, type FullSweepSettings, type ProbeResult, type RoutineInfo, type RoutineInput, type RoutineMode, type StoreAttempt, type StoreId } from '@upgradezin/shared';
+import { CATEGORY_DEFS, type AdminStoreState, type CategoryId, type FullSweepSettings, type ProbeResult, type RoutineInfo, type RoutineInput, type StoreAttempt, type StoreId } from '@upgradezin/shared';
 import { FlaskConical, Pause, Play, RefreshCw, Square } from 'lucide-react';
 import { AdminError, adminApi } from './api.ts';
-import { attemptLabel, countdown, probeLabel, formatWhen, MODE_LABEL, modeHint, pauseLabel, queueLabel, routineStores, shortDuration } from './format.ts';
+import { attemptLabel, countdown, probeLabel, formatWhen, intervalLabel, pauseLabel, queueLabel, routineStores } from './format.ts';
 import { useLiveReload } from './live.ts';
+import { IntervalInputs } from './IntervalInputs.tsx';
 import { Switch } from './Switch.tsx';
 
 const PAUSES = [
@@ -58,7 +59,6 @@ export function CollectPanel({ onUnauthorized }: { onUnauthorized: () => void })
   };
   const toggleStore = (id: StoreId, name: string, on: boolean) =>
     save({ stores: on ? [...active, id] : active.filter((x) => x !== id) }, `${name}: ${on ? 'entrou na' : 'saiu da'} rotina.`);
-  const setMode = (id: StoreId, name: string, mode: RoutineMode) => save({ modes: { [id]: mode } }, `${name}: rotina no modo ${MODE_LABEL[mode].toLowerCase()}.`);
   const setLive = (id: StoreId, name: string, live: boolean) =>
     save({ live: { [id]: live } }, live ? `${name}: "Não achou? Buscar nas lojas" consulta a loja na hora.` : `${name}: a busca por texto mostra só o banco.`);
 
@@ -69,39 +69,29 @@ export function CollectPanel({ onUnauthorized }: { onUnauthorized: () => void })
       <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
         <h2 className="font-semibold">Rotina de preços</h2>
         <p className="mt-0.5 text-sm text-zinc-500">
-          Rotina: em cada loja ligada, o servidor lê cada categoria pela página dela na loja (configurada em Lojas): todas as páginas com estoque, uma atrás da outra, e passa à próxima
-          categoria depois do intervalo do modo; a busca do site mostra o que ela gravou. A "Varredura completa" de cada loja lê também os esgotados. Busca ao vivo: o "Não achou? Buscar nas lojas" consulta a loja na hora (na frente da rotina); desmarcada, mostra só o banco. As duas são independentes e valem na hora.
+          Rotina: em cada loja ligada, o servidor lê cada categoria pela página dela na loja (configurada em Lojas), todas as páginas com estoque, e passa à próxima categoria; a busca do
+          site mostra o que ela gravou. Intervalo de listagens: o tempo entre duas páginas de lista da loja ("/fonte", "/fonte" página 2…), na rotina, na varredura completa, na busca e nos testes; as fichas têm o seu, na aba Fichas. A "Varredura completa" de cada loja lê também os esgotados. Busca ao vivo: o "Não achou? Buscar nas lojas" consulta a loja na hora (na frente da rotina); desmarcada, mostra só o banco. As duas são independentes e valem na hora.
         </p>
 
         <ul className="mt-3 divide-y divide-zinc-200 dark:divide-zinc-800">
           {states.map((s) => {
-            const mode = routine.modes[s.id];
             return (
               <li key={s.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2">
-                <span className="min-w-0">
+                <span className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
                   <span className="font-medium">{s.name}</span>
-                  <span className="ml-2 text-xs text-zinc-500">{modeHint(mode, routine.seconds)}</span>
+                  <IntervalInputs
+                    key={`${s.listInterval.minS}-${s.listInterval.maxS}`}
+                    interval={s.listInterval}
+                    label="uma página de lista a cada"
+                    title="Intervalo de listagens desta loja: entre duas páginas de lista (rotina, varredura completa, busca e testes), um tempo aleatório entre os dois valores. Vale na hora."
+                    onSave={(i) => void act(() => adminApi(`/stores/${s.id}/interval`, { method: 'PUT', body: { kind: 'list', ...i } }), `${s.name}: ${intervalLabel(i)} de lista.`)}
+                  />
                 </span>
                 <span className="flex flex-wrap items-center gap-4">
                   <label className="flex items-center gap-1.5 text-sm" title="Buscar o texto nesta loja na hora (Não achou? Buscar nas lojas)">
                     <input type="checkbox" checked={routine.live[s.id]} disabled={!s.enabled} onChange={(e) => setLive(s.id, s.name, e.target.checked)} className="h-4 w-4 accent-accent-500" />
                     Busca ao vivo
                   </label>
-                  <span role="radiogroup" aria-label={`Modo da rotina na ${s.name}`} className="flex rounded-lg border border-zinc-300 p-0.5 text-xs dark:border-zinc-700">
-                    {ROUTINE_MODES.map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        role="radio"
-                        aria-checked={mode === m}
-                        disabled={!s.enabled}
-                        onClick={() => mode !== m && setMode(s.id, s.name, m)}
-                        className={`rounded-md px-2.5 py-1 font-medium disabled:opacity-50 ${mode === m ? 'bg-accent-500 text-accent-950' : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'}`}
-                      >
-                        {MODE_LABEL[m]}
-                      </button>
-                    ))}
-                  </span>
                   <Switch label={`Rotina na ${s.name}`} on={active.includes(s.id)} onChange={(on) => toggleStore(s.id, s.name, on)} disabled={!s.enabled} />
                 </span>
               </li>
@@ -109,7 +99,6 @@ export function CollectPanel({ onUnauthorized }: { onUnauthorized: () => void })
           })}
         </ul>
 
-        <ModeSeconds key={ROUTINE_MODES.map((m) => routine.seconds[m]).join()} seconds={routine.seconds} onSave={(seconds) => save({ seconds }, 'Intervalos da rotina salvos.')} />
 
         <div className="mt-1 border-t border-zinc-200 pt-3 text-xs text-zinc-500 dark:border-zinc-800">
           {!active.length ? (
@@ -144,45 +133,6 @@ export function CollectPanel({ onUnauthorized }: { onUnauthorized: () => void })
   );
 }
 
-/** Segundos entre duas coletas da rotina em cada modo (vale para todas as lojas naquele modo). */
-function ModeSeconds({ seconds, onSave }: { seconds: Record<RoutineMode, number>; onSave: (s: Record<RoutineMode, number>) => void }) {
-  const [draft, setDraft] = useState<Record<RoutineMode, string>>(() => Object.fromEntries(ROUTINE_MODES.map((m) => [m, String(seconds[m])])) as Record<RoutineMode, string>);
-  const parsed = Object.fromEntries(ROUTINE_MODES.map((m) => [m, Number(draft[m])])) as Record<RoutineMode, number>;
-  const valid = ROUTINE_MODES.every((m) => Number.isInteger(parsed[m]) && parsed[m] >= MODE_SECONDS_MIN && parsed[m] <= MODE_SECONDS_MAX);
-  const changed = ROUTINE_MODES.some((m) => parsed[m] !== seconds[m]);
-  return (
-    <form
-      className="mt-1 flex flex-wrap items-end gap-3 border-t border-zinc-200 py-3 text-sm dark:border-zinc-800"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (valid && changed) onSave(parsed);
-      }}
-    >
-      <span className="w-full text-xs text-zinc-500">Segundos entre uma categoria e a próxima em cada modo ({MODE_SECONDS_MIN} a {MODE_SECONDS_MAX}). As páginas de uma mesma categoria seguem uma atrás da outra. Não afeta a busca por texto.</span>
-      {ROUTINE_MODES.map((m) => (
-        <label key={m} className="flex flex-col gap-1 text-xs text-zinc-500">
-          {MODE_LABEL[m]}
-          <span className="flex items-center gap-1.5">
-            <input
-              type="number"
-              inputMode="numeric"
-              min={MODE_SECONDS_MIN}
-              max={MODE_SECONDS_MAX}
-              value={draft[m]}
-              onChange={(e) => setDraft({ ...draft, [m]: e.target.value })}
-              className="w-24 rounded-lg border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-            />
-            {Number.isInteger(parsed[m]) && parsed[m] >= 60 && <span>{shortDuration(parsed[m])}</span>}
-          </span>
-        </label>
-      ))}
-      <Btn type="submit" disabled={!valid || !changed}>
-        Salvar intervalos
-      </Btn>
-    </form>
-  );
-}
-
 function StoreCard({ s, act }: { s: AdminStoreState; act: (fn: () => Promise<unknown>, ok: string) => Promise<void> }) {
   const counts = s.last24h;
   const total = Object.values(counts).reduce((a, b) => a + (b ?? 0), 0);
@@ -201,7 +151,7 @@ function StoreCard({ s, act }: { s: AdminStoreState; act: (fn: () => Promise<unk
         <Row k="Páginas na última hora">
           {s.pagesUsed} de {s.pagesPerHour} <span className="text-zinc-500">(rotina até {s.routinePagesPerHour})</span>
         </Row>
-        <Row k="Rotina">{s.inRoutine ? `sim, modo ${MODE_LABEL[s.mode].toLowerCase()}` : 'não'}</Row>
+        <Row k="Rotina">{s.inRoutine ? 'sim' : 'não'}</Row>
         {s.fullSweep && (
           <Row k="Varredura completa">
             {CATEGORY_DEFS[s.fullSweep.category].name} ({s.fullSweep.index + 1} de {s.fullSweep.total})
@@ -255,7 +205,7 @@ function ProbeButton({ s, act, category, page, pages = 1, path }: { s: AdminStor
   const [results, setResults] = useState<ProbeResult[] | null>(null);
   const [own, setOwn] = useState(path ?? '');
   const name = CATEGORY_DEFS[category].name.toLowerCase();
-  const { minS, maxS } = s.fullSweepSettings;
+  const { minS, maxS } = s.listInterval;
   const last = page + pages - 1;
   const what = path !== undefined ? `${own} (páginas ${page} a ${last})` : pages > 1 ? `páginas ${page} a ${last} de ${name}` : `página ${page} de ${name}`;
   const validPath = path === undefined || /^\/(?!\/)[^\s\\]{0,300}$/.test(own);
@@ -266,7 +216,7 @@ function ProbeButton({ s, act, category, page, pages = 1, path }: { s: AdminStor
     await act(() => adminApi<ProbeResult[]>(`/stores/${s.id}/probe`, { method: 'POST', body }).then(setResults), `${s.name}: teste de ${what} terminou.`);
     setRunning(false);
   };
-  const wait = pages > 1 ? ` Uma página a cada ${minS} a ${maxS} s (o intervalo da varredura completa), parando na primeira que não abrir.` : '';
+  const wait = pages > 1 ? ` Uma página a cada ${minS} a ${maxS} s (o intervalo de listagens), parando na primeira que não abrir.` : '';
   return (
     <div className="mt-3 space-y-1 border-t border-zinc-200 pt-3 text-xs text-zinc-500 dark:border-zinc-800">
       <div className="flex flex-wrap items-center gap-2">
@@ -299,32 +249,27 @@ function ProbeButton({ s, act, category, page, pages = 1, path }: { s: AdminStor
 }
 
 /**
- * Varredura completa da loja: intervalo entre páginas (só dela) e categorias marcadas, guardados para o
- * botão e a varredura da madrugada. O botão guarda o que está na tela e começa.
+ * Varredura completa da loja: as categorias marcadas, guardadas para o botão e a varredura da
+ * madrugada. O ritmo é o intervalo de listagens da loja. O botão guarda o que está na tela e começa.
  */
 function FullSweepForm({ s, act }: { s: AdminStoreState; act: (fn: () => Promise<unknown>, ok: string) => Promise<void> }) {
   const saved = s.fullSweepSettings;
-  const [minS, setMinS] = useState(String(saved.minS));
-  const [maxS, setMaxS] = useState(String(saved.maxS));
   const [categories, setCategories] = useState<CategoryId[]>(saved.categories);
-  const body: FullSweepSettings = { minS: Number(minS), maxS: Number(maxS), categories: s.sweepCategories.filter((c) => categories.includes(c)) };
-  const inRange = (n: number) => Number.isInteger(n) && n >= FULL_SWEEP_SECONDS_MIN && n <= FULL_SWEEP_SECONDS_MAX;
-  const valid = inRange(body.minS) && inRange(body.maxS) && body.minS <= body.maxS;
-  const changed = body.minS !== saved.minS || body.maxS !== saved.maxS || body.categories.join() !== saved.categories.join();
+  const body: FullSweepSettings = { categories: s.sweepCategories.filter((c) => categories.includes(c)) };
+  const changed = body.categories.join() !== saved.categories.join();
   const toggle = (c: CategoryId) => setCategories((xs) => (xs.includes(c) ? xs.filter((x) => x !== c) : [...xs, c]));
   const names = body.categories.map((c) => CATEGORY_DEFS[c].name.toLowerCase()).join(', ');
-  const input = 'w-16 rounded-lg border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100';
 
   return (
     <div className="mt-3 space-y-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
       <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
         <Btn
-          disabled={!s.enabled || !!s.pause || !!s.fullSweep || !valid || !body.categories.length}
-          title="Pausa a rotina de preços e a de fichas e lê as categorias marcadas desta loja, uma depois da outra, até o fim da lista: os esgotados também entram no banco (a rotina só lê o que está em estoque). No fim, cada rotina volta a como estava."
+          disabled={!s.enabled || !!s.pause || !!s.fullSweep || !body.categories.length}
+          title="Pausa a rotina de preços e a de fichas e lê as categorias marcadas desta loja, uma depois da outra, até o fim da lista, no intervalo de listagens: os esgotados também entram no banco (a rotina só lê o que está em estoque). No fim, cada rotina volta a como estava."
           onClick={() =>
             void act(
               () => adminApi<{ startsAt: string }>(`/stores/${s.id}/sweep`, { method: 'POST', body }),
-              `${s.name}: varredura completa começou (${names}; esgotados também; uma página a cada ${body.minS} a ${body.maxS} s). As rotinas de preços e de fichas ficam pausadas até ela terminar e voltam sozinhas a como estavam. As páginas aparecem em Consultas; cada volta, em Cobertura.`,
+              `${s.name}: varredura completa começou (${names}; esgotados também; ${intervalLabel(s.listInterval)}). As rotinas de preços e de fichas ficam pausadas até ela terminar e voltam sozinhas a como estavam. As páginas aparecem em Consultas; cada volta, em Cobertura.`,
             )
           }
         >
@@ -339,24 +284,15 @@ function FullSweepForm({ s, act }: { s: AdminStoreState; act: (fn: () => Promise
             <Square className="h-3.5 w-3.5" /> Parar varredura
           </Btn>
         )}
-        <label className="flex items-center gap-1.5" title="Intervalo aleatório entre uma página e a próxima, só na varredura completa (as rotinas usam o da loja)">
-          uma página a cada
-          <input type="number" inputMode="numeric" min={FULL_SWEEP_SECONDS_MIN} max={FULL_SWEEP_SECONDS_MAX} value={minS} onChange={(e) => setMinS(e.target.value)} className={input} aria-label="Intervalo mínimo (s)" />
-          a
-          <input type="number" inputMode="numeric" min={FULL_SWEEP_SECONDS_MIN} max={FULL_SWEEP_SECONDS_MAX} value={maxS} onChange={(e) => setMaxS(e.target.value)} className={input} aria-label="Intervalo máximo (s)" />
-          s
-        </label>
         {changed && (
           <Btn
             subtle
-            disabled={!valid}
-            title="Guarda sem começar (vale também para a varredura da madrugada)"
-            onClick={() => void act(() => adminApi(`/stores/${s.id}/full-sweep`, { method: 'PUT', body }), `${s.name}: configuração da varredura completa salva (vale também para a da madrugada).`)}
+            title="Guarda as categorias sem começar (vale também para a varredura da madrugada)"
+            onClick={() => void act(() => adminApi(`/stores/${s.id}/full-sweep`, { method: 'PUT', body }), `${s.name}: categorias da varredura completa salvas (valem também para a da madrugada).`)}
           >
-            Salvar
+            Salvar categorias
           </Btn>
         )}
-        {!valid && <span className="text-red-500">De {FULL_SWEEP_SECONDS_MIN} a {FULL_SWEEP_SECONDS_MAX} s, o primeiro não maior que o segundo.</span>}
       </div>
       {s.sweepCategories.length ? (
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">

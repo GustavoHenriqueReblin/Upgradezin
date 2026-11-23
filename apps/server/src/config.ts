@@ -93,15 +93,6 @@ const Env = z.object({
     .string()
     .default('s1,s2,s3')
     .transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean)),
-  /** Lojas que começam no modo lento até o admin escolher (as de navegador). */
-  ROUTINE_SLOW_STORES: z
-    .string()
-    .default('s2,s3')
-    .transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean)),
-  /** Modos da rotina (admin, aba Coleta): segundos entre duas páginas de categoria na loja (+ até 20% aleatório). */
-  ROUTINE_NORMAL_GAP_S: z.coerce.number().default(15),
-  ROUTINE_REDUCED_GAP_S: z.coerce.number().default(20),
-  ROUTINE_SLOW_GAP_S: z.coerce.number().default(60),
   /** A rotina lê uma categoria de novo quando a última volta completa por ela passou disto (horas). */
   ROUTINE_REFRESH_H: z.coerce.number().default(12),
   /** Páginas por loja por hora que a rotina pode usar (do total MAX_PAGES_PER_HOUR; o resto fica para a busca por texto e as fichas). */
@@ -110,21 +101,17 @@ const Env = z.object({
   ROUTINE_RETRY_MIN: z.coerce.number().default(60),
   /**
    * Rotina de fichas técnicas (separada da coleta): abre, em cada loja, uma página de produto do
-   * catálogo (todas as categorias) a cada SHEET_ROUTINE_SECONDS segundos. Cada página é lida uma
+   * catálogo (todas as categorias) a cada intervalo de fichas da loja (admin). Cada página é lida uma
    * vez. Valores iniciais: depois, vale o que o admin (aba Fichas) guardar.
    */
   SHEET_ROUTINE_ENABLED: z
     .string()
     .optional()
     .transform((v) => v === '1' || v === 'true'),
-  SHEET_ROUTINE_SECONDS: z.coerce.number().int().default(180),
   /** Hora (0-23, horário do servidor) da varredura completa automática de madrugada, antes do backup do cron (04:30). -1 desliga. */
   NIGHTLY_SWEEP_HOUR: z.coerce.number().int().min(-1).max(23).default(1),
   /** Teto de páginas por caminho de categoria numa volta (120 itens por página na S1, 36 na S2, ~150 na S3). */
   ROUTINE_SWEEP_MAX_PAGES: z.coerce.number().default(40),
-  /** Intervalo aleatório entre páginas da MESMA loja. */
-  PAGE_DELAY_MIN_MS: z.coerce.number().default(5000),
-  PAGE_DELAY_MAX_MS: z.coerce.number().default(12000),
   /** Páginas por loja por hora (janela deslizante). */
   MAX_PAGES_PER_HOUR: z.coerce.number().default(30),
   /** Busca por texto na S1: 1 página de 120 itens (a loja ordena pelos mais procurados). */

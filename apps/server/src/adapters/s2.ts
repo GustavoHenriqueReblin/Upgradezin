@@ -2,7 +2,7 @@ import { matchesCategory, normalizeBrand, normalizeListing, parseCouponText, typ
 import { loadPage, saveDebugHtml, type LoadedPage, type PageError } from '../browser.ts';
 import { config } from '../config.ts';
 import { parseHTML } from 'linkedom';
-import { BlockedError, jitter, SearchRedirectError, sleep, takePage } from '../pace.ts';
+import { BlockedError, SearchRedirectError, sleep, storeGap, takePage } from '../pace.ts';
 import { searchUrl, storeConfig } from '../stores.ts';
 import type { StoreAdapter } from './types.ts';
 
@@ -236,7 +236,7 @@ export const s2: StoreAdapter = {
     const limit = Math.min(config.MAX_PAGES_S2, maxPages ?? Infinity);
     let total = 1;
     for (let page = 1; page <= Math.min(total, limit); page++) {
-      if (page > 1) await sleep(jitter(), signal);
+      if (page > 1) await sleep(storeGap('s2', 'list'), signal);
       const { items, totalPages } = await readS2Page(pageUrl(base, page), signal, onNeedsHuman);
       total = totalPages;
       const now = new Date().toISOString();

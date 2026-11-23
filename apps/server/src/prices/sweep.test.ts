@@ -274,7 +274,7 @@ describe('rotina de preços', () => {
       urls.push(url);
       return { html: fixture('s1-cpu.html'), url, title: '' };
     });
-    setRoutineSettings({ enabled: true, stores: ['s1'], modes: { s1: 'reduced' } });
+    setRoutineSettings({ enabled: true, stores: ['s1'] });
     for (let i = 0; i < 2; i++) {
       const before = urls.length;
       await tick(routineNextAt('s1')!);

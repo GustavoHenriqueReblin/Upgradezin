@@ -1,4 +1,4 @@
-import { CATEGORY_DEFS, SHEET_FIELDS, type CategoryId, type MergeReport, type ProbeResult, type RoutineMode, type SheetState, type Specs, type StoreAttempt } from '@upgradezin/shared';
+import { CATEGORY_DEFS, SHEET_FIELDS, type CategoryId, type MergeReport, type ProbeResult, type SheetState, type StoreInterval, type Specs, type StoreAttempt } from '@upgradezin/shared';
 
 /** "3 d 4 h", "2 h 15 min", "40 s". */
 export function formatDuration(totalS: number): string {
@@ -87,8 +87,6 @@ export function countdown(target: string | number, now = Date.now()): string {
   return `${two(Math.floor(s / 3600))}:${two(Math.floor((s % 3600) / 60))}:${two(s % 60)} (${clock})`;
 }
 
-export const MODE_LABEL: Record<RoutineMode, string> = { normal: 'Normal', reduced: 'Reduzido', slow: 'Lento' };
-
 /** Segundos em texto curto: "15 s", "1 min", "1 min 30 s", "2 h", "1 h 30 min". */
 export function shortDuration(s: number): string {
   if (s < 60) return `${s} s`;
@@ -111,27 +109,14 @@ export function queueLabel(q: { priority: number; routine: number }): string {
   return parts.length ? `${parts.join(' e ')} esperando` : 'vazia';
 }
 
-/** O que o modo faz, com os segundos que o servidor usa. */
-export function modeHint(mode: RoutineMode, seconds: Record<RoutineMode, number>): string {
-  return `rotina: 1 categoria a cada ${shortDuration(seconds[mode])}`;
+/** O intervalo da loja em texto: "1 página a cada 26 s a 1 min", "1 página a cada 30 s". */
+export function intervalLabel(i: StoreInterval): string {
+  return `1 página a cada ${i.minS === i.maxS ? shortDuration(i.minS) : i.maxS < 60 ? `${i.minS} a ${i.maxS} s` : `${shortDuration(i.minS)} a ${shortDuration(i.maxS)}`}`;
 }
 
-/** Unidades do intervalo da rotina de fichas no admin. */
-export const SHEET_UNITS = [
-  { label: 'segundos', s: 1 },
-  { label: 'minutos', s: 60 },
-  { label: 'horas', s: 3600 },
-] as const;
-
-/** Segundos na maior unidade exata: 180 → 3 minutos; 90 → 90 segundos. */
-export function splitSeconds(s: number): { value: number; unit: number } {
-  const u = [...SHEET_UNITS].reverse().find((x) => s % x.s === 0)!;
-  return { value: s / u.s, unit: u.s };
-}
-
-/** Quanto falta para ler `missing` fichas, uma a cada `seconds` (+ 10% em média): "cerca de 5 h", "cerca de 3 dias". */
-export function sheetEta(missing: number, seconds: number): string {
-  const h = (missing * seconds * 1.1) / 3600;
+/** Quanto falta para ler `missing` fichas, uma a cada intervalo (a média dele): "cerca de 5 h", "cerca de 3 dias". */
+export function sheetEta(missing: number, interval: StoreInterval): string {
+  const h = (missing * (interval.minS + interval.maxS)) / 2 / 3600;
   if (h < 1) return 'menos de 1 h';
   return h < 48 ? `cerca de ${Math.ceil(h)} h` : `cerca de ${Math.round(h / 24)} dias`;
 }

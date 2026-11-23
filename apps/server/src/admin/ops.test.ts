@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { RoutineSettings } from '@upgradezin/shared';
+import type { RoutineSettings, StoreInterval } from '@upgradezin/shared';
 import { openDb } from '../db/db.ts';
-import { backoffInfo, BlockedError, clearBackoff, PageLimitError, pageLimitUntil, pauseStore, registerBlock, registerSuccess, takePage, useBackoffStorage } from '../pace.ts';
+import { backoffInfo, BlockedError, clearBackoff, DEFAULT_INTERVALS, PageLimitError, pageLimitUntil, pauseStore, registerBlock, registerSuccess, setStoreInterval, storeGap, storeInterval, takePage, useBackoffStorage, useIntervalStorage } from '../pace.ts';
 import { attemptCounts, lastAttempt, listAttempts, onAttempt, pageAttempts, recordAttempt, type NewAttempt } from '../prices/attempts.ts';
 import { attemptOutcome } from '../prices/collect.ts';
-import { isLive, modeDelay, routineInfo, routineNextAt, routineSettings, setRoutineSettings, stopRoutine, tick, useRoutineStorage } from '../prices/routine.ts';
+import { isLive, routineInfo, routineNextAt, routineSettings, setRoutineSettings, stopRoutine, tick, useRoutineStorage } from '../prices/routine.ts';
 import { useStoreStorage } from '../stores.ts';
-import { fullSweep, fullSweepAll, fullSweepOf, probePage, fullSweepSettings, readSheetNow, resumeRoutines, saveFullSweepSettings, stopFullSweep, storesState } from './actions.ts';
+import { fullSweep, fullSweepAll, fullSweepOf, probePage, fullSweepSettings, readSheetNow, resumeRoutines, saveFullSweepSettings, stopFullSweep, storesState, useStoreIntervals } from './actions.ts';
 import { setSheetRoutine, sheetRoutineSettings, stopSheetRoutine, useSheetRoutineStorage } from '../prices/sheet-routine.ts';
 import { getMeta, setMeta } from '../db/db.ts';
 import { usePageLoader } from '../browser.ts';
@@ -95,12 +95,12 @@ describe('rotina pelo admin', () => {
   it('o guardado vale no lugar do .env; mudar guarda, limpa lojas inválidas e reinicia', () => {
     const saved: unknown[] = [];
     useRoutineStorage({ enabled: false, stores: ['s2'] }, (s) => saved.push(s));
-    expect(routineSettings()).toEqual({ enabled: false, stores: ['s2'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 } }); // sem modos guardados: o padrão (ROUTINE_SLOW_STORES do .env começa no lento)
+    expect(routineSettings()).toEqual({ enabled: false, stores: ['s2'], live: { s1: true, s2: true, s3: true } });
     expect(routineInfo()).toMatchObject({ enabled: false, nextTickAt: null, busy: false });
 
     setRoutineSettings({ enabled: true, stores: ['s3', 's1', 'x9' as 's1'] });
-    expect(routineSettings()).toEqual({ enabled: true, stores: ['s1', 's3'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 } }); // ordem das lojas, sem a inválida
-    expect(saved.at(-1)).toEqual({ enabled: true, stores: ['s1', 's3'], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, seconds: { normal: 15, reduced: 20, slow: 60 } });
+    expect(routineSettings()).toEqual({ enabled: true, stores: ['s1', 's3'], live: { s1: true, s2: true, s3: true } }); // ordem das lojas, sem a inválida
+    expect(saved.at(-1)).toEqual({ enabled: true, stores: ['s1', 's3'], live: { s1: true, s2: true, s3: true } });
     expect(routineInfo().nextTickAt).not.toBeNull(); // ligada: próxima rodada marcada
 
     setRoutineSettings({ enabled: false, stores: ['s1'] });
@@ -108,37 +108,61 @@ describe('rotina pelo admin', () => {
     stopRoutine();
   });
 
-  it('modo por loja: muda só o enviado, inválido volta ao padrão, e guardado vale', () => {
+  it('busca ao vivo: guardada, não enviada fica como estava; modos e segundos antigos guardados são ignorados', () => {
     const saved: RoutineSettings[] = [];
-    useRoutineStorage({ enabled: false, stores: [], modes: { s2: 'reduced' } }, (s) => saved.push(s));
-    expect(routineSettings().modes).toEqual({ s1: 'normal', s2: 'reduced', s3: 'slow' });
-    setRoutineSettings({ enabled: false, stores: [], modes: { s3: 'normal' } });
-    expect(routineSettings().modes).toEqual({ s1: 'normal', s2: 'reduced', s3: 'normal' }); // s2 ficou como estava
-    expect(saved.at(-1)?.modes.s3).toBe('normal');
-    setRoutineSettings({ enabled: false, stores: [], modes: { s1: 'turbo' as 'slow' } });
-    expect(routineSettings().modes.s1).toBe('normal');
-    expect(routineInfo().seconds).toEqual({ normal: 15, reduced: 20, slow: 60 });
-    stopRoutine();
-  });
-
-  it('busca ao vivo e segundos dos modos: independentes do modo, guardados, inválido fica como estava', () => {
-    const saved: RoutineSettings[] = [];
-    useRoutineStorage({ enabled: false, stores: [], live: { s3: false }, seconds: { normal: 300 } }, (s) => saved.push(s));
-    expect(routineSettings().live).toEqual({ s1: true, s2: true, s3: false });
+    useRoutineStorage({ enabled: false, stores: [], live: { s3: false }, modes: { s2: 'reduced' }, seconds: { normal: 300 } } as never, (s) => saved.push(s));
+    expect(routineSettings()).toEqual({ enabled: false, stores: [], live: { s1: true, s2: true, s3: false } });
     expect(isLive('s3')).toBe(false);
-    expect(routineSettings().seconds).toEqual({ normal: 300, reduced: 20, slow: 60 });
-    setRoutineSettings({ enabled: false, stores: [], modes: { s3: 'slow' }, live: { s3: true }, seconds: { slow: 1, reduced: 45 } });
+    setRoutineSettings({ enabled: false, stores: [], live: { s3: true } });
     expect(isLive('s3')).toBe(true);
-    expect(routineSettings().seconds).toEqual({ normal: 300, reduced: 45, slow: 60 }); // 1 s: abaixo do mínimo, ficou o de antes
     setRoutineSettings({ enabled: false, stores: [] });
     expect(routineSettings().live.s3).toBe(true); // não enviado: fica como estava
-    expect(saved.at(-1)?.seconds.reduced).toBe(45);
+    expect(saved.at(-1)).toEqual({ enabled: false, stores: [], live: { s1: true, s2: true, s3: true } });
     stopRoutine();
   });
 
-  it('intervalo dos modos: os segundos mais até 20%', () => {
-    expect(modeDelay(15, 0)).toBe(15_000);
-    expect(modeDelay(60, 1)).toBe(72_000);
+  it('intervalos da loja (listagens e fichas): padrão sem nada guardado; guardado vale; inválido fica como estava', () => {
+    const saved: [string, string, StoreInterval][] = [];
+    useIntervalStorage({ list: { s2: { minS: 26, maxS: 60 }, s3: { minS: 1, maxS: 5 } }, sheet: { s2: { minS: 10, maxS: 12 } } }, (store, kind, i) => saved.push([store, kind, i]));
+    expect(storeInterval('s1', 'list')).toEqual(DEFAULT_INTERVALS.list);
+    expect(storeInterval('s1', 'sheet')).toEqual(DEFAULT_INTERVALS.sheet);
+    expect(storeInterval('s2', 'list')).toEqual({ minS: 26, maxS: 60 });
+    expect(storeInterval('s2', 'sheet')).toEqual({ minS: 10, maxS: 12 });
+    expect(storeInterval('s3', 'list')).toEqual(DEFAULT_INTERVALS.list); // 1 s: abaixo do mínimo, ignorado
+    expect(setStoreInterval('s1', 'list', { minS: 40, maxS: 20 })).toEqual(DEFAULT_INTERVALS.list); // invertido: fica como estava
+    expect(setStoreInterval('s1', 'list', { minS: 24, maxS: 35 })).toEqual({ minS: 24, maxS: 35 });
+    expect(setStoreInterval('s1', 'sheet', { minS: 10, maxS: 15 })).toEqual({ minS: 10, maxS: 15 });
+    expect(saved).toEqual([['s1', 'list', { minS: 24, maxS: 35 }], ['s1', 'sheet', { minS: 10, maxS: 15 }]]);
+    for (let i = 0; i < 50; i++) {
+      const g = storeGap('s1', 'list');
+      expect(g).toBeGreaterThanOrEqual(24_000);
+      expect(g).toBeLessThanOrEqual(35_000);
+      const f = storeGap('s1', 'sheet');
+      expect(f).toBeGreaterThanOrEqual(10_000);
+      expect(f).toBeLessThanOrEqual(15_000);
+    }
+    expect(storesState(openDb(':memory:')).find((s) => s.id === 's1')?.listInterval).toEqual({ minS: 24, maxS: 35 });
+    useIntervalStorage({}, () => {});
+  });
+
+  it('intervalos guardados de antes: o da varredura completa vira o de listagens, os segundos da rotina de fichas viram o de fichas; o novo guardado vale no lugar', () => {
+    const db = openDb(':memory:');
+    setMeta(db, 'full-sweep:s2', JSON.stringify({ minS: 26, maxS: 60, categories: ['psu'] }));
+    setMeta(db, 'full-sweep:s3', JSON.stringify({ minS: 26, maxS: 60, categories: ['psu'] }));
+    setMeta(db, 'interval:s3', JSON.stringify({ minS: 30, maxS: 90 }));
+    setMeta(db, 'sheet-routine', JSON.stringify({ enabled: true, stores: ['s1'], seconds: 10 }));
+    setMeta(db, 'sheet-interval:s3', JSON.stringify({ minS: 20, maxS: 30 }));
+    useStoreIntervals(db);
+    expect(storeInterval('s1', 'list')).toEqual(DEFAULT_INTERVALS.list);
+    expect(storeInterval('s2', 'list')).toEqual({ minS: 26, maxS: 60 });
+    expect(storeInterval('s3', 'list')).toEqual({ minS: 30, maxS: 90 });
+    expect(storeInterval('s1', 'sheet')).toEqual({ minS: 10, maxS: 12 }); // 10 s + até 20%
+    expect(storeInterval('s3', 'sheet')).toEqual({ minS: 20, maxS: 30 });
+    setStoreInterval('s1', 'list', { minS: 24, maxS: 35 });
+    setStoreInterval('s1', 'sheet', { minS: 10, maxS: 15 });
+    expect(JSON.parse(getMeta(db, 'interval:s1')!)).toEqual({ minS: 24, maxS: 35 });
+    expect(JSON.parse(getMeta(db, 'sheet-interval:s1')!)).toEqual({ minS: 10, maxS: 15 });
+    useIntervalStorage({}, () => {});
   });
 
   it('loja em pausa na sua vez: não consulta e confere de novo em 1 min', async () => {
@@ -147,7 +171,7 @@ describe('rotina pelo admin', () => {
     useBackoffStorage([], () => {});
     useRoutineStorage(null, () => {});
     pauseStore('s2', 15);
-    setRoutineSettings({ enabled: true, stores: ['s2'], modes: { s2: 'reduced' } });
+    setRoutineSettings({ enabled: true, stores: ['s2'] });
     const first = routineNextAt('s2')!;
     expect(first - Date.now()).toBeGreaterThan(5_000); // primeira vez 10 s depois de ligar
     expect(routineNextAt('s1')).toBeNull(); // fora da rotina
@@ -157,7 +181,7 @@ describe('rotina pelo admin', () => {
     expect(next).toBeLessThanOrEqual(60_000);
     // No painel, a próxima consulta não vem antes do fim da pausa.
     const s2 = storesState(db).find((s) => s.id === 's2')!;
-    expect(s2).toMatchObject({ mode: 'reduced', live: true, inRoutine: true, busy: false, queue: { running: false, priority: 0, routine: 0 } });
+    expect(s2).toMatchObject({ listInterval: DEFAULT_INTERVALS.list, live: true, inRoutine: true, busy: false, queue: { running: false, priority: 0, routine: 0 } });
     expect(Date.parse(s2.nextAt!)).toBeGreaterThan(Date.now() + 14 * 60_000);
     setRoutineSettings({ enabled: false, stores: [] });
     stopRoutine();
@@ -226,11 +250,10 @@ describe('varredura completa e painel das lojas', () => {
     useRoutineStorage(null, () => {});
     useSheetRoutineStorage(null, () => {});
     db.prepare("DELETE FROM meta WHERE key LIKE 'full-sweep:%'").run();
-    // Nos testes, PAGE_DELAY_* é 1-2 ms: arredonda para 0 s.
-    expect(fullSweepSettings(db, 's1')).toEqual({ minS: 0, maxS: 0, categories: ['cpu', 'psu'] });
+    expect(fullSweepSettings(db, 's1')).toEqual({ categories: ['cpu', 'psu'] });
     expect(storesState(db).find((x) => x.id === 's1')).toMatchObject({ sweepCategories: ['cpu', 'psu'], fullSweepSettings: { categories: ['cpu', 'psu'] } });
-    // Categoria sem página na loja (gpu) não entra; intervalo invertido vira o primeiro.
-    expect(saveFullSweepSettings(db, 's1', { minS: 0, maxS: 0, categories: ['psu', 'gpu'] })).toEqual({ minS: 0, maxS: 0, categories: ['psu'] });
+    // Categoria sem página na loja (gpu) não entra.
+    expect(saveFullSweepSettings(db, 's1', { categories: ['psu', 'gpu'] })).toEqual({ categories: ['psu'] });
     const urls: string[] = [];
     usePageLoader(async (_store, url) => {
       urls.push(url);
@@ -242,7 +265,7 @@ describe('varredura completa e painel das lojas', () => {
       for (let i = 0; i < 500 && fullSweepOf('s1'); i++) await new Promise((r) => setTimeout(r, 10));
       expect(urls.length).toBe(6);
       expect(urls.every((u) => u.includes('/hardware/fontes'))).toBe(true);
-      saveFullSweepSettings(db, 's1', { minS: 0, maxS: 0, categories: [] });
+      saveFullSweepSettings(db, 's1', { categories: [] });
       expect(fullSweep(db, 's1')).toMatchObject({ ok: false, error: expect.stringContaining('Nenhuma categoria marcada') });
     } finally {
       usePageLoader(null);
@@ -258,7 +281,7 @@ describe('varredura completa e painel das lojas', () => {
     useSheetRoutineStorage(null, () => {});
     setRoutineSettings({ enabled: true, stores: ['s3'] });
     setSheetRoutine({ enabled: false, stores: ['s3'] });
-    saveFullSweepSettings(db, 's1', { minS: 0, maxS: 0, categories: ['cpu', 'psu'] });
+    saveFullSweepSettings(db, 's1', { categories: ['cpu', 'psu'] });
     let pages = 0;
     usePageLoader(async (_store, url) => {
       pages++;
@@ -346,8 +369,8 @@ describe('varredura completa e painel das lojas', () => {
     // Os testes de antes gastaram as páginas da hora da loja: duas horas depois, a conta recomeça.
     const later = Date.now() + 2 * 3_600_000;
     const clock = vi.spyOn(Date, 'now').mockImplementation(() => later);
-    // Intervalo entre as páginas: o da varredura completa da loja (o menor possível, para o teste).
-    saveFullSweepSettings(db, 's1', { minS: 2, maxS: 2, categories: ['psu'] });
+    // Intervalo entre as páginas: o da loja (o menor possível, para o teste).
+    useIntervalStorage({ list: { s1: { minS: 2, maxS: 2 } } }, () => {});
     const waits: number[] = [];
     const realTimeout = globalThis.setTimeout;
     const timers = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => {
@@ -371,7 +394,7 @@ describe('varredura completa e painel das lojas', () => {
       expect(JSON.stringify(sweepState(db, 's1', 'psu'))).toBe(before); // a volta da categoria fica como estava
       expect(listAttempts(db, { limit: 1 })[0]).toMatchObject({ kind: 'sweep', origin: 'admin', category: 'psu', page: 2, status: 'ok' });
       // Endereço próprio, 3 páginas seguidas, cada uma direto pelo endereço (com o parâmetro), com o
-      // intervalo da varredura completa (2 s) antes de cada uma.
+      // intervalo da loja (2 s) antes de cada uma.
       waits.length = 0;
       const own = await probePage(db, 's1', 'psu', { page: 1, pages: 3, path: '/hardware/fontes?product_category=6444' });
       expect(own).toMatchObject({ ok: true, results: [{ status: 'ok' }, { status: 'ok' }, { status: 'ok' }] });
@@ -397,6 +420,7 @@ describe('varredura completa e painel das lojas', () => {
       expect(await probePage(db, 's1', 'psu', { page: 2 })).toMatchObject({ ok: false, error: expect.stringContaining('Limite de páginas') });
       expect(lists().length).toBe(n);
     } finally {
+      useIntervalStorage({}, () => {});
       timers.mockRestore();
       clock.mockRestore();
       clearBackoff('s1');

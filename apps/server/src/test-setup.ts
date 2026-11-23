@@ -20,9 +20,13 @@ Object.assign(process.env, {
   // Cor sem # (no .env, # sem aspas é comentário) e uma inválida.
   STORE_S1_COLOR: 'ff6500',
   STORE_S2_COLOR: 'vermelho',
-  // Intervalo entre consultas da mesma loja: curto nos testes.
-  PAGE_DELAY_MIN_MS: '1',
-  PAGE_DELAY_MAX_MS: '2',
   // Banco do servidor (getDb) em memória: teste nenhum toca no data/upgradezin.db de quem roda.
   DB_PATH: ':memory:',
 });
+
+export {};
+
+// Intervalo entre consultas da mesma loja: curto nos testes (loja sem intervalo guardado). Importado
+// depois de preencher o ambiente: pace.ts lê a configuração ao carregar.
+const { useDefaultGapMs } = await import('./pace.ts');
+useDefaultGapMs([1, 2]);

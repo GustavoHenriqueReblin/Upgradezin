@@ -6,8 +6,6 @@ import {
   formatSheetValue,
   productPath,
   sheetFields,
-  SHEET_SECONDS_MAX,
-  SHEET_SECONDS_MIN,
   type AdminStoreConfig,
   type CategoryId,
   type SheetCoverageRow,
@@ -18,10 +16,12 @@ import {
   type SheetRoutineStatus,
   type SheetState,
   type StoreId,
+  type StoreInterval,
 } from '@upgradezin/shared';
 import { AdminError, adminApi } from './api.ts';
 import { Box, Table, Td } from './DataPanels.tsx';
-import { countdown, fieldLabels, formatWhen, SHEET_STATE_LABEL, SHEET_UNITS, sheetEta, shortDuration, splitSeconds } from './format.ts';
+import { countdown, fieldLabels, formatWhen, intervalLabel, SHEET_STATE_LABEL, sheetEta } from './format.ts';
+import { IntervalInputs } from './IntervalInputs.tsx';
 import { useLiveReload } from './live.ts';
 import { Pager } from './Pager.tsx';
 import { Switch } from './Switch.tsx';
@@ -63,24 +63,15 @@ export function SheetsPanel({ onUnauthorized }: Props) {
   );
 }
 
-/** Rotina de fichas (separada da coleta): chave, lojas, intervalo e o andamento por loja. Atualiza ao vivo. */
+/** Rotina de fichas (separada da coleta): chave, lojas, intervalo de fichas de cada loja e o andamento. Atualiza ao vivo. */
 function SheetRoutine({ fail, onMessage }: Shared) {
   const [status, setStatus] = useState<SheetRoutineStatus | null>(null);
-  const [value, setValue] = useState('');
-  const [unit, setUnit] = useState(60);
 
   const load = useCallback(() => {
     adminApi<SheetRoutineStatus>('/sheets').then(setStatus).catch(fail);
   }, [fail]);
   useEffect(load, [load]);
   useLiveReload(['attempt', 'store', 'admin'], load, { delayMs: 2_000, fallbackMs: 15_000 });
-  const saved = status?.seconds;
-  useEffect(() => {
-    if (saved === undefined) return;
-    const p = splitSeconds(saved);
-    setValue(String(p.value));
-    setUnit(p.unit);
-  }, [saved]);
 
   if (!status)
     return (
@@ -96,8 +87,13 @@ function SheetRoutine({ fail, onMessage }: Shared) {
         onMessage({ ok: true, text: ok });
       })
       .catch(fail);
-  const seconds = Number(value) * unit;
-  const validGap = Number.isInteger(seconds) && seconds >= SHEET_SECONDS_MIN && seconds <= SHEET_SECONDS_MAX;
+  const saveInterval = (store: StoreId, name: string, i: StoreInterval) =>
+    adminApi(`/stores/${store}/interval`, { method: 'PUT', body: { kind: 'sheet', ...i } })
+      .then(() => {
+        onMessage({ ok: true, text: `${name}: ${intervalLabel(i)} de produto (fichas).` });
+        load();
+      })
+      .catch(fail);
   const toggleStore = (id: StoreId, on: boolean) => {
     const stores = on ? [...status.stores, id] : status.stores.filter((s) => s !== id);
     const name = status.progress.find((p) => p.store === id)?.name ?? id;
@@ -120,32 +116,6 @@ function SheetRoutine({ fail, onMessage }: Shared) {
       </p>
       {status.enabled && !status.stores.length && <p className="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">Nenhuma loja marcada: as fichas não andam.</p>}
 
-      <form
-        className="mt-3 flex flex-wrap items-end gap-2 text-sm"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (validGap && seconds !== status.seconds) void save({ seconds }, `Fichas: 1 por loja a cada ${shortDuration(seconds)}.`);
-        }}
-      >
-        <label className="flex flex-col gap-1 text-xs text-zinc-500">
-          Uma página por loja a cada
-          <span className="flex gap-1">
-            <input type="number" min={1} value={value} onChange={(e) => setValue(e.target.value)} className={`${select} w-24`} />
-            <select value={unit} onChange={(e) => setUnit(Number(e.target.value))} className={select} aria-label="Unidade do intervalo">
-              {SHEET_UNITS.map((u) => (
-                <option key={u.s} value={u.s}>
-                  {u.label}
-                </option>
-              ))}
-            </select>
-          </span>
-        </label>
-        <button type="submit" disabled={!validGap || seconds === status.seconds} className="rounded-lg bg-accent-500 px-3 py-1.5 text-xs font-medium text-accent-950 disabled:opacity-40">
-          Salvar
-        </button>
-        <span className="pb-1.5 text-xs text-zinc-500">{validGap ? `+ até 20% aleatório (≈ ${Math.round((3600 / seconds / 1.1) * 10) / 10} por loja por hora)` : `De ${SHEET_SECONDS_MIN} s a 24 h.`}</span>
-      </form>
-
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         {status.progress.map((s) => {
           const marked = status.stores.includes(s.store);
@@ -164,6 +134,17 @@ function SheetRoutine({ fail, onMessage }: Shared) {
               {!s.canRead ? (
                 <p className="mt-2 text-xs text-zinc-500">Esta loja não tem leitor de ficha.</p>
               ) : (
+                <div className="mt-2">
+                  <IntervalInputs
+                    key={`${s.interval.minS}-${s.interval.maxS}`}
+                    interval={s.interval}
+                    label="uma ficha a cada"
+                    title="Intervalo de fichas desta loja: entre duas páginas de produto, um tempo aleatório entre os dois valores. Vale na hora. As páginas de lista têm o seu, na aba Coleta."
+                    onSave={(i) => void saveInterval(s.store, s.name, i)}
+                  />
+                </div>
+              )}
+              {s.canRead && (
                 <dl className="mt-2 space-y-0.5 text-xs text-zinc-500">
                   <div className="tabular-nums">
                     {s.read.toLocaleString('pt-BR')} páginas lidas · {s.queue.toLocaleString('pt-BR')} na fila
@@ -172,7 +153,7 @@ function SheetRoutine({ fail, onMessage }: Shared) {
                     {s.lastHour} na última hora{s.lastAt ? ` · última ${formatWhen(s.lastAt)}` : ''}
                   </div>
                   {s.nextAt && (s.queue > 0 ? <div className="tabular-nums">Próxima: {countdown(s.nextAt)}</div> : <div>Nada a ler agora (confere produtos novos a cada minuto).</div>)}
-                  {s.nextAt && s.queue > 0 && <div>No ritmo atual, faltam {sheetEta(s.queue, status.seconds)}.</div>}
+                  {s.nextAt && s.queue > 0 && <div>No ritmo atual, faltam {sheetEta(s.queue, s.interval)}.</div>}
                   {status.enabled && !marked && <div>Fora da rotina de fichas.</div>}
                 </dl>
               )}

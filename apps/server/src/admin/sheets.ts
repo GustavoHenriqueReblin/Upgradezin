@@ -8,7 +8,7 @@ import { pageOf } from './paging.ts';
 const since = (now: number) => new Date(now - SHEET_SCOPE_DAYS * 86_400_000).toISOString();
 
 /** Por loja: páginas lidas, fila, fichas da última hora (pelo registro de consultas). */
-export function sheetStoreStatus(db: Db, stores: { id: StoreId; name: string; canRead: boolean }[], now = Date.now()): Omit<SheetStoreStatus, 'nextAt'>[] {
+export function sheetStoreStatus(db: Db, stores: { id: StoreId; name: string; canRead: boolean }[], now = Date.now()): Omit<SheetStoreStatus, 'nextAt' | 'interval'>[] {
   const read = new Map(
     (db.prepare('SELECT store, count(*) AS n FROM sheet_pages GROUP BY store').all() as { store: StoreId; n: number }[]).map((r) => [r.store, r.n]),
   );

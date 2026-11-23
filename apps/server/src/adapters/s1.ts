@@ -13,7 +13,7 @@ import {
 } from '@upgradezin/shared';
 import { loadPage, saveDebugHtml } from '../browser.ts';
 import { config } from '../config.ts';
-import { BlockedError, jitter, sleep, takePage } from '../pace.ts';
+import { BlockedError, jitter, sleep, storeGap, takePage } from '../pace.ts';
 import { searchUrl, storeConfig } from '../stores.ts';
 import type { StoreAdapter } from './types.ts';
 
@@ -206,7 +206,7 @@ export const s1: StoreAdapter = {
     const limit = Math.min(config.MAX_PAGES_S1, maxPages ?? Infinity);
     let total = 1;
     for (let page = 1; page <= Math.min(total, limit); page++) {
-      if (page > 1) await sleep(jitter(), signal);
+      if (page > 1) await sleep(storeGap('s1', 'list'), signal);
       takePage('s1');
       const cat = await listPage(base, page, signal);
       total = cat.meta.totalPagesCount || 1;

@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { emitChange, onChange } from './changes.ts';
-import { BlockedError, queuedAt, registerBlock, registerSuccess, withStore } from './pace.ts';
+import { BlockedError, queuedAt, registerBlock, registerSuccess, useIntervalStorage, withStore } from './pace.ts';
 
 /** Pausa por bloqueio. */
 describe('pausa da loja', () => {
@@ -71,15 +71,33 @@ describe('fila da loja com prioridade', () => {
 });
 
 describe('intervalo entre páginas da loja', () => {
-  it('consulta com intervalo próprio (varredura completa) espera ele desde a anterior, no lugar do PAGE_DELAY_*', async () => {
+  it('listagem espera o intervalo de listagens desde a última listagem; ficha, o de fichas desde a última consulta; outra loja segue o dela', async () => {
     const signal = new AbortController().signal;
-    await withStore('s2', signal, async () => 1);
-    const t0 = Date.now();
-    await withStore('s2', signal, async () => 1, { delayMs: [250, 250] });
-    expect(Date.now() - t0).toBeGreaterThanOrEqual(240);
-    const t1 = Date.now();
-    await withStore('s2', signal, async () => 1); // PAGE_DELAY_* dos testes: 1-2 ms
-    expect(Date.now() - t1).toBeLessThan(200);
+    const waits: number[] = [];
+    const realTimeout = globalThis.setTimeout;
+    const timers = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => {
+      if ((ms ?? 0) >= 1000) waits.push(ms!);
+      return realTimeout(fn, ms && ms >= 1000 ? 0 : ms);
+    }) as typeof setTimeout);
+    try {
+      useIntervalStorage({ list: { s2: { minS: 30, maxS: 30 } }, sheet: { s2: { minS: 10, maxS: 10 } } }, () => {});
+      await withStore('s2', signal, async () => 1);
+      await withStore('s2', signal, async () => 1);
+      expect(waits.at(-1)).toBeGreaterThan(29_000); // 30 s desde o fim da listagem anterior
+      expect(waits.at(-1)).toBeLessThanOrEqual(30_000);
+      await withStore('s2', signal, async () => 1, { kind: 'sheet' });
+      expect(waits.at(-1)).toBeGreaterThan(9_000); // ficha: 10 s desde a consulta anterior (a listagem)
+      expect(waits.at(-1)).toBeLessThanOrEqual(10_000);
+      await withStore('s2', signal, async () => 1);
+      expect(waits.at(-1)).toBeGreaterThan(29_000); // listagem: 30 s desde a última listagem, não desde a ficha
+      const n = waits.length;
+      await withStore('s1', signal, async () => 1); // sem intervalo guardado: o curto dos testes
+      await withStore('s1', signal, async () => 1);
+      expect(waits.length).toBe(n);
+    } finally {
+      timers.mockRestore();
+      useIntervalStorage({}, () => {});
+    }
   });
 });
 

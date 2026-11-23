@@ -1,16 +1,16 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { Offer, SheetRoutineSettings } from '@upgradezin/shared';
 import { fixture } from '../adapters/fixtures.ts';
 import { usePageLoader } from '../browser.ts';
 import { getDb } from '../db/instance.ts';
-import { clearBackoff, pauseStore, useBackoffStorage } from '../pace.ts';
+import { clearBackoff, pauseStore, useBackoffStorage, useIntervalStorage } from '../pace.ts';
 import { useStoreStorage } from '../stores.ts';
 import { saveCollection } from './prices.ts';
 import { routineNextAt, setRoutineSettings, stopRoutine } from './routine.ts';
 import { PAGE_ERROR_SKIP_MS } from './page-errors.ts';
 import { productPage } from './product-page.ts';
 import { recentOffers } from './prices.ts';
-import { setSheetRoutine, sheetDelay, sheetNextAt, sheetRoutineSettings, sheetTick, stopSheetRoutine, useSheetRoutineStorage } from './sheet-routine.ts';
+import { setSheetRoutine, sheetNextAt, sheetRoutineSettings, sheetTick, stopSheetRoutine, useSheetRoutineStorage } from './sheet-routine.ts';
 import { productSheet } from './sheets.ts';
 
 afterEach(() => {
@@ -43,28 +43,32 @@ function setup() {
 }
 
 describe('rotina de fichas técnicas (separada da coleta)', () => {
-  it('configuração: do .env (desligada, todas as lojas, 180 s), guardada; inválido fica como estava', () => {
+  it('configuração: do .env (desligada, todas as lojas), guardada; inválido fica como estava; segundos antigos ignorados', () => {
     const saved: SheetRoutineSettings[] = [];
     useSheetRoutineStorage(null, (s) => saved.push(s));
-    expect(sheetRoutineSettings()).toEqual({ enabled: false, stores: ['s1', 's2', 's3'], seconds: 180 });
-    setSheetRoutine({ seconds: 3600 });
-    expect(sheetRoutineSettings()).toEqual({ enabled: false, stores: ['s1', 's2', 's3'], seconds: 3600 }); // o resto fica
-    setSheetRoutine({ stores: ['s3', 'x9' as 's1', 's1'], seconds: 5 });
-    expect(sheetRoutineSettings()).toEqual({ enabled: false, stores: ['s1', 's3'], seconds: 3600 }); // ordem, sem a inválida; 5 s é pouco
-    setSheetRoutine({ seconds: 86_401 });
-    expect(sheetRoutineSettings().seconds).toBe(3600);
-    expect(saved.at(-1)).toEqual({ enabled: false, stores: ['s1', 's3'], seconds: 3600 });
-    // O guardado vale no lugar do .env; o que falta, o padrão.
-    useSheetRoutineStorage({ enabled: true, seconds: 600 }, () => {});
-    expect(sheetRoutineSettings()).toEqual({ enabled: true, stores: ['s1', 's2', 's3'], seconds: 600 });
+    expect(sheetRoutineSettings()).toEqual({ enabled: false, stores: ['s1', 's2', 's3'] });
+    setSheetRoutine({ stores: ['s3', 'x9' as 's1', 's1'] });
+    expect(sheetRoutineSettings()).toEqual({ enabled: false, stores: ['s1', 's3'] }); // ordem, sem a inválida
+    expect(saved.at(-1)).toEqual({ enabled: false, stores: ['s1', 's3'] });
+    // O guardado vale no lugar do .env; o que falta, o padrão (os segundos de antes viraram o intervalo de fichas de cada loja).
+    useSheetRoutineStorage({ enabled: true, seconds: 600 } as never, () => {});
+    expect(sheetRoutineSettings()).toEqual({ enabled: true, stores: ['s1', 's2', 's3'] });
     useSheetRoutineStorage(null, () => {});
   });
 
-  it('com a coleta desligada: lê uma ficha por vez, no intervalo do admin, e guarda', async () => {
+  it('com a coleta desligada: lê uma ficha por vez, no intervalo de fichas da loja, e guarda', async () => {
     const urls = setup();
     gpusInCatalog('501', '502');
+    // Intervalo de fichas da loja: 600 s. As esperas de verdade viram 0 no teste (só conta o tempo pedido).
+    useIntervalStorage({ sheet: { s1: { minS: 600, maxS: 600 } } }, () => {});
+    const realTimeout = globalThis.setTimeout;
+    const timers = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => realTimeout(fn, ms && ms >= 1000 ? 0 : ms)) as typeof setTimeout);
+    onTestFinished(() => {
+      timers.mockRestore();
+      useIntervalStorage({}, () => {});
+    });
     setRoutineSettings({ enabled: false, stores: ['s1'] });
-    setSheetRoutine({ enabled: true, stores: ['s1'], seconds: 600 });
+    setSheetRoutine({ enabled: true, stores: ['s1'] });
     expect(routineNextAt('s1')).toBeNull(); // a coleta continua parada
     const first = sheetNextAt('s1')!;
     expect(first - Date.now()).toBeGreaterThan(5_000); // primeira 10 s depois de ligar
@@ -72,8 +76,8 @@ describe('rotina de fichas técnicas (separada da coleta)', () => {
     expect(urls).toHaveLength(1);
     expect(urls[0]).toMatch(/\/produto\/50[12]$/);
     const wait = sheetNextAt('s1')! - Date.now();
-    expect(wait).toBeGreaterThan(590_000); // 600 s + até 20%
-    expect(wait).toBeLessThanOrEqual(720_000);
+    expect(wait).toBeGreaterThan(590_000); // o intervalo de fichas da loja (600 s)
+    expect(wait).toBeLessThanOrEqual(600_000);
     await sheetTick(Date.now()); // antes da hora: nada
     expect(urls).toHaveLength(1);
     await sheetTick(sheetNextAt('s1')!);
@@ -86,7 +90,7 @@ describe('rotina de fichas técnicas (separada da coleta)', () => {
   it('só nas lojas marcadas; desligada, para; loja em pausa espera', async () => {
     const urls = setup();
     gpusInCatalog('601');
-    setSheetRoutine({ enabled: true, stores: ['s2'], seconds: 60 });
+    setSheetRoutine({ enabled: true, stores: ['s2'] });
     expect(sheetNextAt('s1')).toBeNull(); // fora da rotina de fichas
     setSheetRoutine({ stores: ['s1'] });
     pauseStore('s1', 15);
@@ -113,7 +117,7 @@ describe('rotina de fichas técnicas (separada da coleta)', () => {
     });
     gpusInCatalog('702');
     gpusInCatalog('701'); // achado por último: vem primeiro na fila
-    setSheetRoutine({ enabled: true, stores: ['s1'], seconds: 60 });
+    setSheetRoutine({ enabled: true, stores: ['s1'] });
     await sheetTick(sheetNextAt('s1')!);
     expect(urls.at(-1)).toMatch(/\/701$/);
     await sheetTick(sheetNextAt('s1')!);
@@ -145,10 +149,5 @@ describe('rotina de fichas técnicas (separada da coleta)', () => {
     expect(urls.filter((u) => u.endsWith('/701'))).toHaveLength(3);
     expect(inApp()).toBe(true);
     expect(db.prepare('SELECT count(*) AS n FROM page_errors').get()).toEqual({ n: 0 });
-  });
-
-  it('intervalo: os segundos mais até 20%', () => {
-    expect(sheetDelay(180, 0)).toBe(180_000);
-    expect(sheetDelay(3600, 1)).toBe(4_320_000);
   });
 });

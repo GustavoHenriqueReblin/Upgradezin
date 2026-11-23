@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sheetEta, shortDuration, splitSeconds, SHEET_STATE_LABEL, fieldLabels, specPairs, countdown, modeHint, queueLabel, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground, probeLabel } from './format.ts';
+import { sheetEta, shortDuration, SHEET_STATE_LABEL, fieldLabels, specPairs, countdown, intervalLabel, queueLabel, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground, probeLabel } from './format.ts';
 
 describe('formatação do admin', () => {
   it('resultado do teste de página', () => {
@@ -85,12 +85,11 @@ describe('rotina: contagem e modos', () => {
     expect(queueLabel({ priority: 0, routine: 1 })).toBe('1 da rotina esperando');
   });
 
-  it('texto de cada modo com os segundos do servidor', () => {
-    const s = { normal: 15, reduced: 20, slow: 60 };
-    expect(modeHint('normal', s)).toBe('rotina: 1 categoria a cada 15 s');
-    expect(modeHint('reduced', s)).toBe('rotina: 1 categoria a cada 20 s');
-    expect(modeHint('slow', s)).toBe('rotina: 1 categoria a cada 1 min');
-    expect(modeHint('slow', { ...s, slow: 90 })).toContain('1 min 30 s');
+  it('intervalo da loja em texto', () => {
+    expect(intervalLabel({ minS: 15, maxS: 30 })).toBe('1 página a cada 15 a 30 s');
+    expect(intervalLabel({ minS: 26, maxS: 60 })).toBe('1 página a cada 26 s a 1 min');
+    expect(intervalLabel({ minS: 90, maxS: 180 })).toBe('1 página a cada 1 min 30 s a 3 min');
+    expect(intervalLabel({ minS: 30, maxS: 30 })).toBe('1 página a cada 30 s');
   });
 });
 
@@ -114,11 +113,9 @@ describe('ficha técnica e specs na aba Produtos', () => {
     expect(shortDuration(3600)).toBe('1 h');
     expect(shortDuration(5400)).toBe('1 h 30 min');
     expect(shortDuration(86_400)).toBe('24 h');
-    expect(splitSeconds(90)).toEqual({ value: 90, unit: 1 });
-    expect(splitSeconds(180)).toEqual({ value: 3, unit: 60 });
-    expect(splitSeconds(7200)).toEqual({ value: 2, unit: 3600 });
-    expect(sheetEta(10, 60)).toBe('menos de 1 h');
-    expect(sheetEta(100, 180)).toBe('cerca de 6 h'); // 100 × 3 min × 1,1 = 5,5 h
-    expect(sheetEta(2460, 180)).toBe('cerca de 6 dias');
+    expect(sheetEta(10, { minS: 50, maxS: 70 })).toBe('menos de 1 h');
+    expect(sheetEta(100, { minS: 180, maxS: 216 })).toBe('cerca de 6 h'); // 100 × 198 s = 5,5 h
+    expect(sheetEta(2460, { minS: 180, maxS: 216 })).toBe('cerca de 6 dias');
+    expect(sheetEta(5000, { minS: 10, maxS: 15 })).toBe('cerca de 18 h'); // 5000 × 12,5 s = 17,4 h
   });
 });

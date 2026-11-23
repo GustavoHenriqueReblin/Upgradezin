@@ -91,8 +91,8 @@ function makeApp() {
   lastDb = db;
   const dir = mkdtempSync(join(tmpdir(), 'uz-routes-'));
   calls.length = 0;
-  const routine: RoutineInfo = { enabled: false, stores: [], modes: { s1: 'normal', s2: 'slow', s3: 'slow' }, live: { s1: true, s2: true, s3: true }, busy: false, lastTickAt: null, nextTickAt: null, seconds: { normal: 15, reduced: 20, slow: 60 } };
-  let sheetRoutine: SheetRoutineSettings = { enabled: false, stores: ['s1', 's2', 's3'], seconds: 180 };
+  const routine: RoutineInfo = { enabled: false, stores: [], live: { s1: true, s2: true, s3: true }, busy: false, lastTickAt: null, nextTickAt: null };
+  let sheetRoutine: SheetRoutineSettings = { enabled: false, stores: ['s1', 's2', 's3'] };
   registerAdmin(app, {
     auth: new AdminAuth(OPTS),
     status: () => serverStatus(db, { version: '9.9.9', browserOpen: false, activeSessions: 0 }),
@@ -106,11 +106,12 @@ function makeApp() {
       probe: async (id, category, opts) => (calls.push(['probe', id, category, opts]), id === 's3' ? { ok: false as const, error: 'Loja em pausa.' } : { ok: true as const, results: [{ status: 'blocked' as const, url: 'https://s2.example/fontes?page=2', count: 0, detail: 'Página de manutenção', ms: 900 }] }),
       sweep: (id) => (calls.push(['sweep', id]), id === 's3' ? { ok: false as const, error: 'Loja em pausa.' } : { ok: true as const, startsAt: '2026-11-20T21:00:00.000Z' }),
       routine: () => routine,
-      setRoutine: (s) => (calls.push(['routine', s]), { ...routine, ...s, modes: { ...routine.modes, ...s.modes }, live: { ...routine.live, ...s.live }, seconds: { ...routine.seconds, ...s.seconds } }),
+      setRoutine: (s) => (calls.push(['routine', s]), { ...routine, ...s, live: { ...routine.live, ...s.live } }),
+      setInterval: (id, kind, i) => (calls.push(['interval', id, kind, i]), i),
     },
     products: { list: (f) => listProducts(db, f) },
     sheets: {
-      routine: () => ({ ...sheetRoutine, busy: false, progress: sheetStoreStatus(db, [{ id: 's1', name: 'Loja S1', canRead: true }]).map((p) => ({ ...p, nextAt: null })) }),
+      routine: () => ({ ...sheetRoutine, busy: false, progress: sheetStoreStatus(db, [{ id: 's1', name: 'Loja S1', canRead: true }]).map((p) => ({ ...p, nextAt: null, interval: { minS: 10, maxS: 20 } })) }),
       setRoutine: (s) => {
         calls.push(['sheets', s]);
         sheetRoutine = { ...sheetRoutine, ...s };
@@ -255,12 +256,12 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     expect(no.statusCode).toBe(409);
     expect(no.json().errors).toEqual(['Loja em pausa.']);
     expect((await post('/api/admin/stores/s9/sweep')).statusCode).toBe(404);
-    const settings = { minS: 9, maxS: 18, categories: ['gpu', 'cpu'] };
+    const settings = { categories: ['gpu', 'cpu'] };
     expect((await post('/api/admin/stores/s2/sweep', settings)).statusCode).toBe(200);
     expect(calls.slice(-2)).toEqual([['saveSweep', 's2', settings], ['sweep', 's2']]);
-    // Intervalo fora dos limites, invertido ou categoria inventada: 400, sem guardar nem começar.
+    // Categoria inventada ou campo a mais (o intervalo agora é o da loja): 400, sem guardar nem começar.
     const before = calls.length;
-    for (const bad of [{ ...settings, minS: 1 }, { ...settings, maxS: 601 }, { ...settings, minS: 20 }, { ...settings, categories: ['inventada'] }, { ...settings, extra: 1 }])
+    for (const bad of [{ ...settings, categories: ['inventada'] }, { ...settings, minS: 9 }, { ...settings, extra: 1 }])
       expect((await post('/api/admin/stores/s2/sweep', bad)).statusCode).toBe(400);
     expect(calls.length).toBe(before);
     expect((await post('/api/admin/stores/s1/collect', { category: 'gpu', term: 'RTX 3050' })).statusCode).toBe(404); // rota antiga saiu
@@ -296,12 +297,28 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
   it('configuração da varredura completa: guarda sem começar (vale para a madrugada); inválida, 400', async () => {
     const { app, cookie } = await setup();
     const put = (url: string, payload: object) => app.inject({ method: 'PUT', url, headers: { cookie, 'x-admin': '1' }, payload });
-    const settings = { minS: 9, maxS: 18, categories: ['case'] };
+    const settings = { categories: ['case'] };
     const r = await put('/api/admin/stores/s1/full-sweep', settings);
     expect(r.json()).toEqual(settings);
     expect(calls.at(-1)).toEqual(['saveSweep', 's1', settings]);
-    expect((await put('/api/admin/stores/s1/full-sweep', { ...settings, maxS: 5 })).statusCode).toBe(400);
+    expect((await put('/api/admin/stores/s1/full-sweep', { categories: ['inventada'] })).statusCode).toBe(400);
     expect((await put('/api/admin/stores/s9/full-sweep', settings)).statusCode).toBe(404);
+  });
+
+  it('intervalos da loja (listagens e fichas): guarda e devolve; fora dos limites, invertido, quebrado ou campo a mais, 400; loja desconhecida, 404', async () => {
+    const { app, cookie } = await setup();
+    const put = (url: string, payload: object) => app.inject({ method: 'PUT', url, headers: { cookie, 'x-admin': '1' }, payload });
+    const r = await put('/api/admin/stores/s2/interval', { kind: 'list', minS: 24, maxS: 35 });
+    expect(r.json()).toEqual({ minS: 24, maxS: 35 });
+    expect(calls.at(-1)).toEqual(['interval', 's2', 'list', { minS: 24, maxS: 35 }]);
+    await put('/api/admin/stores/s2/interval', { kind: 'sheet', minS: 10, maxS: 15 });
+    expect(calls.at(-1)).toEqual(['interval', 's2', 'sheet', { minS: 10, maxS: 15 }]);
+    const before = calls.length;
+    const ok = { kind: 'list', minS: 24, maxS: 35 };
+    for (const bad of [{ ...ok, minS: 1 }, { ...ok, maxS: 601 }, { ...ok, minS: 60 }, { ...ok, minS: 2.5 }, { kind: 'list', minS: 24 }, { minS: 24, maxS: 35 }, { ...ok, kind: 'outro' }, { ...ok, x: 1 }])
+      expect((await put('/api/admin/stores/s2/interval', bad)).statusCode).toBe(400);
+    expect(calls.length).toBe(before);
+    expect((await put('/api/admin/stores/s9/interval', ok)).statusCode).toBe(404);
   });
 
   it('produtos e fichas: listas paginadas com filtros, cobertura, texto da página, rotina de fichas e "Ler ficha"', async () => {
@@ -312,7 +329,7 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     for (const q of ['store=s9', 'page=0', 'pageSize=500', 'inStock=sim']) {
       expect((await app.inject({ url: `/api/admin/products?${q}`, headers: { cookie } })).statusCode).toBe(400);
     }
-    expect((await app.inject({ url: '/api/admin/sheets', headers: { cookie } })).json()).toMatchObject({ enabled: false, seconds: 180, stores: ['s1', 's2', 's3'], progress: [{ store: 's1', read: 0, queue: 0, nextAt: null }] });
+    expect((await app.inject({ url: '/api/admin/sheets', headers: { cookie } })).json()).toMatchObject({ enabled: false, stores: ['s1', 's2', 's3'], progress: [{ store: 's1', read: 0, queue: 0, nextAt: null, interval: { minS: 10, maxS: 20 } }] });
 
     // Fichas: um processador lido e outro não.
     const now = new Date().toISOString();
@@ -333,10 +350,10 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
 
     // Rotina de fichas (separada da coleta): ligar, lojas e intervalo; inválido é recusado.
     const put = (payload: unknown, headers: Record<string, string> = { cookie, 'x-admin': '1' }) => app.inject({ method: 'PUT', url: '/api/admin/sheets', headers, payload: payload as object });
-    const on = await put({ enabled: true, stores: ['s2'], seconds: 3600 });
-    expect(on.json()).toMatchObject({ enabled: true, stores: ['s2'], seconds: 3600 });
-    expect(calls.at(-1)).toEqual(['sheets', { enabled: true, stores: ['s2'], seconds: 3600 }]);
-    for (const bad of [{ seconds: 9 }, { seconds: 86_401 }, { seconds: 60.5 }, { stores: ['s9'] }, { enabled: 'sim' }]) expect((await put(bad)).statusCode).toBe(400);
+    const on = await put({ enabled: true, stores: ['s2'] });
+    expect(on.json()).toMatchObject({ enabled: true, stores: ['s2'] });
+    expect(calls.at(-1)).toEqual(['sheets', { enabled: true, stores: ['s2'] }]);
+    for (const bad of [{ stores: ['s9'] }, { enabled: 'sim' }]) expect((await put(bad)).statusCode).toBe(400);
     expect((await put({ enabled: false }, { cookie })).statusCode).toBe(403);
 
     const post = (path: string) => app.inject({ method: 'POST', url: path, headers: { cookie, 'x-admin': '1' } });
@@ -361,13 +378,13 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     expect(put.json()).toMatchObject({ enabled: true, stores: ['s1', 's3'] });
     const bad = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s9'] } });
     expect(bad.statusCode).toBe(400);
-    const mode = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s2'], modes: { s2: 'reduced' } } });
-    expect(mode.json()).toMatchObject({ modes: { s1: 'normal', s2: 'reduced', s3: 'slow' } });
-    const badMode = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s2'], modes: { s2: 'turbo' } } });
-    expect(badMode.statusCode).toBe(400);
-    const live = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s2'], live: { s3: false }, seconds: { normal: 300 } } });
-    expect(live.json()).toMatchObject({ live: { s1: true, s3: false }, seconds: { normal: 300, reduced: 20 } });
-    for (const payload of [{ seconds: { normal: 2 } }, { seconds: { normal: 1.5 } }, { live: { s3: 'sim' } }]) {
+    const live = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s2'], live: { s3: false } } });
+    expect(live.json()).toMatchObject({ live: { s1: true, s3: false } });
+    // Modos e segundos (de uma tela antiga): ignorados.
+    const old = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s2'], modes: { s2: 'reduced' }, seconds: { normal: 300 } } });
+    expect(old.statusCode).toBe(200);
+    expect(calls.at(-1)).toEqual(['routine', { enabled: true, stores: ['s2'] }]);
+    for (const payload of [{ live: { s3: 'sim' } }, { stores: 's2' }]) {
       const res = await app.inject({ method: 'PUT', url: '/api/admin/routine', headers: { cookie, 'x-admin': '1' }, payload: { enabled: true, stores: ['s2'], ...payload } });
       expect(res.statusCode).toBe(400);
     }
@@ -446,11 +463,11 @@ describe('rotas de backup, merge e atividade', () => {
     const seen: string[] = [];
     const off = onChange((k) => seen.push(k));
     const put = (payload: object, headers: Record<string, string> = { cookie, 'x-admin': '1' }) => app.inject({ method: 'PUT', url: '/api/admin/sheets', headers, payload });
-    expect((await put({ seconds: 600 })).statusCode).toBe(200);
+    expect((await put({ enabled: true })).statusCode).toBe(200);
     expect(seen).toEqual(['admin']);
     await app.inject({ url: '/api/admin/sheets', headers: { cookie } }); // leitura
-    await put({ seconds: 1 }); // recusada (400)
-    await put({ seconds: 600 }, { cookie }); // sem o cabeçalho (403)
+    await put({ enabled: 'sim' }); // recusada (400)
+    await put({ enabled: true }, { cookie }); // sem o cabeçalho (403)
     await login(app, 'errada-errada-errada'); // login recusado
     await login(app); // login
     expect(seen).toEqual(['admin']);

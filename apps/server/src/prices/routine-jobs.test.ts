@@ -31,7 +31,7 @@ describe('rotina de preços: só páginas de categoria', () => {
       urls.push(url);
       return { html: fixture('s1-cpu.html'), url, title: '' };
     });
-    setRoutineSettings({ enabled: true, stores: ['s1'], modes: { s1: 'normal' } });
+    setRoutineSettings({ enabled: true, stores: ['s1'] });
     await tick(routineNextAt('s1')!);
     // A lista da fixture tem 6 páginas, todas com itens em estoque: as 6 na mesma vez, em ordem.
     const first = urls.filter((u) => u.includes('/hardware/'));

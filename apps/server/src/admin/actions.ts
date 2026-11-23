@@ -1,7 +1,7 @@
-import { ENABLED_CATEGORIES, type AdminStoreState, type FullSweepSettings, type CategoryId, type ProbeResult, type StoreId } from '@upgradezin/shared';
+import { ENABLED_CATEGORIES, STORE_INTERVAL_S_MAX, STORE_INTERVAL_S_MIN, STORES, type AdminStoreState, type IntervalKind, type FullSweepSettings, type CategoryId, type ProbeResult, type StoreId } from '@upgradezin/shared';
 import { config } from '../config.ts';
 import { deleteMeta, getMeta, setMeta, type Db } from '../db/db.ts';
-import { backoffInfo, BlockedError, PageLimitError, pageLimitUntil, pagesUsed, queuedAt, registerSuccess } from '../pace.ts';
+import { backoffInfo, BlockedError, PageLimitError, pageLimitUntil, pagesUsed, queuedAt, registerSuccess, storeInterval, useIntervalStorage } from '../pace.ts';
 import { attemptCounts, lastAttempt } from '../prices/attempts.ts';
 import { canReadSheet, canSweep, collectSweepPage, probeSweepPage, sheetOf, withBrowserSession } from '../prices/collect.ts';
 import { routineBusy, routineNextAt, routineSettings, setRoutineSettings } from '../prices/routine.ts';
@@ -26,7 +26,7 @@ export function storesState(db: Db, now = Date.now()): AdminStoreState[] {
         name: s.name,
         enabled: s.enabled,
         inRoutine,
-        mode: routine.modes[id],
+        listInterval: storeInterval(id, 'list'),
         live: routine.live[id],
         busy: routineBusy(id),
         fullSweep: fullSweepOf(id),
@@ -88,22 +88,44 @@ export const sweepCategoriesOf = (store: StoreId): CategoryId[] => ENABLED_CATEG
 const settingsKey = (store: StoreId) => `full-sweep:${store}`;
 
 /**
- * Configuração da varredura completa da loja (meta "full-sweep:<loja>"): intervalo e categorias. Sem
- * nada guardado: PAGE_DELAY_* e todas as categorias com página. Categoria que perdeu a página sai.
+ * Configuração da varredura completa da loja (meta "full-sweep:<loja>"): as categorias. Sem nada
+ * guardado: todas as categorias com página. Categoria que perdeu a página sai.
  */
 export function fullSweepSettings(db: Db, store: StoreId): FullSweepSettings {
   const available = sweepCategoriesOf(store);
   const raw = getMeta(db, settingsKey(store));
   const saved = raw ? (JSON.parse(raw) as Partial<FullSweepSettings>) : {};
-  const minS = saved.minS ?? Math.round(config.PAGE_DELAY_MIN_MS / 1000);
-  const maxS = saved.maxS ?? Math.max(minS, Math.round(config.PAGE_DELAY_MAX_MS / 1000));
-  return { minS, maxS, categories: saved.categories ? available.filter((c) => saved.categories!.includes(c)) : available };
+  return { categories: saved.categories ? available.filter((c) => saved.categories!.includes(c)) : available };
 }
 
-/** Guarda a configuração (já validada nos limites pela rota). Devolve a configuração que vale. */
+/** Guarda a configuração (já validada pela rota). Devolve a configuração que vale. */
 export function saveFullSweepSettings(db: Db, store: StoreId, input: FullSweepSettings): FullSweepSettings {
-  setMeta(db, settingsKey(store), JSON.stringify({ minS: input.minS, maxS: Math.max(input.minS, input.maxS), categories: ENABLED_CATEGORIES.filter((c) => input.categories.includes(c)) }));
+  setMeta(db, settingsKey(store), JSON.stringify({ categories: ENABLED_CATEGORIES.filter((c) => input.categories.includes(c)) }));
   return fullSweepSettings(db, store);
+}
+
+const intervalKey = (store: StoreId, kind: IntervalKind) => (kind === 'list' ? `interval:${store}` : `sheet-interval:${store}`);
+
+/**
+ * Intervalos de cada loja (meta "interval:<loja>" para listagens e "sheet-interval:<loja>" para
+ * fichas), carregados ao subir e guardados a cada mudança pelo admin. Sem nada guardado, vêm das
+ * configurações antigas: listagens, do intervalo da varredura completa ("full-sweep:<loja>",
+ * minS/maxS); fichas, dos segundos da rotina de fichas ("sheet-routine", seconds, até +20%).
+ */
+export function useStoreIntervals(db: Db): void {
+  const read = (key: string) => {
+    const raw = getMeta(db, key);
+    return raw ? (JSON.parse(raw) as Record<string, unknown>) : undefined;
+  };
+  const oldSheet = read('sheet-routine')?.seconds;
+  const clamp = (n: number) => Math.min(STORE_INTERVAL_S_MAX, Math.max(STORE_INTERVAL_S_MIN, Math.round(n)));
+  const fromSeconds = typeof oldSheet === 'number' ? { minS: clamp(oldSheet), maxS: clamp(oldSheet * 1.2) } : undefined;
+  const saved: Record<IntervalKind, Partial<Record<StoreId, unknown>>> = { list: {}, sheet: {} };
+  for (const store of STORES) {
+    saved.list[store] = read(intervalKey(store, 'list')) ?? read(settingsKey(store));
+    saved.sheet[store] = read(intervalKey(store, 'sheet')) ?? fromSeconds;
+  }
+  useIntervalStorage(saved, (store, kind, i) => setMeta(db, intervalKey(store, kind), JSON.stringify(i)));
 }
 
 /** Para a varredura completa em andamento (botão do admin). */
@@ -141,9 +163,8 @@ export function fullSweep(db: Db, store: StoreId, now = Date.now()): CollectNowR
   if (!ACTIVE_STORES.includes(store)) return { ok: false, error: 'Loja desligada ou não configurada.' };
   if (!canSweep(store)) return { ok: false, error: 'Esta loja ainda não tem leitor de página de categoria.' };
   if (!sweepCategoriesOf(store).length) return { ok: false, error: 'Nenhuma página de categoria configurada nesta loja: configure em Lojas.' };
-  const { minS, maxS, categories } = fullSweepSettings(db, store);
+  const { categories } = fullSweepSettings(db, store);
   if (!categories.length) return { ok: false, error: 'Nenhuma categoria marcada para a varredura completa desta loja.' };
-  const delayMs: [number, number] = [minS * 1000, maxS * 1000];
   if (fullSweeps.has(store)) return { ok: false, error: 'A varredura completa desta loja já está rodando.' };
   const bo = backoffInfo(store);
   if (bo) return { ok: false, error: `Loja em pausa até ${new Date(bo.until).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. Tire a pausa antes.` };
@@ -162,9 +183,9 @@ export function fullSweep(db: Db, store: StoreId, now = Date.now()): CollectNowR
       current = category;
       try {
         for (let n = 0; n < FULL_SWEEP_CATEGORY_MAX_PAGES && !signal.aborted; n++) {
-          // O intervalo entre páginas (o da varredura, configurado no admin) é aplicado na fila da loja.
+          // O intervalo de listagens da loja entre as páginas é aplicado na fila dela.
           const s = sweepState(db, store, category);
-          const r = await collectSweepPage(store, category, s.path ?? 0, s.page, signal, { origin: 'admin', delayMs });
+          const r = await collectSweepPage(store, category, s.path ?? 0, s.page, signal, { origin: 'admin' });
           registerSuccess(store);
           if (r.roundDone) {
             current = null;
@@ -236,8 +257,7 @@ export interface ProbeOptions {
 /**
  * "Testar página" (admin): sem `path`, abre a página pedida direto pelo endereço (aba nova, sem passar
  * pelas anteriores); com `path`, abre esse endereço numa aba que fica aberta e chega às páginas
- * seguintes pelo clique no link da próxima, como a rotina. Uma por vez na fila da loja, com o intervalo da varredura completa da loja
- * (configurado no admin) antes de cada uma, e espera o resultado de cada uma; para na primeira que não
+ * seguintes pelo clique no link da próxima, como a rotina. Uma por vez na fila da loja, com o intervalo de listagens da loja antes de cada uma, e espera o resultado de cada uma; para na primeira que não
  * abrir. Loja desligada, sem leitor, sem página da categoria, em pausa ou sem páginas na hora recusa
  * sem ir à loja.
  */
@@ -253,14 +273,12 @@ export async function probePage(db: Db, store: StoreId, category: CategoryId, op
   if (bo) return { ok: false, error: `Loja em pausa até ${new Date(bo.until).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. Tire a pausa antes.` };
   const limit = pageLimitUntil(store);
   if (limit) return { ok: false, error: `Limite de páginas da hora atingido nesta loja; libera às ${new Date(limit).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.` };
-  const { minS, maxS } = fullSweepSettings(db, store);
-  const delayMs: [number, number] = [minS * 1000, maxS * 1000];
   const results: ProbeResult[] = [];
   await withBrowserSession(async () => {
     for (let n = page; n < page + pages && !jobs.signal.aborted; n++) {
       // Endereço próprio: abre a primeira numa aba que fica aberta e chega às seguintes pelo clique no
       // link da próxima (como a rotina). Sem: só a página pedida, direto pelo endereço, numa aba nova.
-      const result = await probeSweepPage(store, category, n, jobs.signal, { path, delayMs, fresh: path === undefined });
+      const result = await probeSweepPage(store, category, n, jobs.signal, { path, fresh: path === undefined });
       results.push(result);
       console.info(`[admin ${store}] teste ${path ?? category} pág ${n}: ${result.status}${result.detail ? ` (${result.detail})` : `, ${result.count} produtos`}`);
       if (result.status !== 'ok') break;

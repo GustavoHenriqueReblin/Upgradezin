@@ -4,7 +4,7 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { z } from 'zod';
 import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, pickUpgrades, STORES, type CategoryId, type Offer, type SheetRoutineStatus, type StoreId } from '@upgradezin/shared';
-import { fullSweep, fullSweepAll, probePage, readSheetNow, resumeRoutines, saveFullSweepSettings, stopAdminJobs, stopFullSweep, storesState } from './admin/actions.ts';
+import { fullSweep, fullSweepAll, probePage, readSheetNow, resumeRoutines, saveFullSweepSettings, useStoreIntervals, stopAdminJobs, stopFullSweep, storesState } from './admin/actions.ts';
 import { clearFullSweeps } from './prices/sweep.ts';
 import { nightlySchedule, startNightlySweep, stopNightlySweep } from './admin/nightly.ts';
 import { listProducts } from './admin/products.ts';
@@ -22,7 +22,7 @@ import { config } from './config.ts';
 import { emitChange } from './changes.ts';
 import { closeServer } from './shutdown.ts';
 import { deleteMeta, getMeta, metaByPrefix, setMeta } from './db/db.ts';
-import { clearBackoff, pauseStore, useBackoffStorage, type Backoff } from './pace.ts';
+import { clearBackoff, pauseStore, setStoreInterval, storeInterval, useBackoffStorage, type Backoff } from './pace.ts';
 import { closeDb, getDb } from './db/instance.ts';
 import { activeSessions, canReadSheet } from './prices/collect.ts';
 import { listingBrands, listingsHistory, recentOffers } from './prices/prices.ts';
@@ -86,7 +86,9 @@ const SearchQuery = z.object({
   });
   // Chave antiga (intervalo do modo valia para a busca do site): não é mais usada.
   for (const [k] of metaByPrefix(db, 'slowlast:')) deleteMeta(db, k);
-  // Rotina: ligada, lojas, modos, busca ao vivo e segundos, do admin (meta "routine"); sem nada guardado, vale o .env.
+  // Intervalo de cada loja (admin; meta "interval:<loja>").
+  useStoreIntervals(db);
+  // Rotina: ligada, lojas e busca ao vivo, do admin (meta "routine"); sem nada guardado, vale o .env.
   const routine = getMeta(db, 'routine');
   useRoutineStorage(routine ? JSON.parse(routine) : null, (s) => setMeta(db, 'routine', JSON.stringify(s)));
   // Rotina de fichas (separada da coleta): do admin (meta "sheet-routine"); sem nada guardado, vale o .env.
@@ -108,7 +110,7 @@ function sheetStatus(): SheetRoutineStatus {
   const progress = sheetStoreStatus(
     getDb(),
     ACTIVE_STORES.map((id) => ({ id, name: storeConfig(id).name, canRead: canReadSheet(id) })),
-  ).map((p) => ({ ...p, nextAt: iso(sheetNextAt(p.store)) }));
+  ).map((p) => ({ ...p, nextAt: iso(sheetNextAt(p.store)), interval: storeInterval(p.store, 'sheet') }));
   return { ...sheetRoutineSettings(), busy: sheetRoutineBusy(), progress };
 }
 
@@ -129,6 +131,11 @@ if (AdminAuth.isConfigured(config.ADMIN_USER, config.ADMIN_PASSWORD)) {
       pause: (id, minutes) => void pauseStore(id, minutes),
       sweep: (id) => fullSweep(getDb(), id),
       saveSweep: (id, settings) => saveFullSweepSettings(getDb(), id, settings),
+      setInterval: (id, kind, i) => {
+        const r = setStoreInterval(id, kind, i);
+        emitChange('admin');
+        return r;
+      },
       stopSweep: stopFullSweep,
       probe: (id, category, opts) => probePage(getDb(), id, category, opts),
       routine: () => ({ ...routineInfo(), nightly: { ...nightlySchedule(), lastAt: getMeta(getDb(), 'nightly-sweep') ?? null } }),

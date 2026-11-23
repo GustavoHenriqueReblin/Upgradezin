@@ -1,4 +1,4 @@
-import type { BlockReason, StoreId } from '@upgradezin/shared';
+import { INTERVAL_KINDS, STORE_INTERVAL_S_MAX, STORE_INTERVAL_S_MIN, type BlockReason, type IntervalKind, type StoreId, type StoreInterval } from '@upgradezin/shared';
 import { emitChange } from './changes.ts';
 import { config } from './config.ts';
 
@@ -11,8 +11,62 @@ export const sleep = (ms: number, signal?: AbortSignal) =>
     });
   });
 
-export function jitter(min = config.PAGE_DELAY_MIN_MS, max = config.PAGE_DELAY_MAX_MS): number {
+export function jitter(min: number, max: number): number {
   return Math.round(min + Math.random() * (max - min));
+}
+
+/**
+ * Intervalos de cada loja (admin): o de listagens (páginas de categoria, da busca e dos testes; meta
+ * "interval:<loja>") e o de fichas (páginas de produto; meta "sheet-interval:<loja>"). Cada consulta
+ * espera um tempo aleatório dentro do intervalo do seu tipo desde a anterior do mesmo tipo, e nunca
+ * menos que o de fichas desde a anterior de qualquer tipo.
+ */
+export const DEFAULT_INTERVALS: Record<IntervalKind, StoreInterval> = { list: { minS: 15, maxS: 30 }, sheet: { minS: 10, maxS: 20 } };
+const intervals = new Map<string, StoreInterval>();
+const ikey = (store: StoreId, kind: IntervalKind) => `${store}:${kind}`;
+let persistInterval: ((store: StoreId, kind: IntervalKind, i: StoreInterval) => void) | undefined;
+/** Sem intervalo guardado: o padrão (os testes usam milissegundos, useDefaultGapMs). */
+let defaultGapMs: [number, number] | null = null;
+
+export const validInterval = (i: unknown): i is StoreInterval => {
+  const v = i as StoreInterval;
+  const ok = (n: unknown) => typeof n === 'number' && Number.isInteger(n) && n >= STORE_INTERVAL_S_MIN && n <= STORE_INTERVAL_S_MAX;
+  return !!v && ok(v.minS) && ok(v.maxS) && v.minS <= v.maxS;
+};
+
+/** Carrega os intervalos guardados (os inválidos ficam de fora) e passa a guardar os novos. */
+export function useIntervalStorage(
+  saved: Partial<Record<IntervalKind, Partial<Record<StoreId, unknown>>>>,
+  save: (store: StoreId, kind: IntervalKind, i: StoreInterval) => void,
+): void {
+  intervals.clear();
+  for (const kind of INTERVAL_KINDS)
+    for (const [store, i] of Object.entries(saved[kind] ?? {})) if (validInterval(i)) intervals.set(ikey(store as StoreId, kind), { minS: i.minS, maxS: i.maxS });
+  persistInterval = save;
+}
+
+export const storeInterval = (store: StoreId, kind: IntervalKind): StoreInterval => ({ ...(intervals.get(ikey(store, kind)) ?? DEFAULT_INTERVALS[kind]) });
+
+/** Muda pelo admin e guarda; vale a partir da próxima consulta. Inválido: fica como estava. */
+export function setStoreInterval(store: StoreId, kind: IntervalKind, i: StoreInterval): StoreInterval {
+  if (validInterval(i)) {
+    intervals.set(ikey(store, kind), { minS: i.minS, maxS: i.maxS });
+    persistInterval?.(store, kind, storeInterval(store, kind));
+  }
+  return storeInterval(store, kind);
+}
+
+/** Só para os testes: o intervalo de quem não tem nada guardado, em milissegundos. */
+export function useDefaultGapMs(range: [number, number] | null): void {
+  defaultGapMs = range;
+}
+
+/** Quanto esperar entre duas consultas do tipo à loja agora (ms): aleatório dentro do intervalo. */
+export function storeGap(store: StoreId, kind: IntervalKind): number {
+  const i = intervals.get(ikey(store, kind));
+  if (!i && defaultGapMs) return jitter(...defaultGapMs);
+  const { minS, maxS } = i ?? DEFAULT_INTERVALS[kind];
+  return jitter(minS * 1000, maxS * 1000);
 }
 
 /**
@@ -156,7 +210,8 @@ interface Waiter {
 }
 const running = new Set<StoreId>();
 const waiters = new Map<StoreId, Waiter[]>();
-const lastDone = new Map<StoreId, number>();
+/** Fim da última consulta de cada loja, de qualquer tipo, e de cada tipo ("loja:tipo"). */
+const lastDone = new Map<string, number>();
 
 /** Espera a vez na loja. Cancelar tira da fila na hora (sem segurar quem vem depois). */
 function acquire(store: StoreId, priority: boolean, signal: AbortSignal): Promise<void> {
@@ -204,10 +259,11 @@ export const queuedAt = (store: StoreId): { running: boolean; priority: number; 
 };
 
 /**
- * Uma consulta à loja, na fila dela. `delayMs`: intervalo aleatório próprio desde a consulta anterior
- * (a varredura completa usa o configurado no admin); sem ele, PAGE_DELAY_*.
+ * Uma consulta à loja, na fila dela. `kind`: listagem (padrão) ou ficha. Espera o intervalo do tipo
+ * desde o fim da anterior do mesmo tipo e o de fichas desde a anterior de qualquer tipo.
  */
-export async function withStore<T>(store: StoreId, signal: AbortSignal, fn: () => Promise<T>, opts: { priority?: boolean; delayMs?: [number, number] } = {}): Promise<T> {
+export async function withStore<T>(store: StoreId, signal: AbortSignal, fn: () => Promise<T>, opts: { priority?: boolean; kind?: IntervalKind } = {}): Promise<T> {
+  const kind = opts.kind ?? 'list';
   await acquire(store, opts.priority ?? false, signal);
   try {
     // Na fila atrás de uma consulta que bloqueou: não vai à loja (antes ia, e o 2º bloqueio
@@ -217,8 +273,10 @@ export async function withStore<T>(store: StoreId, signal: AbortSignal, fn: () =
       if (bo) throw new BlockedError(store, bo.reason, 'loja em pausa', true);
     };
     paused();
-    // Intervalo aleatório entre páginas, desde o fim da consulta anterior.
-    const wait = (lastDone.get(store) ?? 0) + (opts.delayMs ? jitter(...opts.delayMs) : jitter()) - Date.now();
+    // Intervalo do tipo desde a anterior do mesmo tipo; o de fichas desde a anterior de qualquer tipo.
+    const sameKind = (lastDone.get(ikey(store, kind)) ?? 0) + storeGap(store, kind);
+    const anyKind = (lastDone.get(store) ?? 0) + storeGap(store, 'sheet');
+    const wait = Math.max(sameKind, anyKind) - Date.now();
     if (wait > 0) await sleep(wait, signal);
     paused();
     emitChange('store'); // a loja começou a ler (o admin mostra "lendo agora")
@@ -226,6 +284,7 @@ export async function withStore<T>(store: StoreId, signal: AbortSignal, fn: () =
       return await fn();
     } finally {
       lastDone.set(store, Date.now());
+      lastDone.set(ikey(store, kind), Date.now());
       emitChange('store');
     }
   } finally {

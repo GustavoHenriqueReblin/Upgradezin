@@ -125,7 +125,7 @@ export function collectSweepPage(
   path: number,
   page: number,
   signal: AbortSignal,
-  opts: { origin?: 'routine' | 'admin'; maxPages?: number; delayMs?: [number, number] } = {},
+  opts: { origin?: 'routine' | 'admin'; maxPages?: number } = {},
 ): Promise<SweepPageResult> {
   const adapter = ADAPTERS[store];
   const paths = sweepPaths(store, category);
@@ -159,7 +159,7 @@ export function collectSweepPage(
       } else recordSweepFailure(getDb(), store, category, new Date().toISOString());
       throw err;
     }
-  }, opts.delayMs ? { delayMs: opts.delayMs } : {});
+  });
 }
 
 /** A loja sabe ler a ficha técnica da página do produto. */
@@ -200,13 +200,13 @@ export async function sheetOf(
       if (err instanceof BlockedError && !err.paused && !signal.aborted) registerBlock(store, err.reason);
       throw err;
     }
-  }, { priority: origin !== 'routine' });
+  }, { priority: origin !== 'routine', kind: 'sheet' });
 }
 
 /**
  * Teste do admin: abre uma página de categoria direto (endereço da página, aba nova, sem passar pelas
  * anteriores), na fila da loja, na frente da rotina. `path`: outro caminho do site no lugar da página
- * da categoria (o leitor é o da categoria); `delayMs`: intervalo próprio desde a consulta anterior. Grava as ofertas como a rotina (anúncio novo só
+ * da categoria (o leitor é o da categoria). Grava as ofertas como a rotina (anúncio novo só
  * em estoque) sem mexer na volta da categoria e registra em Consultas. Bloqueio não pausa a loja (é
  * uma página só, pedida à mão): vem no resultado.
  */
@@ -215,7 +215,7 @@ export function probeSweepPage(
   category: CategoryId,
   page: number,
   signal: AbortSignal,
-  opts: { path?: string; delayMs?: [number, number]; fresh?: boolean } = {},
+  opts: { path?: string; fresh?: boolean } = {},
 ): Promise<ProbeResult> {
   const adapter = ADAPTERS[store];
   const path = opts.path ?? sweepPaths(store, category)[0];
@@ -237,7 +237,7 @@ export function probeSweepPage(
       logAttempt(base, t0, { count: 0, err });
       return { status: err instanceof BlockedError ? 'blocked' : 'error', url: shown, count: 0, detail: err instanceof Error ? err.message : String(err), ms: Date.now() - t0 };
     }
-  }, { priority: true, ...(opts.delayMs && { delayMs: opts.delayMs }) });
+  }, { priority: true });
 }
 
 /** Primeira página de categoria, sem gravar (conferir o caminho: pnpm scan --sweep). */

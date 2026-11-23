@@ -80,49 +80,44 @@ export interface StoreAttempt {
 }
 
 /**
- * Ritmo da rotina numa loja: ela lê uma página de categoria a cada `seconds[modo]` (editável no
- * admin; padrão ROUTINE_NORMAL_GAP_S / _REDUCED_ / _SLOW_). Só a rotina: a busca por texto vai à
- * loja na hora ou não vai, conforme `live` da loja.
+ * Intervalo de uma loja: um tempo aleatório de `minS` a `maxS` segundos entre duas consultas. Cada loja
+ * tem dois (`IntervalKind`): o de listagens (páginas de categoria, da busca e dos testes: "/fonte",
+ * "/fonte?page=2"…; admin, Rotina de preços) e o de fichas (páginas de produto; admin, Rotina de fichas).
  */
-export const ROUTINE_MODES = ['normal', 'reduced', 'slow'] as const;
-export type RoutineMode = (typeof ROUTINE_MODES)[number];
+export interface StoreInterval {
+  minS: number;
+  maxS: number;
+}
 
-/** Limites dos segundos de um modo no admin. */
-export const MODE_SECONDS_MIN = 5;
-export const MODE_SECONDS_MAX = 6 * 3600;
+export const INTERVAL_KINDS = ['list', 'sheet'] as const;
+export type IntervalKind = (typeof INTERVAL_KINDS)[number];
+
+/** Limites dos intervalos da loja no admin: de 2 segundos a 10 minutos. */
+export const STORE_INTERVAL_S_MIN = 2;
+export const STORE_INTERVAL_S_MAX = 600;
 
 /** Rotina de coleta e busca ao vivo (do .env na primeira vez; depois, do admin). */
 export interface RoutineSettings {
   enabled: boolean;
   stores: StoreId[];
-  /** Modo da rotina em cada loja (só o intervalo da rotina). */
-  modes: Record<StoreId, RoutineMode>;
   /** Busca ao vivo: o "Não achou? Buscar nas lojas" consulta a loja na hora. Desligada: só o banco. */
   live: Record<StoreId, boolean>;
-  /** Segundos entre uma coleta da rotina e a próxima, em cada modo. */
-  seconds: Record<RoutineMode, number>;
 }
 
 /**
- * Rotina de fichas técnicas: separada da coleta (chave, lojas e intervalo próprios). Lê, em cada
- * loja, uma ficha do catálogo a cada `seconds` segundos (+ até 20% aleatório).
+ * Rotina de fichas técnicas: separada da coleta (chave e lojas próprias). Lê, em cada loja, uma ficha
+ * do catálogo a cada intervalo de fichas da loja.
  */
 export interface SheetRoutineSettings {
   enabled: boolean;
   stores: StoreId[];
-  seconds: number;
 }
 
 /** O que o admin manda para mudar a rotina de fichas (o que falta fica como está). */
 export type SheetRoutineInput = Partial<SheetRoutineSettings>;
 
-/**
- * Varredura completa de uma loja (botão do admin e madrugada): intervalo aleatório entre páginas, de
- * `minS` a `maxS` segundos (só dela; as rotinas usam o da loja), e as categorias que ela lê.
- */
+/** Varredura completa de uma loja (botão do admin e madrugada): as categorias que ela lê. O ritmo é o intervalo da loja. */
 export interface FullSweepSettings {
-  minS: number;
-  maxS: number;
   categories: CategoryId[];
 }
 
@@ -142,21 +137,11 @@ export interface ProbeResult {
   ms: number;
 }
 
-/** Intervalo da varredura completa no admin: de 2 segundos a 10 minutos. */
-export const FULL_SWEEP_SECONDS_MIN = 2;
-export const FULL_SWEEP_SECONDS_MAX = 600;
-
-/** Intervalo entre fichas no admin: de 10 segundos a 1 dia. */
-export const SHEET_SECONDS_MIN = 10;
-export const SHEET_SECONDS_MAX = 86_400;
-
 /** O que o admin manda para mudar a rotina (o que falta fica como está). */
 export interface RoutineInput {
   enabled: boolean;
   stores: StoreId[];
-  modes?: Partial<Record<StoreId, RoutineMode>>;
   live?: Partial<Record<StoreId, boolean>>;
-  seconds?: Partial<Record<RoutineMode, number>>;
 }
 
 /**
@@ -183,8 +168,8 @@ export interface AdminStoreState {
   enabled: boolean;
   /** Está entre as lojas da rotina. */
   inRoutine: boolean;
-  /** Modo da loja na rotina. */
-  mode: RoutineMode;
+  /** Intervalo de listagens da loja: uma página de lista a cada `minS` a `maxS` segundos. */
+  listInterval: StoreInterval;
   /** Consultada na hora pelo "Não achou? Buscar nas lojas". */
   live: boolean;
   /** Coletando para a rotina agora. */
@@ -313,6 +298,8 @@ export interface SheetStoreStatus {
   lastAt: string | null;
   /** Próxima ficha da rotina nesta loja (null: a rotina não está rodando nela). */
   nextAt: string | null;
+  /** Intervalo de fichas da loja: uma página de produto a cada `minS` a `maxS` segundos. */
+  interval: StoreInterval;
 }
 
 /** Rotina de fichas: configuração e andamento por loja. */
