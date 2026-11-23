@@ -126,6 +126,18 @@ describe('todas as lojas pelo mesmo caminho (loadPage)', () => {
     expect(first.totalPages).toBe(61);
     expect(first.offers.length).toBeGreaterThan(0);
     expect(first.offers.every((o) => o.store === 's2')).toBe(true);
+    // Teste do admin (fresh): o endereço da página direto, em aba nova, sem seguir pela lista aberta.
+    calls.length = 0;
+    await s2.sweepPage!({ category: 'psu', url: 'https://www.s2.example/hardware/fonte', page: 2, signal: signal(), fresh: true });
+    expect(calls.map((c) => c.url)).toEqual(['https://www.s2.example/hardware/fonte?page=2']);
+    expect(calls[0]!.opts.keepTab).toBe(false);
+    // Lida do HTML (sem a resposta do clique): veio pelo endereço; com a resposta do clique, pelo clique.
+    expect(first.via).toBe('url');
+    const rsc = fakeChrome(() => ({ html: '', rsc: rscFromHtml(fixture('s2-psu.html')) }));
+    const byClick = await s2.sweepPage!({ category: 'psu', url: 'https://www.s2.example/hardware/fonte?product_category=6444', page: 2, signal: signal() });
+    expect(rsc.map((c) => c.url)).toEqual(['https://www.s2.example/hardware/fonte?product_category=6444&page=2']); // o parâmetro fica
+    expect(rsc[0]!.opts.keepTab).toBe(true);
+    expect(byClick.via).toBe('click');
   });
 
   it('S2: página lida pelo clique (lista paginada): os dados vêm do pedido do site, não do HTML', async () => {

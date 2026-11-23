@@ -166,7 +166,8 @@ async function readTab(store: StoreId, tab: Tab, url: string, opts: LoadOptions)
 
 /** Aba mantida aberta por loja entre as páginas de uma lista (keepTab). */
 const keptTabs = new Map<StoreId, { t: OpenedTab; timer?: NodeJS.Timeout }>();
-export const KEPT_TAB_IDLE_MS = 90_000;
+/** Mais que o maior intervalo da varredura completa (10 min): a aba não fecha entre duas páginas dela. */
+export const KEPT_TAB_IDLE_MS = 11 * 60_000;
 
 async function closeKeptTab(store: StoreId): Promise<void> {
   const k = keptTabs.get(store);

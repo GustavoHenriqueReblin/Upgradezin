@@ -178,7 +178,7 @@ const REDIRECT_WAIT_MS = 2000;
  * Uma página da loja (busca ou categoria): abre no Chrome, confere redirecionamento e bloqueio
  * e lê os itens do payload. Usada pela busca e pela varredura.
  */
-async function readS2Page(url: URL, signal: AbortSignal, onNeedsHuman?: () => void, keepTab = false): Promise<{ items: S2Item[]; totalPages: number }> {
+async function readS2Page(url: URL, signal: AbortSignal, onNeedsHuman?: () => void, keepTab = false): Promise<{ items: S2Item[]; totalPages: number; clicked: boolean }> {
   takePage('s2');
   // Termo igual ao nome de uma categoria ("Water Cooler", "Gabinete"): a loja redireciona a busca
   // para a página da categoria, que não traz a lista (para o navegador da coleta, vem a página de
@@ -217,7 +217,7 @@ async function readS2Page(url: URL, signal: AbortSignal, onNeedsHuman?: () => vo
     const maintenance = loaded.rsc?.match(/<title>([^<]*manuten[^<]*)<\/title>/i)?.[1];
     throw new BlockedError('s2', 'unavailable', maintenance ? `Página de manutenção: ${maintenance.trim().slice(0, 60)}` : 'Página sem dados de produto');
   }
-  return { items, totalPages };
+  return { items, totalPages, clicked: !!loaded.rsc };
 }
 
 const pageUrl = (base: string, page: number) => {
@@ -256,15 +256,17 @@ export const s2: StoreAdapter = {
     return s2SheetFromHtml((await loadPage('s2', url, { signal })).html);
   },
   /** Página da categoria (aberta direto traz a lista, 36 itens por página, paginada com ?page=N). */
-  async sweepPage({ category, url, page, signal }) {
+  async sweepPage({ category, url, page, signal, fresh }) {
     // Página da categoria: mesma aba entre as páginas e, da segunda em diante, pelo clique no link da
     // página (como uma pessoa), em vez de abrir cada ?page=N numa aba nova (a loja passou a barrar isso).
-    const { items, totalPages } = await readS2Page(pageUrl(url, page), signal, undefined, true);
+    // `fresh` (teste do admin): o endereço direto, numa aba nova, sem passar pelas anteriores.
+    const { items, totalPages, clicked } = await readS2Page(pageUrl(url, page), signal, undefined, !fresh);
     const now = new Date().toISOString();
     return {
       offers: items.map((it) => mapS2Item(it, now, category)).filter((o): o is Offer => !!o),
       totalPages,
       inStock: items.filter((it) => it.stock_status === 'IN_STOCK').length,
+      via: clicked ? 'click' : 'url',
     };
   },
 };

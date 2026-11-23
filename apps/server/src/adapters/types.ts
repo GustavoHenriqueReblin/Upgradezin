@@ -19,6 +19,8 @@ export interface SweepContext {
   url: string;
   page: number;
   signal: AbortSignal;
+  /** Abre o endereço da página direto, numa aba nova, sem seguir pela lista já aberta (teste do admin). */
+  fresh?: boolean;
 }
 
 /** Uma página da categoria: as ofertas lidas, quantas páginas a lista tem e quantos itens da página estão em estoque. */
@@ -30,6 +32,8 @@ export interface SweepPage {
    * preço). As lojas listam os em estoque primeiro: página sem nenhum = fim do que está à venda.
    */
   inStock: number;
+  /** Como a página foi aberta: pelo clique no link dela na página anterior ou pelo endereço. */
+  via?: 'click' | 'url';
 }
 
 export interface StoreAdapter {

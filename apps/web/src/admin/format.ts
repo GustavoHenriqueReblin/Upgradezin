@@ -1,4 +1,4 @@
-import { CATEGORY_DEFS, SHEET_FIELDS, type CategoryId, type MergeReport, type RoutineMode, type SheetState, type Specs, type StoreAttempt } from '@upgradezin/shared';
+import { CATEGORY_DEFS, SHEET_FIELDS, type CategoryId, type MergeReport, type ProbeResult, type RoutineMode, type SheetState, type Specs, type StoreAttempt } from '@upgradezin/shared';
 
 /** "3 d 4 h", "2 h 15 min", "40 s". */
 export function formatDuration(totalS: number): string {
@@ -148,4 +148,12 @@ export function specPairs(specs: Specs): [string, string][] {
   return Object.entries(specs)
     .filter(([, v]) => v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && !v.length))
     .map(([k, v]) => [k, Array.isArray(v) ? v.join(', ') : typeof v === 'boolean' ? (v ? 'sim' : 'não') : String(v)]);
+}
+
+/** Como o teste terminou, numa linha. */
+export function probeLabel(r: ProbeResult): string {
+  const secs = `${(r.ms / 1000).toFixed(1).replace('.', ',')} s`;
+  const via = r.via === 'click' ? ' pelo clique' : r.via === 'url' ? ' pelo endereço' : '';
+  if (r.status === 'ok') return `Abriu${via}: ${r.count} produtos (${r.inStock ?? 0} em estoque), lista com ${r.totalPages ?? '?'} páginas, em ${secs}.`;
+  return `${r.status === 'blocked' ? 'Bloqueou' : 'Erro'}: ${r.detail ?? 'sem detalhe'} (${secs}).`;
 }

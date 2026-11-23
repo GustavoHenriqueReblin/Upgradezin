@@ -4,7 +4,7 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { z } from 'zod';
 import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, pickUpgrades, STORES, type CategoryId, type Offer, type SheetRoutineStatus, type StoreId } from '@upgradezin/shared';
-import { fullSweep, fullSweepAll, readSheetNow, resumeRoutines, saveFullSweepSettings, stopAdminJobs, stopFullSweep, storesState } from './admin/actions.ts';
+import { fullSweep, fullSweepAll, probePage, readSheetNow, resumeRoutines, saveFullSweepSettings, stopAdminJobs, stopFullSweep, storesState } from './admin/actions.ts';
 import { clearFullSweeps } from './prices/sweep.ts';
 import { nightlySchedule, startNightlySweep, stopNightlySweep } from './admin/nightly.ts';
 import { listProducts } from './admin/products.ts';
@@ -130,6 +130,7 @@ if (AdminAuth.isConfigured(config.ADMIN_USER, config.ADMIN_PASSWORD)) {
       sweep: (id) => fullSweep(getDb(), id),
       saveSweep: (id, settings) => saveFullSweepSettings(getDb(), id, settings),
       stopSweep: stopFullSweep,
+      probe: (id, category, opts) => probePage(getDb(), id, category, opts),
       routine: () => ({ ...routineInfo(), nightly: { ...nightlySchedule(), lastAt: getMeta(getDb(), 'nightly-sweep') ?? null } }),
       setRoutine: (s) => (setRoutineSettings(s), routineInfo()),
     },

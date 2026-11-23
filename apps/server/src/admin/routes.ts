@@ -1,4 +1,4 @@
-import { ADMIN_PAGE_SIZE_MAX, CATEGORIES, FULL_SWEEP_SECONDS_MAX, FULL_SWEEP_SECONDS_MIN, STORES, type FullSweepSettings, type AdminPage, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type CategoryId, type CoverageRow, type PerfGap, type AdminProductFilter, type AdminProductPage, type SheetRoutineStatus, type SheetRoutineInput, type SheetCoverageRow, type SheetPageText, type SheetProductFilter, type SheetProductPage, SHEET_SECONDS_MIN, SHEET_SECONDS_MAX, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, ROUTINE_MODES, MODE_SECONDS_MIN, MODE_SECONDS_MAX } from '@upgradezin/shared';
+import { ADMIN_PAGE_SIZE_MAX, CATEGORIES, FULL_SWEEP_SECONDS_MAX, FULL_SWEEP_SECONDS_MIN, STORES, type FullSweepSettings, type AdminPage, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type CategoryId, type CoverageRow, type PerfGap, type ProbeResult, type AdminProductFilter, type AdminProductPage, type SheetRoutineStatus, type SheetRoutineInput, type SheetCoverageRow, type SheetPageText, type SheetProductFilter, type SheetProductPage, SHEET_SECONDS_MIN, SHEET_SECONDS_MAX, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, ROUTINE_MODES, MODE_SECONDS_MIN, MODE_SECONDS_MAX } from '@upgradezin/shared';
 import { createReadStream } from 'node:fs';
 import { emitChange, onChange } from '../changes.ts';
 import type { ActivityInfo } from '@upgradezin/shared';
@@ -29,6 +29,8 @@ export interface AdminDeps {
     stopSweep: (id: StoreId) => boolean;
     /** Guarda a configuração da varredura completa da loja (intervalo e categorias; vale também para a da madrugada). */
     saveSweep: (id: StoreId, s: FullSweepSettings) => FullSweepSettings;
+    /** "Testar página": abre uma página de categoria direto (sem as anteriores) e espera o resultado. */
+    probe: (id: StoreId, category: CategoryId, opts: { page: number; pages?: number; path?: string }) => Promise<{ ok: true; results: ProbeResult[] } | { ok: false; error: string }>;
     routine: () => RoutineInfo;
     setRoutine: (s: RoutineInput) => RoutineInfo;
   };
@@ -109,6 +111,14 @@ const FullSweepBody = z
   .object({ minS: sweepSeconds, maxS: sweepSeconds, categories: z.array(z.enum(CATEGORIES)).max(CATEGORIES.length) })
   .strict()
   .refine((v) => v.minS <= v.maxS);
+const ProbeBody = z
+  .object({
+    category: z.enum(CATEGORIES),
+    page: z.number().int().min(1).max(50),
+    pages: z.number().int().min(1).max(5).optional(),
+    path: z.string().regex(/^\/(?!\/)[^\s\\]{0,300}$/).optional(),
+  })
+  .strict();
 const SweepMap = z.partialRecord(z.enum(CATEGORIES), z.string().max(3100)).default({});
 const StoreBody = z.object({
   enabled: z.boolean(),
@@ -226,6 +236,19 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
         if (!r.ok) return reply.code(409).send({ error: 'rejected', errors: [r.error] });
         req.log.info({ store: id }, 'admin: varredura completa');
         return r;
+      });
+
+      // Teste: uma página de categoria aberta direto; responde com o que a loja devolveu.
+      admin.post<{ Params: { id: string } }>('/stores/:id/probe', async (req, reply) => {
+        const id = storeParam(req.params.id);
+        if (!id) return reply.code(404).send({ error: 'not-found' });
+        const body = ProbeBody.safeParse(req.body);
+        if (!body.success) return reply.code(400).send({ error: 'invalid', errors: ['Teste: categoria válida, página de 1 a 50, de 1 a 5 páginas e endereço começando com /.'] });
+        const { category, ...opts } = body.data;
+        const r = await deps.ops.probe(id, category, opts);
+        if (!r.ok) return reply.code(409).send({ error: 'rejected', errors: [r.error] });
+        req.log.info({ store: id, ...body.data, status: r.results.map((x) => x.status).join(',') }, 'admin: teste de página');
+        return r.results;
       });
 
       // Produtos do catálogo (paginado).

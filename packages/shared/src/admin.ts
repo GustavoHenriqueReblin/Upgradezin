@@ -126,6 +126,22 @@ export interface FullSweepSettings {
   categories: CategoryId[];
 }
 
+/**
+ * Teste do admin: uma página de categoria aberta direto (sem passar pelas anteriores). Como terminou,
+ * quantos produtos vieram (e em estoque), o total de páginas da lista e o tempo.
+ */
+export interface ProbeResult {
+  status: 'ok' | 'blocked' | 'error';
+  url: string;
+  count: number;
+  inStock?: number;
+  totalPages?: number;
+  /** Como a página foi aberta: pelo clique no link dela ou pelo endereço. */
+  via?: 'click' | 'url';
+  detail?: string;
+  ms: number;
+}
+
 /** Intervalo da varredura completa no admin: de 2 segundos a 10 minutos. */
 export const FULL_SWEEP_SECONDS_MIN = 2;
 export const FULL_SWEEP_SECONDS_MAX = 600;

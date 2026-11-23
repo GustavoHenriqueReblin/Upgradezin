@@ -81,7 +81,14 @@ const ops = {
       const [r] = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func, args });
       return r?.result;
     };
+    // Mesmo endereço com os parâmetros em qualquer ordem ("?a=1&page=2" e "?page=2&a=1").
     const clicked = await main((h) => {
+      window.__uzNorm = (x) => {
+        const u = new URL(x, location.href);
+        u.searchParams.delete('_rsc');
+        u.searchParams.sort();
+        return u.pathname + u.search;
+      };
       if (!window.__uzFetchHooked) {
         window.__uzFetchHooked = true;
         const orig = window.fetch;
@@ -90,8 +97,7 @@ const ops = {
           try {
             const u = new URL(typeof a[0] === 'string' ? a[0] : a[0].url, location.href);
             if (u.searchParams.has('_rsc')) {
-              u.searchParams.delete('_rsc');
-              const key = u.pathname + u.search;
+              const key = window.__uzNorm(u.href);
               res.clone().text().then((text) => { window.__uzRsc = { key, text }; }).catch(() => {});
             }
           } catch {}
@@ -99,7 +105,8 @@ const ops = {
         };
       }
       window.__uzRsc = null;
-      const link = [...document.querySelectorAll('a[href]')].find((x) => x.getAttribute('href') === h);
+      const want = window.__uzNorm(h);
+      const link = [...document.querySelectorAll('a[href]')].find((x) => window.__uzNorm(x.getAttribute('href')) === want);
       if (!link) return false;
       link.scrollIntoView({ block: 'center' });
       link.click();
@@ -110,11 +117,11 @@ const ops = {
     let rsc = null;
     let via = 'click';
     while (Date.now() < until) {
-      const got = await main((h) => (window.__uzRsc && window.__uzRsc.key === h ? window.__uzRsc.text : null), [href]).catch(() => null);
+      const got = await main((h) => (window.__uzRsc && window.__uzRsc.key === window.__uzNorm(h) ? window.__uzRsc.text : null), [href]).catch(() => null);
       if (got) { rsc = got; break; }
       // Já está na página nova e nada foi pedido (dados pré-carregados): pede igual ao site.
-      const here = await main(() => location.pathname + location.search).catch(() => '');
-      if (here === href && Date.now() > until - timeout + 4000) {
+      const here = await main((h) => window.__uzNorm(location.href) === window.__uzNorm(h), [href]).catch(() => false);
+      if (here && Date.now() > until - timeout + 4000) {
         rsc = await main(async (h) => (await fetch(h, { headers: { RSC: '1' } })).text(), [href]).catch(() => null);
         via = 'fetch';
         break;

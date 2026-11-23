@@ -1,9 +1,9 @@
-import { ENABLED_CATEGORIES, type AdminStoreState, type FullSweepSettings, type CategoryId, type StoreId } from '@upgradezin/shared';
+import { ENABLED_CATEGORIES, type AdminStoreState, type FullSweepSettings, type CategoryId, type ProbeResult, type StoreId } from '@upgradezin/shared';
 import { config } from '../config.ts';
 import { deleteMeta, getMeta, setMeta, type Db } from '../db/db.ts';
-import { backoffInfo, BlockedError, PageLimitError, pagesUsed, queuedAt, registerSuccess } from '../pace.ts';
+import { backoffInfo, BlockedError, PageLimitError, pageLimitUntil, pagesUsed, queuedAt, registerSuccess } from '../pace.ts';
 import { attemptCounts, lastAttempt } from '../prices/attempts.ts';
-import { canReadSheet, canSweep, collectSweepPage, sheetOf, withBrowserSession } from '../prices/collect.ts';
+import { canReadSheet, canSweep, collectSweepPage, probeSweepPage, sheetOf, withBrowserSession } from '../prices/collect.ts';
 import { routineBusy, routineNextAt, routineSettings, setRoutineSettings } from '../prices/routine.ts';
 import { setSheetRoutine, sheetRoutineSettings } from '../prices/sheet-routine.ts';
 import { restartSweep, sweepState } from '../prices/sweep.ts';
@@ -216,6 +216,58 @@ export function readSheetNow(db: Db, store: StoreId, sku: string): CollectNowRes
       if (!jobs.signal.aborted) console.warn(`[admin ${store}] ficha ${sku}:`, err instanceof Error ? err.message : err);
     });
   return { ok: true, startsAt: new Date().toISOString() };
+}
+
+/** Teste: até esta página da lista, e até tantas páginas seguidas. */
+export const PROBE_MAX_PAGE = 50;
+export const PROBE_MAX_PAGES = 5;
+/** Endereço próprio do teste: um caminho do site da loja (com ou sem parâmetros). */
+export const PROBE_PATH = /^\/(?!\/)[^\s\\]{0,300}$/;
+
+export interface ProbeOptions {
+  /** Primeira página. */
+  page: number;
+  /** Quantas páginas seguidas, a partir de `page` (padrão 1). */
+  pages?: number;
+  /** Caminho no site da loja no lugar da página da categoria (ex.: "/hardware/fonte?product_category=6444"). */
+  path?: string;
+}
+
+/**
+ * "Testar página" (admin): sem `path`, abre a página pedida direto pelo endereço (aba nova, sem passar
+ * pelas anteriores); com `path`, abre esse endereço numa aba que fica aberta e chega às páginas
+ * seguintes pelo clique no link da próxima, como a rotina. Uma por vez na fila da loja, com o intervalo da varredura completa da loja
+ * (configurado no admin) antes de cada uma, e espera o resultado de cada uma; para na primeira que não
+ * abrir. Loja desligada, sem leitor, sem página da categoria, em pausa ou sem páginas na hora recusa
+ * sem ir à loja.
+ */
+export async function probePage(db: Db, store: StoreId, category: CategoryId, opts: ProbeOptions): Promise<{ ok: true; results: ProbeResult[] } | { ok: false; error: string }> {
+  const { page, pages = 1, path } = opts;
+  if (!ACTIVE_STORES.includes(store)) return { ok: false, error: 'Loja desligada ou não configurada.' };
+  if (!canSweep(store)) return { ok: false, error: 'Esta loja ainda não tem leitor de página de categoria.' };
+  if (!ENABLED_CATEGORIES.includes(category) || (!path && !sweepPaths(store, category).length)) return { ok: false, error: 'Sem página desta categoria nesta loja: configure em Lojas.' };
+  if (!Number.isInteger(page) || page < 1 || page > PROBE_MAX_PAGE) return { ok: false, error: `Página de 1 a ${PROBE_MAX_PAGE}.` };
+  if (!Number.isInteger(pages) || pages < 1 || pages > PROBE_MAX_PAGES) return { ok: false, error: `De 1 a ${PROBE_MAX_PAGES} páginas.` };
+  if (path !== undefined && !PROBE_PATH.test(path)) return { ok: false, error: 'Endereço: um caminho do site da loja, começando com /.' };
+  const bo = backoffInfo(store);
+  if (bo) return { ok: false, error: `Loja em pausa até ${new Date(bo.until).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. Tire a pausa antes.` };
+  const limit = pageLimitUntil(store);
+  if (limit) return { ok: false, error: `Limite de páginas da hora atingido nesta loja; libera às ${new Date(limit).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.` };
+  const { minS, maxS } = fullSweepSettings(db, store);
+  const delayMs: [number, number] = [minS * 1000, maxS * 1000];
+  const results: ProbeResult[] = [];
+  await withBrowserSession(async () => {
+    for (let n = page; n < page + pages && !jobs.signal.aborted; n++) {
+      // Endereço próprio: abre a primeira numa aba que fica aberta e chega às seguintes pelo clique no
+      // link da próxima (como a rotina). Sem: só a página pedida, direto pelo endereço, numa aba nova.
+      const result = await probeSweepPage(store, category, n, jobs.signal, { path, delayMs, fresh: path === undefined });
+      results.push(result);
+      console.info(`[admin ${store}] teste ${path ?? category} pág ${n}: ${result.status}${result.detail ? ` (${result.detail})` : `, ${result.count} produtos`}`);
+      if (result.status !== 'ok') break;
+      registerSuccess(store);
+    }
+  });
+  return { ok: true, results };
 }
 
 /** Varredura completa em todas as lojas ligadas que sabem ler página de categoria (a da madrugada). */

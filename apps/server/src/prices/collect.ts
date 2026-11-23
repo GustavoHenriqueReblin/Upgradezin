@@ -1,4 +1,4 @@
-import { sheetText, type AttemptKind, type AttemptOrigin, type CategoryId, type Offer, type SheetValues, type StoreId } from '@upgradezin/shared';
+import { sheetText, type AttemptKind, type AttemptOrigin, type CategoryId, type Offer, type ProbeResult, type SheetValues, type StoreId } from '@upgradezin/shared';
 import { s1 } from '../adapters/s1.ts';
 import { s2 } from '../adapters/s2.ts';
 import { s3 } from '../adapters/s3.ts';
@@ -9,7 +9,7 @@ import { getDb } from '../db/instance.ts';
 import { BlockedError, PageLimitError, registerBlock, withStore } from '../pace.ts';
 import { storeConfig, sweepPaths } from '../stores.ts';
 import { recordAttempt, type NewAttempt } from './attempts.ts';
-import { saveCollection } from './prices.ts';
+import { hasListing, saveCollection } from './prices.ts';
 import { clearPageError } from './page-errors.ts';
 import { savePage } from './sheets.ts';
 import { recordSweepFailure, recordSweepPage } from './sweep.ts';
@@ -201,6 +201,43 @@ export async function sheetOf(
       throw err;
     }
   }, { priority: origin !== 'routine' });
+}
+
+/**
+ * Teste do admin: abre uma página de categoria direto (endereço da página, aba nova, sem passar pelas
+ * anteriores), na fila da loja, na frente da rotina. `path`: outro caminho do site no lugar da página
+ * da categoria (o leitor é o da categoria); `delayMs`: intervalo próprio desde a consulta anterior. Grava as ofertas como a rotina (anúncio novo só
+ * em estoque) sem mexer na volta da categoria e registra em Consultas. Bloqueio não pausa a loja (é
+ * uma página só, pedida à mão): vem no resultado.
+ */
+export function probeSweepPage(
+  store: StoreId,
+  category: CategoryId,
+  page: number,
+  signal: AbortSignal,
+  opts: { path?: string; delayMs?: [number, number]; fresh?: boolean } = {},
+): Promise<ProbeResult> {
+  const adapter = ADAPTERS[store];
+  const path = opts.path ?? sweepPaths(store, category)[0];
+  if (!adapter.sweepPage || !path) return Promise.reject(new Error(`${store}: sem página de ${category}`));
+  const url = storeConfig(store).url + path;
+  const shown = page > 1 ? `${url}${url.includes('?') ? '&' : '?'}page=${page}` : url;
+  return withStore(store, signal, async () => {
+    const t0 = Date.now();
+    const base = { store, kind: 'sweep' as const, origin: 'admin' as const, category, page };
+    try {
+      const r = await adapter.sweepPage!({ category, url, page, signal, fresh: opts.fresh ?? true });
+      const db = getDb();
+      const keep = r.offers.filter((o) => o.inStock || hasListing(db, store, o.storeSku));
+      saveCollection(db, { store, category, offers: keep, at: new Date().toISOString() });
+      logAttempt(base, t0, { count: r.offers.length });
+      return { status: 'ok', url: shown, count: r.offers.length, inStock: r.inStock, totalPages: r.totalPages, ...(r.via && { via: r.via }), ms: Date.now() - t0 };
+    } catch (err) {
+      if (signal.aborted || (err instanceof BlockedError && err.paused)) throw err;
+      logAttempt(base, t0, { count: 0, err });
+      return { status: err instanceof BlockedError ? 'blocked' : 'error', url: shown, count: 0, detail: err instanceof Error ? err.message : String(err), ms: Date.now() - t0 };
+    }
+  }, { priority: true, ...(opts.delayMs && { delayMs: opts.delayMs }) });
 }
 
 /** Primeira página de categoria, sem gravar (conferir o caminho: pnpm scan --sweep). */

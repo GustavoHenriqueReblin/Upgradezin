@@ -103,6 +103,7 @@ function makeApp() {
       pause: (id, minutes) => void calls.push(['pause', id, minutes]),
       saveSweep: (id, settings) => (calls.push(['saveSweep', id, settings]), settings),
       stopSweep: (id) => (calls.push(['stopSweep', id]), id === 's1'),
+      probe: async (id, category, opts) => (calls.push(['probe', id, category, opts]), id === 's3' ? { ok: false as const, error: 'Loja em pausa.' } : { ok: true as const, results: [{ status: 'blocked' as const, url: 'https://s2.example/fontes?page=2', count: 0, detail: 'Página de manutenção', ms: 900 }] }),
       sweep: (id) => (calls.push(['sweep', id]), id === 's3' ? { ok: false as const, error: 'Loja em pausa.' } : { ok: true as const, startsAt: '2026-11-20T21:00:00.000Z' }),
       routine: () => routine,
       setRoutine: (s) => (calls.push(['routine', s]), { ...routine, ...s, modes: { ...routine.modes, ...s.modes }, live: { ...routine.live, ...s.live }, seconds: { ...routine.seconds, ...s.seconds } }),
@@ -272,6 +273,24 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     expect(no.statusCode).toBe(409);
     expect(no.json().errors[0]).toContain('Nenhuma varredura');
     expect((await post('/api/admin/stores/s9/sweep/stop')).statusCode).toBe(404);
+  });
+
+  it('testar página: espera e devolve o resultado; loja recusada, 409; corpo inválido, 400; loja desconhecida, 404', async () => {
+    const { post } = await setup();
+    const r = await post('/api/admin/stores/s2/probe', { category: 'psu', page: 2 });
+    expect(r.json()).toMatchObject([{ status: 'blocked', count: 0, detail: 'Página de manutenção' }]);
+    expect(calls.at(-1)).toEqual(['probe', 's2', 'psu', { page: 2 }]);
+    // Endereço próprio, várias páginas seguidas.
+    await post('/api/admin/stores/s2/probe', { category: 'psu', page: 1, pages: 5, path: '/hardware/fonte?product_category=6444' });
+    expect(calls.at(-1)).toEqual(['probe', 's2', 'psu', { page: 1, pages: 5, path: '/hardware/fonte?product_category=6444' }]);
+    const no = await post('/api/admin/stores/s3/probe', { category: 'psu', page: 2 });
+    expect(no.statusCode).toBe(409);
+    expect(no.json().errors).toEqual(['Loja em pausa.']);
+    const before = calls.length;
+    for (const bad of [{ category: 'psu', page: 0 }, { category: 'psu', page: 51 }, { category: 'inventada', page: 2 }, { category: 'psu' }, { category: 'psu', page: 2, x: 1 }, { category: 'psu', page: 1, pages: 6 }, { category: 'psu', page: 1, path: 'hardware/fonte' }, { category: 'psu', page: 1, path: '//outro.example/x' }, { category: 'psu', page: 1, path: '/a b' }])
+      expect((await post('/api/admin/stores/s2/probe', bad)).statusCode).toBe(400);
+    expect(calls.length).toBe(before);
+    expect((await post('/api/admin/stores/s9/probe', { category: 'psu', page: 2 })).statusCode).toBe(404);
   });
 
   it('configuração da varredura completa: guarda sem começar (vale para a madrugada); inválida, 400', async () => {

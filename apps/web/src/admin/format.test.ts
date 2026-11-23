@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { sheetEta, shortDuration, splitSeconds, SHEET_STATE_LABEL, fieldLabels, specPairs, countdown, modeHint, queueLabel, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground } from './format.ts';
+import { sheetEta, shortDuration, splitSeconds, SHEET_STATE_LABEL, fieldLabels, specPairs, countdown, modeHint, queueLabel, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground, probeLabel } from './format.ts';
 
 describe('formatação do admin', () => {
+  it('resultado do teste de página', () => {
+    expect(probeLabel({ status: 'ok', url: 'u', count: 36, inStock: 30, totalPages: 61, ms: 2345 })).toBe('Abriu: 36 produtos (30 em estoque), lista com 61 páginas, em 2,3 s.');
+    expect(probeLabel({ status: 'blocked', url: 'u', count: 0, detail: 'Página de manutenção: Site em Manutenção', ms: 757 })).toBe('Bloqueou: Página de manutenção: Site em Manutenção (0,8 s).');
+    expect(probeLabel({ status: 'error', url: 'u', count: 0, ms: 30000 })).toBe('Erro: sem detalhe (30,0 s).');
+    expect(probeLabel({ status: 'ok', url: 'u', count: 36, inStock: 36, totalPages: 13, via: 'click', ms: 1000 })).toBe('Abriu pelo clique: 36 produtos (36 em estoque), lista com 13 páginas, em 1,0 s.');
+    expect(probeLabel({ status: 'ok', url: 'u', count: 36, inStock: 36, totalPages: 13, via: 'url', ms: 1000 })).toBe('Abriu pelo endereço: 36 produtos (36 em estoque), lista com 13 páginas, em 1,0 s.');
+  });
+
   it('duração', () => {
     expect(formatDuration(40)).toBe('40 s');
     expect(formatDuration(600)).toBe('10 min');

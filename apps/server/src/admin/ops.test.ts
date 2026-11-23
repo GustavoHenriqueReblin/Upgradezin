@@ -1,12 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { RoutineSettings } from '@upgradezin/shared';
 import { openDb } from '../db/db.ts';
-import { backoffInfo, BlockedError, clearBackoff, PageLimitError, pauseStore, registerBlock, registerSuccess, useBackoffStorage } from '../pace.ts';
+import { backoffInfo, BlockedError, clearBackoff, PageLimitError, pageLimitUntil, pauseStore, registerBlock, registerSuccess, takePage, useBackoffStorage } from '../pace.ts';
 import { attemptCounts, lastAttempt, listAttempts, onAttempt, pageAttempts, recordAttempt, type NewAttempt } from '../prices/attempts.ts';
 import { attemptOutcome } from '../prices/collect.ts';
 import { isLive, modeDelay, routineInfo, routineNextAt, routineSettings, setRoutineSettings, stopRoutine, tick, useRoutineStorage } from '../prices/routine.ts';
 import { useStoreStorage } from '../stores.ts';
-import { fullSweep, fullSweepAll, fullSweepOf, fullSweepSettings, readSheetNow, resumeRoutines, saveFullSweepSettings, stopFullSweep, storesState } from './actions.ts';
+import { fullSweep, fullSweepAll, fullSweepOf, probePage, fullSweepSettings, readSheetNow, resumeRoutines, saveFullSweepSettings, stopFullSweep, storesState } from './actions.ts';
 import { setSheetRoutine, sheetRoutineSettings, stopSheetRoutine, useSheetRoutineStorage } from '../prices/sheet-routine.ts';
 import { getMeta, setMeta } from '../db/db.ts';
 import { usePageLoader } from '../browser.ts';
@@ -333,6 +333,73 @@ describe('varredura completa e painel das lojas', () => {
       expect(fullSweepOf('s1')).toBeNull();
       expect(routineSettings().enabled).toBe(false);
     } finally {
+      usePageLoader(null);
+    }
+  });
+
+  it('testar página: abre a página pedida direto, espera o resultado, grava as ofertas sem mexer na volta da categoria; bloqueio vem no resultado sem pausar a loja; recusa pausa e página fora do limite', async () => {
+    const db = getDb();
+    useStoreStorage(db);
+    useBackoffStorage([], () => {});
+    const urls: string[] = [];
+    let block = false;
+    // Os testes de antes gastaram as páginas da hora da loja: duas horas depois, a conta recomeça.
+    const later = Date.now() + 2 * 3_600_000;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => later);
+    // Intervalo entre as páginas: o da varredura completa da loja (o menor possível, para o teste).
+    saveFullSweepSettings(db, 's1', { minS: 2, maxS: 2, categories: ['psu'] });
+    const waits: number[] = [];
+    const realTimeout = globalThis.setTimeout;
+    const timers = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => {
+      if ((ms ?? 0) >= 1000) waits.push(ms!);
+      return realTimeout(fn, ms && ms >= 1000 ? 0 : ms);
+    }) as typeof setTimeout);
+    usePageLoader(async (_store, url) => {
+      urls.push(url);
+      if (block) throw new BlockedError('s1', 'unavailable', 'Página de manutenção: teste');
+      return { html: fixture('s1-psu.html'), url, title: '' };
+    });
+    try {
+      const before = JSON.stringify(sweepState(db, 's1', 'psu'));
+      const ok = await probePage(db, 's1', 'psu', { page: 2 });
+      expect(ok).toMatchObject({ ok: true, results: [{ status: 'ok' }] });
+      if (!ok.ok) throw new Error();
+      expect(ok.results[0]!.count).toBeGreaterThan(0);
+      expect(ok.results[0]!.url).toContain('page=2');
+      const lists = () => urls.filter((u) => u.includes('/hardware/'));
+      expect(lists()).toEqual([expect.stringContaining('/hardware/fontes?page_number=2')]); // só a página pedida, sem a 1 antes
+      expect(JSON.stringify(sweepState(db, 's1', 'psu'))).toBe(before); // a volta da categoria fica como estava
+      expect(listAttempts(db, { limit: 1 })[0]).toMatchObject({ kind: 'sweep', origin: 'admin', category: 'psu', page: 2, status: 'ok' });
+      // Endereço próprio, 3 páginas seguidas, cada uma direto pelo endereço (com o parâmetro), com o
+      // intervalo da varredura completa (2 s) antes de cada uma.
+      waits.length = 0;
+      const own = await probePage(db, 's1', 'psu', { page: 1, pages: 3, path: '/hardware/fontes?product_category=6444' });
+      expect(own).toMatchObject({ ok: true, results: [{ status: 'ok' }, { status: 'ok' }, { status: 'ok' }] });
+      expect(lists().slice(-3).every((u) => u.includes('product_category=6444'))).toBe(true);
+      expect(lists().slice(-2).map((u) => new URL(u).searchParams.get('page_number'))).toEqual(['2', '3']);
+      expect(waits).toEqual([2000, 2000, 2000]);
+      block = true;
+      // Para na primeira que não abre.
+      const no = await probePage(db, 's1', 'psu', { page: 2, pages: 3 });
+      expect(no).toMatchObject({ ok: true, results: [{ status: 'blocked', count: 0, detail: expect.stringContaining('manutenção') }] });
+      expect(backoffInfo('s1')).toBeNull(); // uma página pedida à mão: não pausa a loja
+      expect(listAttempts(db, { limit: 1 })[0]).toMatchObject({ status: 'blocked', origin: 'admin' });
+      const n = lists().length;
+      expect(await probePage(db, 's1', 'psu', { page: 0 })).toMatchObject({ ok: false });
+      expect(await probePage(db, 's1', 'psu', { page: 1, pages: 6 })).toMatchObject({ ok: false });
+      expect(await probePage(db, 's1', 'psu', { page: 1, path: '//outro.example/x' })).toMatchObject({ ok: false });
+      expect(await probePage(db, 's1', 'psu', { page: 51 })).toMatchObject({ ok: false });
+      expect(await probePage(db, 's9' as 's1', 'psu', { page: 2 })).toMatchObject({ ok: false });
+      pauseStore('s1', 60);
+      expect(await probePage(db, 's1', 'psu', { page: 2 })).toMatchObject({ ok: false, error: expect.stringContaining('pausa') });
+      clearBackoff('s1');
+      while (!pageLimitUntil('s1')) takePage('s1');
+      expect(await probePage(db, 's1', 'psu', { page: 2 })).toMatchObject({ ok: false, error: expect.stringContaining('Limite de páginas') });
+      expect(lists().length).toBe(n);
+    } finally {
+      timers.mockRestore();
+      clock.mockRestore();
+      clearBackoff('s1');
       usePageLoader(null);
     }
   });

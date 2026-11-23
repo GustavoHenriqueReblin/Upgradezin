@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { CATEGORY_DEFS, FULL_SWEEP_SECONDS_MAX, FULL_SWEEP_SECONDS_MIN, MODE_SECONDS_MAX, MODE_SECONDS_MIN, ROUTINE_MODES, type AdminStoreState, type CategoryId, type FullSweepSettings, type RoutineInfo, type RoutineInput, type RoutineMode, type StoreAttempt, type StoreId } from '@upgradezin/shared';
-import { Pause, Play, RefreshCw, Square } from 'lucide-react';
+import { CATEGORY_DEFS, FULL_SWEEP_SECONDS_MAX, FULL_SWEEP_SECONDS_MIN, MODE_SECONDS_MAX, MODE_SECONDS_MIN, ROUTINE_MODES, type AdminStoreState, type CategoryId, type FullSweepSettings, type ProbeResult, type RoutineInfo, type RoutineInput, type RoutineMode, type StoreAttempt, type StoreId } from '@upgradezin/shared';
+import { FlaskConical, Pause, Play, RefreshCw, Square } from 'lucide-react';
 import { AdminError, adminApi } from './api.ts';
-import { attemptLabel, countdown, formatWhen, MODE_LABEL, modeHint, pauseLabel, queueLabel, routineStores, shortDuration } from './format.ts';
+import { attemptLabel, countdown, probeLabel, formatWhen, MODE_LABEL, modeHint, pauseLabel, queueLabel, routineStores, shortDuration } from './format.ts';
 import { useLiveReload } from './live.ts';
 import { Switch } from './Switch.tsx';
 
@@ -236,8 +236,65 @@ function StoreCard({ s, act }: { s: AdminStoreState; act: (fn: () => Promise<unk
         ))}
       </div>
 
+      {s.id === 's2' && <ProbeButton s={s} act={act} category="psu" page={2} />}
+      {s.id === 's2' && <ProbeButton s={s} act={act} category="psu" page={1} pages={5} path="/hardware/fonte?product_category=6444" />}
+
       <FullSweepForm key={JSON.stringify(s.fullSweepSettings)} s={s} act={act} />
     </Box>
+  );
+}
+
+/**
+ * Teste: abre páginas de categoria direto pelo endereço (cada uma numa aba nova, sem passar pelas
+ * anteriores), com o intervalo da varredura completa da loja antes de cada uma, e mostra o que a loja
+ * devolveu em cada; para na primeira que não abrir. Bloqueio não pausa a loja. Com `path`, o endereço
+ * fica editável (um caminho do site, com parâmetros).
+ */
+function ProbeButton({ s, act, category, page, pages = 1, path }: { s: AdminStoreState; act: (fn: () => Promise<unknown>, ok: string) => Promise<void>; category: CategoryId; page: number; pages?: number; path?: string }) {
+  const [running, setRunning] = useState(false);
+  const [results, setResults] = useState<ProbeResult[] | null>(null);
+  const [own, setOwn] = useState(path ?? '');
+  const name = CATEGORY_DEFS[category].name.toLowerCase();
+  const { minS, maxS } = s.fullSweepSettings;
+  const last = page + pages - 1;
+  const what = path !== undefined ? `${own} (páginas ${page} a ${last})` : pages > 1 ? `páginas ${page} a ${last} de ${name}` : `página ${page} de ${name}`;
+  const validPath = path === undefined || /^\/(?!\/)[^\s\\]{0,300}$/.test(own);
+  const run = async () => {
+    setRunning(true);
+    setResults(null);
+    const body = { category, page, ...(pages > 1 && { pages }), ...(path !== undefined && { path: own }) };
+    await act(() => adminApi<ProbeResult[]>(`/stores/${s.id}/probe`, { method: 'POST', body }).then(setResults), `${s.name}: teste de ${what} terminou.`);
+    setRunning(false);
+  };
+  const wait = pages > 1 ? ` Uma página a cada ${minS} a ${maxS} s (o intervalo da varredura completa), parando na primeira que não abrir.` : '';
+  return (
+    <div className="mt-3 space-y-1 border-t border-zinc-200 pt-3 text-xs text-zinc-500 dark:border-zinc-800">
+      <div className="flex flex-wrap items-center gap-2">
+        <Btn
+          subtle
+          disabled={running || !s.enabled || !!s.pause || !!s.fullSweep || !validPath}
+          title={path !== undefined ? `Abre o endereço numa aba e vai para as páginas seguintes clicando no link da próxima, como a rotina.${wait} Bloqueio não pausa a loja.` : `Abre ${what} direto pelo endereço, numa aba nova, sem passar pelas anteriores. Bloqueio não pausa a loja.`}
+          onClick={() => void run()}
+        >
+          <FlaskConical className={`h-3.5 w-3.5 ${running ? 'animate-pulse' : ''}`} /> {running ? 'Testando…' : path !== undefined ? `Testar páginas ${page} a ${last} de` : `Testar ${what}`}
+        </Btn>
+        {path !== undefined && (
+          <input
+            value={own}
+            onChange={(e) => setOwn(e.target.value)}
+            disabled={running}
+            aria-label="Endereço do teste (caminho do site da loja)"
+            className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-2 py-1 font-mono text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+          />
+        )}
+      </div>
+      {running && pages > 1 && <p>Uma página a cada {minS} a {maxS} s: pode levar até {Math.ceil((pages * maxS) / 60)} min.</p>}
+      {results?.map((r, i) => (
+        <p key={i} className={r.status === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
+          Pág. {page + i}: {probeLabel(r)} <span className="break-all text-zinc-500">{r.url}</span>
+        </p>
+      ))}
+    </div>
   );
 }
 
