@@ -306,6 +306,73 @@ describe('leitor da ficha', () => {
     expect(readSheet('cooler', lines('Material do radiador:Alumínio', 'Dimensões do radiador:Comprimento: 275 mm')).radiatorMm).toBe(240);
   });
 
+  it('placa-mãe, processador, placa de vídeo e fonte: mais formatos das fichas (nov/2026, 3ª leva)', () => {
+    const mb = (...l: string[]) => readSheet('motherboard', lines(...l));
+    // Formato pelo rótulo "Configuração"/"PCB", no próprio rótulo ou numa linha só.
+    expect(mb('Configuração: M-ATX').formFactor).toBe('Micro-ATX');
+    expect(mb('Informações do PCB: mATX').formFactor).toBe('Micro-ATX');
+    expect(mb('Fator de forma Micro ATX: 9,6 pol. x 7,9 pol., 24,4 cm x 20,1 cm').formFactor).toBe('Micro-ATX');
+    expect(mb('Chipset: B650', 'M-ATX').formFactor).toBe('Micro-ATX');
+    expect(mb('- 1 x Conector de alimentação ATX de 24 pinos').formFactor).toBeUndefined(); // o conector não é o formato
+    // SATA.
+    expect(mb('Armazenamento:SATA 6Gb/s: 4').sataPorts).toBe(4);
+    expect(mb('Número de conectores SATA III: 4').sataPorts).toBe(4);
+    expect(mb('Portas SATA:', '2 slots M.2 e 4 interfaces de disco rígido SATA 6Gb/s, com suporte a RAID').sataPorts).toBe(4);
+    expect(mb('Interface: SATA: 6 Gb/s').sataPorts).toBeUndefined(); // a velocidade não é a quantidade
+    // PCIe x16 com a versão depois.
+    expect(mb('Slots de Expansão: 1x PCIEx x16 3.0').pcieX16).toBe('3.0');
+    expect(mb('Slots de expansão: 1*PCIEx16(5.0x16)').pcieX16).toBe('5.0');
+    expect(mb('Slots de expansão: 1 x PCIe x16 5.0, 1 x PCIe x1 3.0').pcieX16).toBe('5.0');
+    expect(mb('- 2 x slots PCI Express x16 (PCIE1: Gen4x16 mode; PCIE3: Gen3 modo x4)').pcieX16).toBe('4.0');
+    expect(mb('PCI_E1: PCIe 5.0 de primeira geração suporta até x16 (da CPU).').pcieX16).toBe('5.0');
+    expect(mb('Slot de Expansão: 1x PCI Express x16 slot').pcieX16).toBeUndefined(); // sem a versão: não chuta
+    // Slots de memória e máximo.
+    expect(mb('Memória:', 'Possui 4 slots para memória DDR5, que suportam até 192 GB de memória')).toMatchObject({ ramSlots: 4, ramMaxGb: 192 });
+    expect(mb('Memória:', 'São fornecidos quatro soquetes de memória DDR5, que podem suportar até 192 GB de memória').ramSlots).toBe(4);
+    expect(mb('Memory Support: 4 DIMMs, Dual Channel DDR5-6800+MHz(OC)').ramSlots).toBe(4);
+    expect(mb('Memória: DDR4', 'Slots DIMM: 2').ramSlots).toBe(2);
+    expect(mb('Memória Máxima (GB): 64').ramMaxGb).toBe(64);
+    expect(mb('Memória: DDR5', 'Frequências suportadas: 4.800 / 5.200 / 6.400 (OC) / 6.800 (OC) / OC+ MHz').ramMaxMhz).toBe(6800);
+    // M.2.
+    expect(mb('1 x Tomada Ultra M.2, suporta M Key type 2242/2260/2280 M.2 SATA3 6.0 Gb/s e módulo M.2 PCI Express até Gen3 x4 (32 Gb/s)')).toMatchObject({ m2Slots: 1, m2Pcie: '3.0' });
+    expect(mb('SSD: 1x slot M.2 4.0 (suporta apenas SSD de canal 2242/2280 PCIE X4/X2)').m2Pcie).toBe('4.0');
+    expect(mb('M.2: 1 slot M.2 PCIe 3.0').m2Pcie).toBe('3.0');
+    expect(mb('1 slot M.2_WIFI (apenas placa de rede CNVI)').m2Slots).toBeUndefined(); // o M.2 da placa de rede não conta
+    // Rede pelo chip ou pela velocidade.
+    expect(mb('LAN: Intel I219V negociação automática de 10/100/1000 Mb/s').lan).toBe('1 Gb');
+    expect(mb('Lan: Realtek GbE LAN (1000 Mbit / 100 Mbit)').lan).toBe('1 Gb');
+    expect(mb('LAN: Intel I226-V').lan).toBe('2.5 Gb');
+
+    const cpu = (...l: string[]) => readSheet('cpu', lines(...l));
+    expect(cpu('Soquete:1700').socket).toBe('LGA1700');
+    expect(cpu('Frequencia de Operação: 3.8 GHz', 'Frequencia Max Turbo: 4.8 GHz')).toMatchObject({ baseGhz: 3.8, boostGhz: 4.8 });
+    expect(cpu('P-core Max Turbo Frequency (GHz)³: Up to 5.3', 'E-Core Max Turbo Frequency (GHz)³: Up to 4.6').boostGhz).toBe(5.3);
+    expect(cpu('Clock Max Turbo: 4.6 GHz').boostGhz).toBe(4.6);
+    expect(cpu('Frequência Core Turbo:Até 4.90 Ghz').boostGhz).toBe(4.9);
+    expect(cpu('Esconderijo: Cache inteligente Intel de 20 MB', 'Total do cache L2: 22 MB')).toMatchObject({ l3Mb: 20, l2Mb: 22 });
+    expect(cpu('Tamanho do Cache Inteligente Intel (L3) [MB]: 33 MB').l3Mb).toBe(33);
+    expect(cpu('Voltagem / TDP: 125W').tdpW).toBe(125);
+    expect(cpu('Processor Base Power(W): 125', 'Maximum Turbo Power (W): 159').tdpW).toBe(125);
+    expect(cpu('Nome da GPU: Intel UHD Graphics 770').igpu).toBe('Intel UHD Graphics 770');
+    expect(cpu('Especificações da GPU : Nome da GPU: Gráficos Intel').igpu).toBe('Intel Graphics');
+
+    const gpu = (...l: string[]) => readSheet('gpu', lines(...l));
+    expect(gpu('Thermal Solution: 3 Fan', 'Minimum Power Supply Requirement: 800 watt')).toMatchObject({ fans: 3, psuW: 800 });
+
+    const psu = (...l: string[]) => readSheet('psu', lines(...l));
+    expect(psu('CPU/EPS 4+4 pinos x 2: 650 mm*2', 'PCI-E 16 pinos x 2: 700 mm*2', 'PCI-E 16 pinos para PCI-E 8 pinos x 2: 700 mm*2', 'PCI-E 6+2 pinos x 8: 650 mm+150 mm*4', 'SATA x 16: 650 mm+150 mm*4')).toMatchObject({ eps: 2, pcie16: 2, pcie8: 8, sata: 16 });
+    expect(psu('PCI-e 6+2 Pinos x4 = 2x (500+120mm)').pcie8).toBe(4);
+    expect(psu('Conectores de CPU EPS 12V (4+4 pinos) - 2', 'Conectores PCIe (6+2 pinos) - 3', 'Conectores SATA de 5 pinos - 9')).toMatchObject({ eps: 2, pcie8: 3, sata: 9 });
+    expect(psu('Cabos/conectores full modular: - ATX (20+4Pin) Malha de Nylon', '- CPU (4+4Pin) x2 peças', '- GPU (GEN 5.1/12V-2x6) 1pç', '- GPU (PCI-e/6+2Pin) 2 cabos 4 conectores', '- SATA 6pçs: 3 cabos 9 conectores')).toMatchObject({ modular: 'Total', eps: 2, pcie16: 1, pcie8: 4, sata: 9 });
+    expect(psu('3 x SATA com 4 conectores').sata).toBe(12); // continua multiplicando
+    expect(psu('6 x SATA (3 cabos com 3 conectores cada: 500mm + 150mm + 150mm)').sata).toBe(6); // o 6 já são os conectores
+    expect(psu('Modular:Semi').modular).toBe('Semi');
+    expect(psu('Certificação Cybernetics:Platinum').efficiency).toBe('Cybenetics Platinum');
+    expect(psu('Cybenetics Efficiency:Gold', 'Eficiência 80PLUS:Gold').efficiency).toBe('80 Plus Gold'); // os dois: vale o 80 Plus
+    expect(psu('Certificado Cybenetics: Cybenetics Gold', 'Classificação 80 Plus: 80 Plus Gold (até 90%)').efficiency).toBe('80 Plus Gold'); // antes: "80 Plus White"
+    expect(psu('Eficiência 80 plus: 80 Plus Platinum').efficiency).toBe('80 Plus Platinum');
+  });
+
   it('marca e modelo; sem nada reconhecido, nada (nunca chuta)', () => {
     expect(readSheet('ssd', lines('MARCA: LEXAR', 'MODELO: NQ100 256GB', 'P/N: LNQ100X256G-RNNNG'))).toEqual({ brand: 'Lexar', model: 'LNQ100X256G-RNNNG' });
     expect(readSheet('cpu', 'Garantia: 12 meses')).toEqual({});

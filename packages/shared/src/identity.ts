@@ -9,7 +9,8 @@ import { GPU_BRANDS, type Specs, type StoreId } from './types.ts';
  *   dígitos; sem o "NAC" que uma loja acrescenta no fim) e também é procurado no título e no endereço
  *   das outras lojas (uma loja usa o código interno do fabricante, "90YV0MD0-M0NA00", e põe o nome
  *   comercial, "TUF-RTX5070TI-O16G-GAMING", no título). É o nível em que a ficha técnica de um anúncio
- *   vale para o outro.
+ *   vale para o outro. No processador, também o mesmo modelo com a descrição do título sem contradição
+ *   (clocks, cache, soquete, núcleos, vídeo, cooler, tray/OEM × box), com ou sem part number.
  * - **grupo** (`group`): o exato mais o que é o mesmo modelo para mostrar junto: mesmo EAN, mesma chave
  *   do título (modelKey) ou, em placa de vídeo de marca conhecida, a mesma assinatura (marca + chip +
  *   memória + linha: "ASRock Arc B570 Challenger OC" com e sem o código no título).
@@ -106,6 +107,53 @@ const agree = (a: Specs, b: Specs) =>
     return x !== undefined && x === (b as Record<string, unknown>)[k];
   });
 
+/** Clocks e cache escritos no título do processador ("3.4GHz (4.5GHz Turbo)", "Cache 100MB"). */
+function cpuDescription(title: string): { base?: number; boost?: number; cache?: number } {
+  const t = stripAccents(title).toLowerCase();
+  const ghz = [...t.matchAll(/(\d{1,2}[.,]\d{1,2})\s*ghz/g)].map((m) => Number(m[1]!.replace(',', '.')));
+  const cache = t.match(/cache\s*(?:l3\s*)?(?:de\s*)?(\d{1,3})\s*mb|(\d{1,3})\s*mb\s*(?:de\s*)?(?:cache|l3)/);
+  return {
+    ...(ghz.length && { base: ghz[0] }),
+    ...(ghz.length > 1 && { boost: Math.max(...ghz.slice(1)) }),
+    ...(cache && { cache: Number(cache[1] ?? cache[2]) }),
+  };
+}
+
+/** Acompanha cooler: o que as specs dizem ou, abreviado no título, "S/ Cooler" e "C/ Cooler". */
+const coolerOf = (i: IdentityItem): boolean | undefined => {
+  if (i.specs.cooler !== undefined) return i.specs.cooler;
+  const t = stripAccents(i.title).toLowerCase();
+  return /s\/\s?cooler/.test(t) ? false : /c\/\s?cooler/.test(t) ? true : undefined;
+};
+
+/** Dois processadores do mesmo modelo se contradizem em algo que os dois títulos dizem. */
+function cpuConflict(a: IdentityItem, b: IdentityItem): boolean {
+  if (conflict(a.specs, b.specs)) return true;
+  const ka = coolerOf(a);
+  const kb = coolerOf(b);
+  if (ka !== undefined && kb !== undefined && ka !== kb) return true;
+  for (const k of ['cores', 'threads', 'igpu'] as const) {
+    const x = a.specs[k];
+    const y = b.specs[k];
+    if (x !== undefined && y !== undefined && x !== y) return true;
+  }
+  // Tray/OEM (sem caixa) é outro produto da box: pelo título ou pelo part number (Intel "CM…", "…TRAY", AMD "…MPK").
+  const tray = (i: IdentityItem) => {
+    const m = productMpn(i.mpn) ?? '';
+    // Também o código tray no título: Intel "Cm8070104…", AMD "Yd340bc5m4mfh" / "…OFH".
+    return /\b(tray|oem|mpk)\b|sem caixa|s\/\s?caixa|\bcm\d{6,}|\byd\w+[mo]fh\b/.test(stripAccents(i.title).toLowerCase()) || /^CM\d|TRAY$|MPK$/.test(m);
+  };
+  if (tray(a) !== tray(b)) return true;
+  // Cooler que acompanha, quando os dois dizem: "Wraith Stealth" × "Wraith Prism" são caixas diferentes.
+  const coolerName = (i: IdentityItem) => stripAccents(i.title).toLowerCase().match(/wraith\s*(stealth|prism|spire|max)|laminar\s*(rm\d|rh\d)/)?.[0].replace(/\s+/g, ' ');
+  const ca = coolerName(a);
+  const cb = coolerName(b);
+  if (ca && cb && ca !== cb) return true;
+  const da = cpuDescription(a.title);
+  const db = cpuDescription(b.title);
+  return (['base', 'boost', 'cache'] as const).some((k) => da[k] !== undefined && db[k] !== undefined && Math.abs(da[k]! - db[k]!) > 0.05);
+}
+
 /**
  * Dois anúncios da mesma loja com o mesmo código são o mesmo produto (anúncio repetido) só se as specs
  * não se contradizem e o título bate (mesma chave) ou as specs principais confirmam. Senão o código é
@@ -183,6 +231,28 @@ export function identifyProducts(items: IdentityItem[]): Identity {
       const h = hay.get(y.id)!;
       if (h.all.includes(m) && (textHasCode(h.title, m) || textHasCode(h.url, m))) u.union(x.id, y.id);
     }
+  }
+
+  // 2b. Processador: mesmo modelo e a descrição do título não se contradiz (soquete, núcleos, threads,
+  // vídeo, cooler, clocks, cache): é o mesmo produto, com ou sem part number, e com códigos de embalagem
+  // diferentes ("100-100000651POF" e "…WOF" do mesmo 5800X3D). Quem caberia em dois conjuntos (o título
+  // não diz se tem cooler e há "com" e "sem" do mesmo modelo) fica de fora.
+  const byCpu = new Map<string, IdentityItem[]>();
+  for (const i of items) {
+    const s = i.specs;
+    if (s.cpuModel && s.cpuLine) push(byCpu, `${s.cpuBrand ?? ''}|${s.cpuLine}|${s.cpuModel}`.toLowerCase(), i);
+  }
+  for (const list of byCpu.values()) {
+    if (list.length < 2) continue;
+    // Os que dizem se têm cooler primeiro: formam os conjuntos; os outros entram onde couberem.
+    const ordered = [...list].sort((a, b) => Number(coolerOf(a) === undefined) - Number(coolerOf(b) === undefined));
+    const clusters: IdentityItem[][] = [];
+    for (const x of ordered) {
+      const fits = clusters.filter((c) => c.every((y) => !cpuConflict(x, y)));
+      if (fits.length === 1) fits[0]!.push(x);
+      else if (!fits.length) clusters.push([x]);
+    }
+    for (const c of clusters) for (const x of c.slice(1)) u.union(c[0]!.id, x.id);
   }
 
   const exactRoot = u.copy();

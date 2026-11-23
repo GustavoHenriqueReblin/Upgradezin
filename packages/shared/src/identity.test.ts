@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { gpuSignature, identifyProducts, productMpn, textHasCode, type IdentityItem } from './identity.ts';
+import { extractCpuSpecs } from './cpu.ts';
 import type { Specs, StoreId } from './types.ts';
 
 /** Anúncio para os testes (títulos e códigos como nos reais, nov/2026). */
@@ -118,4 +119,44 @@ describe('mesmo produto em lojas diferentes', () => {
     ]);
     expect(together(r.group)).toEqual([['a', 'b', 'c']]);
   });
+
+  it('processador: mesmo modelo e a descrição do título sem contradição é o mesmo produto, com ou sem part number e com códigos de embalagem diferentes', () => {
+    const cpu = (id: string, store: StoreId, title: string, mpn?: string) => item(id, store, title, { mpn, specs: extractCpuSpecs(title) });
+    const r = identifyProducts([
+      cpu('pichau-pof', 's2', 'Processador AMD Ryzen 7 5800X3D, 8-Core, 16-Threads, 3.4GHz (4.5GHz Turbo), Cache 100MB, AM4, 100-100000651POF', '100-100000651POF'),
+      cpu('kabum-pof', 's1', 'Processador AMD Ryzen 7 5800X3D, 3.4GHz (4.5GHz Max Turbo), Cache 100MB, 8 Núcleos, 16 Threads, AM4, Sem Vídeo Integrado - 100-100000651POF', '100-100000651POF'),
+      cpu('pichau-wof', 's2', 'Processador AMD Ryzen 7 5800X3D, 8-Core, 16-Threads, 3.4GHz (4.5GHz Turbo), Cache 100MB, AM4, 100-100000651WOF', '100-100000651WOF'),
+      cpu('tera-aniv', 's3', 'Processador AMD Ryzen 7 5800X3D Anniversary Edition, 3.4GHz (4.5GHz Turbo), 8-Cores 16-Threads, AM4, Sem Cooler, Sem vídeo'),
+      cpu('tera', 's3', 'Processador AMD Ryzen 7 5800X3D, 3.4GHz (4.5GHz Turbo), 8-Cores 16-Threads, AM4, Sem Cooler, Sem vídeo'),
+      cpu('outro', 's3', 'Processador AMD Ryzen 7 5800X, 3.8GHz (4.7GHz Turbo), 8-Cores 16-Threads, AM4, Sem Cooler, Sem vídeo'), // outro modelo
+    ]);
+    expect(together(r.exact)).toEqual([['kabum-pof', 'pichau-pof', 'pichau-wof', 'tera', 'tera-aniv'], ['outro']]);
+    expect(r.exact.get('tera')).toBe('100100000651POF'); // a chave continua a do part number
+  });
+
+  it('processador: com e sem cooler do mesmo modelo ficam separados; clock diferente no título não junta', () => {
+    const cpu = (id: string, store: StoreId, title: string, mpn?: string) => item(id, store, title, { mpn, specs: extractCpuSpecs(title) });
+    const r = identifyProducts([
+      cpu('box', 's1', 'Processador AMD Ryzen 5 5600, 3.5GHz (4.4GHz Max Turbo), AM4, Cooler Wraith Stealth - 100-100000927BOX', '100-100000927BOX'),
+      cpu('sem', 's2', 'Processador AMD Ryzen 5 5600, 3.5GHz (4.4GHz Turbo), AM4, Sem Cooler, 100-100000927MPK', '100-100000927MPK'),
+      cpu('box2', 's3', 'Processador AMD Ryzen 5 5600, 3.5GHz (4.4GHz Turbo), AM4, Com Cooler Wraith'),
+      cpu('nao-diz', 's3', 'Processador AMD Ryzen 5 5600, 3.5GHz (4.4GHz Turbo), AM4'),
+      cpu('clock', 's2', 'Processador AMD Ryzen 5 5600, 3.7GHz (4.6GHz Turbo), AM4, Sem Cooler'),
+    ]);
+    expect(together(r.exact)).toEqual([['box', 'box2', 'nao-diz'], ['clock'], ['sem']]); // o que não diz e não é tray vai com a box
+  });
+
+  it('processador: tray/OEM (no título ou no código) é outro produto da box; cooler diferente na caixa também', () => {
+    const cpu = (id: string, store: StoreId, title: string, mpn?: string) => item(id, store, title, { mpn, specs: extractCpuSpecs(title) });
+    const r = identifyProducts([
+      cpu('box', 's2', 'Processador Intel Core i3-10100, 4-Core, 8-Threads, 3.6Ghz (4.3Ghz Turbo), Cache 6MB, LGA1200, BX8070110100', 'BX8070110100'),
+      cpu('box2', 's3', 'Processador Intel Core i3 10100 3.60GHz (4.30GHz Turbo), 10ª Geração, 4-Cores 8-Threads, LGA 1200'),
+      cpu('cm', 's1', 'Processador Intel Core i3-10100 3.6ghz Turbo 4.3ghz 6mbcache 4nucleos 8threads LGA 1200 S/ Cooler Cm8070104291317'),
+      cpu('oem', 's1', 'Processador Intel Core i3-10100 LGA 1200 Oem'),
+      cpu('stealth', 's3', 'Processador AMD Ryzen 7 7700 3.8GHz (5.3GHz Turbo), 8-Cores 16-Threads, AM5, Com Cooler AMD Wraith Stealth'),
+      cpu('prism', 's3', 'Processador AMD Ryzen 7 7700 3.8GHz (5.3GHz Turbo), 8-Cores 16-Threads, AM5, Com Cooler AMD Wraith Prism'),
+    ]);
+    expect(together(r.exact)).toEqual([['box', 'box2'], ['cm', 'oem'], ['prism'], ['stealth']]);
+  });
 });
+
