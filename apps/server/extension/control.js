@@ -69,6 +69,60 @@ const ops = {
     const loaded = await waitReady(tabId, timeout);
     return { loaded, ...(await info(tabId)) };
   },
+  /**
+   * Próxima página de uma lista paginada, pelo clique no link dela (como uma pessoa): o site troca a
+   * lista sem recarregar, buscando os dados da página nova em segundo plano (pedido "?page=N&_rsc=…"
+   * do Next.js). Antes do clique, instala na página uma escuta que guarda a resposta desse pedido e a
+   * devolve. O site já tinha os dados guardados (pré-carregou o link) e não pediu: faz o mesmo pedido
+   * da página, com o cabeçalho RSC. Sem o link na página: { clicked: false }.
+   */
+  async clickPage({ tabId, href, timeout }) {
+    const main = async (func, args = []) => {
+      const [r] = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func, args });
+      return r?.result;
+    };
+    const clicked = await main((h) => {
+      if (!window.__uzFetchHooked) {
+        window.__uzFetchHooked = true;
+        const orig = window.fetch;
+        window.fetch = async function (...a) {
+          const res = await orig.apply(this, a);
+          try {
+            const u = new URL(typeof a[0] === 'string' ? a[0] : a[0].url, location.href);
+            if (u.searchParams.has('_rsc')) {
+              u.searchParams.delete('_rsc');
+              const key = u.pathname + u.search;
+              res.clone().text().then((text) => { window.__uzRsc = { key, text }; }).catch(() => {});
+            }
+          } catch {}
+          return res;
+        };
+      }
+      window.__uzRsc = null;
+      const link = [...document.querySelectorAll('a[href]')].find((x) => x.getAttribute('href') === h);
+      if (!link) return false;
+      link.scrollIntoView({ block: 'center' });
+      link.click();
+      return true;
+    }, [href]);
+    if (!clicked) return { clicked: false, ...(await info(tabId)) };
+    const until = Date.now() + timeout;
+    let rsc = null;
+    let via = 'click';
+    while (Date.now() < until) {
+      const got = await main((h) => (window.__uzRsc && window.__uzRsc.key === h ? window.__uzRsc.text : null), [href]).catch(() => null);
+      if (got) { rsc = got; break; }
+      // Já está na página nova e nada foi pedido (dados pré-carregados): pede igual ao site.
+      const here = await main(() => location.pathname + location.search).catch(() => '');
+      if (here === href && Date.now() > until - timeout + 4000) {
+        rsc = await main(async (h) => (await fetch(h, { headers: { RSC: '1' } })).text(), [href]).catch(() => null);
+        via = 'fetch';
+        break;
+      }
+      await sleep(200);
+    }
+    return { clicked: true, via, rsc, ...(await info(tabId)) };
+  },
   async info({ tabId }) {
     return info(tabId);
   },

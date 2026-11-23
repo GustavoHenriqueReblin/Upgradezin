@@ -178,7 +178,7 @@ const REDIRECT_WAIT_MS = 2000;
  * Uma página da loja (busca ou categoria): abre no Chrome, confere redirecionamento e bloqueio
  * e lê os itens do payload. Usada pela busca e pela varredura.
  */
-async function readS2Page(url: URL, signal: AbortSignal, onNeedsHuman?: () => void): Promise<{ items: S2Item[]; totalPages: number }> {
+async function readS2Page(url: URL, signal: AbortSignal, onNeedsHuman?: () => void, keepTab = false): Promise<{ items: S2Item[]; totalPages: number }> {
   takePage('s2');
   // Termo igual ao nome de uma categoria ("Water Cooler", "Gabinete"): a loja redireciona a busca
   // para a página da categoria, que não traz a lista (para o navegador da coleta, vem a página de
@@ -193,9 +193,10 @@ async function readS2Page(url: URL, signal: AbortSignal, onNeedsHuman?: () => vo
     loaded = await loadPage('s2', url.toString(), {
       signal,
       onNeedsHuman,
+      keepTab,
       // O redirecionamento é feito por script da página, instantes depois de abrir: sem lista e
       // ainda no mesmo endereço, espera um pouco e lê de novo antes de chamar de bloqueio.
-      recheck: (p) => !redirectedTo(p.url) && !parseS2Rsc(rscFromHtml(p.html)).hasProducts,
+      recheck: (p) => !p.rsc && !redirectedTo(p.url) && !parseS2Rsc(rscFromHtml(p.html)).hasProducts,
       recheckMs: REDIRECT_WAIT_MS,
     });
   } catch (err) {
@@ -206,9 +207,10 @@ async function readS2Page(url: URL, signal: AbortSignal, onNeedsHuman?: () => vo
   const to = redirectedTo(loaded.url);
   if (to) throw new SearchRedirectError('s2', to);
   // Lê do HTML: depois da hidratação o Next.js esvazia self.__next_f no navegador.
-  const { items, totalPages, hasProducts, redirect } = parseS2Rsc(rscFromHtml(loaded.html));
+  // Lida pelo clique (lista paginada): os dados vêm do pedido que o site fez, não do HTML.
+  const { items, totalPages, hasProducts, redirect } = parseS2Rsc(loaded.rsc ?? rscFromHtml(loaded.html));
   if (!hasProducts && redirect) throw new SearchRedirectError('s2', redirect);
-  if (items.length === 0) await saveDebugHtml('s2', loaded.html, 'no-items');
+  if (items.length === 0) await saveDebugHtml('s2', loaded.rsc ?? loaded.html, 'no-items');
   // Página sem dados de produto não é "0 resultados": a loja limitou o acesso. Respeita e para.
   if (!hasProducts) throw new BlockedError('s2', 'unavailable', 'Página sem dados de produto');
   return { items, totalPages };
@@ -251,7 +253,9 @@ export const s2: StoreAdapter = {
   },
   /** Página da categoria (aberta direto traz a lista, 36 itens por página, paginada com ?page=N). */
   async sweepPage({ category, url, page, signal }) {
-    const { items, totalPages } = await readS2Page(pageUrl(url, page), signal);
+    // Página da categoria: mesma aba entre as páginas e, da segunda em diante, pelo clique no link da
+    // página (como uma pessoa), em vez de abrir cada ?page=N numa aba nova (a loja passou a barrar isso).
+    const { items, totalPages } = await readS2Page(pageUrl(url, page), signal, undefined, true);
     const now = new Date().toISOString();
     return {
       offers: items.map((it) => mapS2Item(it, now, category)).filter((o): o is Offer => !!o),

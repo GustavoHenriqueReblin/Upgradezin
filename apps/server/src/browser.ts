@@ -11,7 +11,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { StoreId } from '@upgradezin/shared';
-import { closeExtBrowsers, ensureExtBrowser, extBrowserOpen, openExtTab, type Tab } from './browser-ext.ts';
+import { closeExtBrowsers, ensureExtBrowser, extBrowserOpen, openExtTab, type OpenedTab, type Tab } from './browser-ext.ts';
 import { config } from './config.ts';
 import { BlockedError, sleep } from './pace.ts';
 
@@ -42,14 +42,25 @@ async function step(store: StoreId, msg: string) {
 /** Lojas cujo Chrome esta execução já abriu (para o status do admin). */
 const openStores = new Set<StoreId>();
 
+type Opener = (store: StoreId) => Promise<OpenedTab>;
+const realOpener: Opener = async (store) => {
+  await ensureExtBrowser(store, windowArgs(store));
+  openStores.add(store);
+  return openExtTab(store);
+};
+let opener: Opener = realOpener;
+
+/** Testes: troca a abertura de aba no Chrome (null volta ao Chrome). */
+export function useTabOpener(fake: Opener | null) {
+  opener = fake ?? realOpener;
+}
+
 /**
  * Abre uma aba nova no Chrome da loja, entrega para `fn` e fecha essa aba no fim (dando certo
  * ou não). A aba de controle da loja continua aberta.
  */
 async function withTab<T>(store: StoreId, fn: (tab: Tab) => Promise<T>): Promise<T> {
-  await ensureExtBrowser(store, windowArgs(store));
-  openStores.add(store);
-  const t = await openExtTab(store);
+  const t = await opener(store);
   await step(store, `aba nova aberta ${t.sameWindow ? 'na mesma janela da aba de controle' : 'JANELA DIFERENTE'}; ${t.tabsInWindow} abas na janela`);
   try {
     const out = await fn(t.tab);
@@ -103,11 +114,21 @@ export interface LoadedPage {
   html: string;
   url: string;
   title: string;
+  /** Lista paginada lida pelo clique (keepTab): os dados que o site buscou para a página nova (o HTML continua o da página aberta antes). */
+  rsc?: string;
 }
 
 export interface LoadOptions {
   signal?: AbortSignal;
   onNeedsHuman?: () => void;
+  /**
+   * Lista paginada (página de categoria): usa uma aba que fica aberta entre as páginas e, quando a
+   * página aberta tem o link da pedida (a próxima da mesma lista), clica nele como uma pessoa: o site
+   * troca a lista sem recarregar e os dados vêm em `rsc` (o pedido que o site fez), não no HTML. Sem
+   * o link (primeira página, outra categoria), abre o endereço. A aba fecha sozinha depois de
+   * KEPT_TAB_IDLE_MS parada, ou quando uma página dá erro.
+   */
+  keepTab?: boolean;
   /** Espera este seletor aparecer (até 15 s) antes de ler; sem ele, lê assim que a página carrega. */
   waitFor?: string;
   /**
@@ -123,23 +144,87 @@ export type PageError = Error & { finalUrl?: string };
 
 type Loader = (store: StoreId, url: string, opts: LoadOptions) => Promise<LoadedPage>;
 
-const realLoader: Loader = (store, url, opts) =>
-  withTab(store, async (tab) => {
-    try {
-      await gotoChecked(tab, store, url, opts.signal, opts.onNeedsHuman);
-    } catch (err) {
-      throw Object.assign(err as object, { finalUrl: await tab.currentUrl().catch(() => undefined) });
+/** Lê a página aberta na aba (com a releitura de quem troca sozinho logo depois de abrir). */
+async function readTab(store: StoreId, tab: Tab, url: string, opts: LoadOptions): Promise<LoadedPage> {
+  try {
+    await gotoChecked(tab, store, url, opts.signal, opts.onNeedsHuman);
+  } catch (err) {
+    throw Object.assign(err as object, { finalUrl: await tab.currentUrl().catch(() => undefined) });
+  }
+  if (opts.waitFor) await tab.waitForSelector(opts.waitFor, { timeout: 15_000 }).catch(() => {});
+  const read = async (): Promise<LoadedPage> => ({ html: await tab.content(), url: await tab.currentUrl(), title: await tab.title() });
+  let page = await read();
+  if (opts.recheck?.(page)) {
+    await sleep(opts.recheckMs ?? 2000, opts.signal);
+    page = await read();
+  }
+  if (config.DEBUG_DUMPS && !page.html) await saveDebug(store, tab, 'empty');
+  return page;
+}
+
+/** Aba mantida aberta por loja entre as páginas de uma lista (keepTab). */
+const keptTabs = new Map<StoreId, { t: OpenedTab; timer?: NodeJS.Timeout }>();
+export const KEPT_TAB_IDLE_MS = 90_000;
+
+async function closeKeptTab(store: StoreId): Promise<void> {
+  const k = keptTabs.get(store);
+  if (!k) return;
+  keptTabs.delete(store);
+  clearTimeout(k.timer);
+  await k.t.close().catch(() => -1);
+}
+
+const sameSite = (a: string, b: string) => {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+};
+
+async function keptTabLoad(store: StoreId, url: string, opts: LoadOptions): Promise<LoadedPage> {
+  let k = keptTabs.get(store);
+  if (k) clearTimeout(k.timer);
+  const current = k ? await k.t.tab.currentUrl().catch(() => '') : '';
+  if (k && !current) {
+    await closeKeptTab(store); // aba que sumiu (fechada à mão, Chrome reiniciado)
+    k = undefined;
+  }
+  if (!k) {
+    k = { t: await opener(store) };
+    keptTabs.set(store, k);
+  }
+  try {
+    // A próxima da mesma lista, com o link dela na página aberta: pelo clique.
+    const target = new URL(url);
+    const href = target.pathname + target.search;
+    if (current && sameSite(current, url) && new URL(current).pathname === target.pathname) {
+      await step(store, `clicando em ${href}`);
+      const r = await k.t.tab.clickPage(href, { timeout: 30_000 });
+      // Clicou mas a resposta não veio a tempo: abre o endereço (abaixo), sem chamar de bloqueio.
+      if (r.clicked && r.rsc) {
+        const page: LoadedPage = { html: '', url: await k.t.tab.currentUrl(), title: await k.t.tab.title(), rsc: r.rsc };
+        if (MAINTENANCE.test(page.title)) throw new BlockedError(store, 'unavailable', `Página de manutenção: ${page.title.slice(0, 60)}`);
+        keepAlive(store, k);
+        return page;
+      }
     }
-    if (opts.waitFor) await tab.waitForSelector(opts.waitFor, { timeout: 15_000 }).catch(() => {});
-    const read = async (): Promise<LoadedPage> => ({ html: await tab.content(), url: await tab.currentUrl(), title: await tab.title() });
-    let page = await read();
-    if (opts.recheck?.(page)) {
-      await sleep(opts.recheckMs ?? 2000, opts.signal);
-      page = await read();
-    }
-    if (config.DEBUG_DUMPS && !page.html) await saveDebug(store, tab, 'empty');
+    const page = await readTab(store, k.t.tab, url, opts);
+    keepAlive(store, k);
     return page;
-  });
+  } catch (err) {
+    await closeKeptTab(store);
+    throw err;
+  }
+}
+
+function keepAlive(store: StoreId, k: { t: OpenedTab; timer?: NodeJS.Timeout }) {
+  k.timer = setTimeout(() => void closeKeptTab(store), KEPT_TAB_IDLE_MS);
+  k.timer.unref?.();
+}
+
+const realLoader: Loader = (store, url, opts) =>
+  opts.keepTab ? keptTabLoad(store, url, opts) : withTab(store, (tab) => readTab(store, tab, url, opts));
 
 let loader: Loader = realLoader;
 
@@ -189,6 +274,7 @@ export async function saveDebugHtml(store: StoreId, html: string, tag: string) {
 
 /** Fecha o Chrome de todas as lojas (ao desligar o servidor ou no fim de um comando de terminal). */
 export async function closeBrowser() {
+  for (const store of [...keptTabs.keys()]) await closeKeptTab(store);
   openStores.clear();
   await closeExtBrowsers();
 }

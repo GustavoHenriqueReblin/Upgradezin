@@ -4,7 +4,7 @@ import { usePageLoader, type LoadOptions, type LoadedPage } from '../browser.ts'
 import { BlockedError, SearchRedirectError } from '../pace.ts';
 import { fixture } from './fixtures.ts';
 import { s1 } from './s1.ts';
-import { s2 } from './s2.ts';
+import { rscFromHtml, s2 } from './s2.ts';
 import { s3 } from './s3.ts';
 
 /**
@@ -121,9 +121,21 @@ describe('todas as lojas pelo mesmo caminho (loadPage)', () => {
     const first = await s2.sweepPage!({ category: 'psu', url: 'https://www.s2.example/hardware/fonte', page: 1, signal: signal() });
     await s2.sweepPage!({ category: 'psu', url: 'https://www.s2.example/hardware/fonte', page: 3, signal: signal() });
     expect(calls.map((c) => c.url)).toEqual(['https://www.s2.example/hardware/fonte', 'https://www.s2.example/hardware/fonte?page=3']);
+    // Mesma aba entre as páginas, chegando à seguinte a partir da anterior (como um clique); a busca não.
+    expect(calls.every((c) => c.opts.keepTab)).toBe(true);
     expect(first.totalPages).toBe(61);
     expect(first.offers.length).toBeGreaterThan(0);
     expect(first.offers.every((o) => o.store === 's2')).toBe(true);
+  });
+
+  it('S2: página lida pelo clique (lista paginada): os dados vêm do pedido do site, não do HTML', async () => {
+    fakeChrome(() => ({ html: '', rsc: rscFromHtml(fixture('s2-psu.html')) }));
+    const r = await s2.sweepPage!({ category: 'psu', url: 'https://www.s2.example/hardware/fonte', page: 2, signal: signal() });
+    expect(r.offers.length).toBeGreaterThan(0);
+    expect(r.totalPages).toBe(61);
+    // Resposta sem os produtos (a loja limitou): bloqueio, não "0 resultados".
+    fakeChrome(() => ({ html: '', rsc: '<html><title>Site em Manutenção</title></html>' }));
+    await expect(s2.sweepPage!({ category: 'psu', url: 'https://www.s2.example/hardware/fonte', page: 3, signal: signal() })).rejects.toBeInstanceOf(BlockedError);
   });
 
   it('S3: espera os cards aparecerem e lê do HTML', async () => {

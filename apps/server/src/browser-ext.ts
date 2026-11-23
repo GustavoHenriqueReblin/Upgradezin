@@ -279,6 +279,11 @@ export async function closeExtBrowsers() {
 /** Uma aba aberta pela extensão no Chrome da loja. */
 export interface Tab {
   goto(url: string, opts?: { timeout?: number }): Promise<void>;
+  /**
+   * Clica no link `href` (caminho + busca, como no atributo) da página aberta e devolve os dados que o
+   * site buscou para a página nova (lista paginada que troca sem recarregar). clicked: false, sem o link.
+   */
+  clickPage(href: string, opts?: { timeout?: number }): Promise<{ clicked: boolean; rsc: string | null; via?: 'click' | 'fetch' }>;
   title(): Promise<string>;
   currentUrl(): Promise<string>;
   content(): Promise<string>;
@@ -287,7 +292,7 @@ export interface Tab {
   screenshot(opts: { path: string }): Promise<unknown>;
 }
 
-interface OpenedTab {
+export interface OpenedTab {
   tab: Tab;
   sameWindow: boolean;
   tabsInWindow: number;
@@ -302,6 +307,10 @@ export async function openExtTab(store: StoreId): Promise<OpenedTab> {
       const timeout = opts?.timeout ?? 45_000;
       // Sem o código HTTP (a extensão não o vê): o bloqueio é reconhecido pelo título e pelo conteúdo.
       await call(store, 'goto', { tabId, url, timeout }, timeout + 10_000);
+    },
+    async clickPage(href, opts) {
+      const timeout = opts?.timeout ?? 30_000;
+      return call<{ clicked: boolean; rsc: string | null; via?: 'click' | 'fetch' }>(store, 'clickPage', { tabId, href, timeout }, timeout + 10_000);
     },
     title: async () => (await call<{ title: string }>(store, 'info', { tabId })).title,
     currentUrl: async () => (await call<{ url: string }>(store, 'info', { tabId })).url,
