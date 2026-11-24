@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fieldColumn, formatSheetValue, isMainFor, missingMain, sheetFields, SHEET_FIELDS } from './fields.ts';
+import { fieldColumn, formatSheetValue, isMainFor, missingMain, missingOptional, sheetFields, SHEET_FIELDS } from './fields.ts';
 import { readSheet } from './read.ts';
 import { estimateSheet, readTitle } from './title.ts';
 import { parseWebReply, webKeys, webProductName, webPrompt } from './web.ts';
@@ -65,7 +65,9 @@ describe('campos por categoria', () => {
     const f = (c: 'cpu' | 'ram' | 'gpu' | 'cooler', k: string) => SHEET_FIELDS[c].find((x) => x.key === k)!;
     expect(formatSheetValue(f('cpu', 'baseGhz'), 3.4)).toBe('3,4 GHz');
     expect(formatSheetValue(f('ram', 'cl'), 16)).toBe('CL16');
-    expect(formatSheetValue(f('gpu', 'power16Pin'), false)).toBe('não');
+    // Valor de "não tem" do campo.
+    expect(formatSheetValue(f('gpu', 'power16Pin'), false)).toBe('não tem');
+    expect(formatSheetValue(f('gpu', 'power16Pin'), true)).toBe('sim');
     expect(formatSheetValue(f('cooler', 'sockets'), 'AM4,AM5')).toBe('AM4, AM5');
     expect(formatSheetValue(f('cpu', 'socket'), undefined)).toBe('');
   });
@@ -117,6 +119,9 @@ describe('leitor da ficha', () => {
       m2Pcie: '3.0',
       sataPorts: 4,
       lan: '1 Gb',
+      // A ficha traz a rede e não fala de Wi-Fi nem de Bluetooth: a placa não tem.
+      wifi: 'Não',
+      bluetooth: 'Não',
     });
   });
 
@@ -147,7 +152,7 @@ describe('leitor da ficha', () => {
   });
 
   it('memória: kit (2 x 8 GB), tipo pelo PC4/PC5, latência em vários jeitos', () => {
-    expect(readSheet('ram', lines('Capacidade: 16GB (2 x 8GB)', 'Frequência: 3600 MHz', 'Tipo de memória: DDR4', 'Latência: 16-20-20-38'))).toEqual({ capacityGb: 16, modules: 2, type: 'DDR4', mhz: 3600, cl: 16 });
+    expect(readSheet('ram', lines('Capacidade: 16GB (2 x 8GB)', 'Frequência: 3600 MHz', 'Tipo de memória: DDR4', 'Latência: 16-20-20-38'))).toEqual({ capacityGb: 16, modules: 2, type: 'DDR4', mhz: 3600, cl: 16, expo: false });
     expect(readSheet('ram', lines('Capacidade: 16GB', 'Frequência: 5600MHz', 'Padrão: PC5-44800', 'Latência: CL46'))).toEqual({ capacityGb: 16, modules: 1, type: 'DDR5', mhz: 5600, cl: 46 });
     expect(readSheet('ram', lines('Quantidade de Memória: 16GB (2x8GB)', 'Velocidade: 3600Mhz CL17-21-21')).cl).toBe(17);
   });
@@ -159,6 +164,7 @@ describe('leitor da ficha', () => {
       interface: 'NVMe PCIe 4.0',
       readMbs: 6000,
       writeMbs: 5000,
+      pcieGen: '4.0',
     });
     expect(readSheet('ssd', lines('Capacidade: 1 TB', 'Formato: 2.5"', 'Interface: SATA III 6.0Gb/s', 'Velocidade Sequencial de Leitura: Até 540 MB/s', 'Velocidade Sequencial de Escrita: Até 500 MB/s'))).toEqual({
       capacityGb: 1000,
@@ -166,6 +172,8 @@ describe('leitor da ficha', () => {
       interface: 'SATA',
       readMbs: 540,
       writeMbs: 500,
+      // SATA: sem geração PCIe.
+      pcieGen: 'Não',
     });
     expect(readSheet('ssd', 'Especificações: Capacidade: 2TB').capacityGb).toBe(2000); // rótulo dentro do valor
     // "Interface: PCIe" sem versão vale mais que um "Sata de 2,5 polegadas" solto na mesma ficha (como na S3, nov/2026).
@@ -223,7 +231,7 @@ describe('leitor da ficha', () => {
 
   it('cooler de ar: altura (marcada, pela ordem, ou a maior medida), TDP, ruído e soquetes', () => {
     const t = lines('Soquete: Intel: LGA1200/1151/1150/1155', 'AMD: AM4', 'Dimensões do dissipador: 131 x 76 x 155 mm', 'Dimensões da ventoinha: 120 x 120 x 25 mm', 'Ruído de operação: 25 dB(A)', 'TDP: 150W');
-    expect(readSheet('cooler', t)).toEqual({ type: 'ar', heightMm: 155, tdpW: 150, noiseDba: 25, sockets: 'LGA1200,LGA1151,LGA1150,LGA1155,AM4' });
+    expect(readSheet('cooler', t)).toEqual({ type: 'ar', heightMm: 155, tdpW: 150, noiseDba: 25, sockets: 'LGA1200,LGA1151,LGA1150,LGA1155,AM4', fanMm: 120 });
     expect(readSheet('cooler', 'Dimensões do Dissipador: 130 mm (L) x 92 mm (P) x 151 mm (A)').heightMm).toBe(151);
     expect(readSheet('cooler', lines('Dissipador de alumínio', 'Dimensões: 124 x 124 x 68 mm')).heightMm).toBe(68); // cooler baixo
   });
@@ -514,7 +522,7 @@ describe('busca na web: o JSON da categoria preenchido pela IA, e a estimativa',
     expect(q).toContain('Preencha este JSON com as especificações do cooler Hi Level Midnight Lite');
     expect(q).toContain('RESPONDA SOMENTE O JSON PREENCHIDO, VÁLIDO, SEM TEXTO ANTES OU DEPOIS.');
     expect(q).toContain('tipo: ar | water');
-    expect(q).toContain('{"produto":"Hi Level Midnight Lite","tipo":null,"altura_mm":null,"radiador_mm":null,"tdp_w":null,"ruido_dba":null,"soquetes":[],"ventoinhas":null,"confianca":null}');
+    expect(q).toContain('{"produto":"Hi Level Midnight Lite","tipo":null,"altura_mm":null,"radiador_mm":null,"tdp_w":null,"ruido_dba":null,"soquetes":[],"ventoinhas":null,"heatpipes":null,"ventoinha_mm":null,"confianca":null}');
     // Todas as categorias cabem no endereço da busca.
     for (const c of ['cpu', 'motherboard', 'gpu', 'ram', 'ssd', 'psu', 'case', 'cooler'] as const) {
       expect(webKeys(c).length).toBeGreaterThan(3);
@@ -598,5 +606,77 @@ describe('clock máximo do processador', () => {
   it('título "3.7ghz Turbo 4.4ghz": a base seguida da palavra turbo não é o turbo', () => {
     expect(readTitle('cpu', 'Processador Intel Core i3-10300 3.7ghz Turbo 4.4ghz 8mbcache 4nucleos 8threads LGA 1200')).toMatchObject({ baseGhz: 3.7, boostGhz: 4.4 });
     expect(readTitle('cpu', 'Processador AMD Ryzen 5 5600, 3.5GHz (4.4GHz Max Turbo), Cache 35MB, AM4')).toMatchObject({ baseGhz: 3.5, boostGhz: 4.4 });
+  });
+});
+
+describe('"não tem" × "não sei" e os campos novos', () => {
+  it('opcional vazio é "não sei"; o "não tem" do campo conta como preenchido; campo que não se aplica não falta', () => {
+    expect(missingOptional('motherboard', { wifi: 'Não', bluetooth: '5.3' })).not.toContain('wifi');
+    expect(missingOptional('motherboard', {})).toContain('wifi');
+    // Water cooler: altura e heatpipes não se aplicam; air cooler: o radiador não se aplica.
+    const water = missingOptional('cooler', { type: 'water', radiatorMm: 240 });
+    expect(water).not.toContain('heightMm');
+    expect(water).not.toContain('heatpipes');
+    const air = missingOptional('cooler', { type: 'ar' });
+    expect(air).toContain('heightMm');
+    expect(air).not.toContain('radiatorMm');
+    expect(formatSheetValue(SHEET_FIELDS.psu.find((f) => f.key === 'pcie16')!, 0)).toBe('não tem');
+  });
+
+  it('placa-mãe: sem Wi-Fi e Bluetooth quando a ficha traz a rede e não fala deles; VRM, dissipador e BIOS Flashback', () => {
+    const v = readSheet('motherboard', lines('Chipset: B650', 'LAN: Realtek 2.5Gb Ethernet', 'Alimentação: 12+2+1 fases com dissipador no VRM', 'Botão BIOS FlashBack'));
+    expect(v).toMatchObject({ wifi: 'Não', bluetooth: 'Não', vrmPhases: '12+2+1', vrmHeatsink: true, biosFlashback: true });
+    // Sem a parte de rede, não dá para dizer que não tem.
+    expect(readSheet('motherboard', 'Chipset: B650').wifi).toBeUndefined();
+    // Com Wi-Fi citado sem a versão: não é "não tem".
+    expect(readSheet('motherboard', lines('LAN: 1 Gb Ethernet', 'Wireless: Wi-Fi integrado')).wifi).toBeUndefined();
+    // "1+1+1+1" não são fases.
+    expect(readSheet('motherboard', 'Slots: 1+1+1+1 fases').vrmPhases).toBeUndefined();
+  });
+
+  it('processador: potência máxima (turbo)', () => {
+    expect(readSheet('cpu', lines('TDP: 125 W', 'Maximum Turbo Power: 253 W'))).toMatchObject({ tdpW: 125, maxPowerW: 253 });
+  });
+
+  it('placa de vídeo: arquitetura pelo chip, unidades, banda (lida ou pelo barramento × velocidade) e conectores sem o adaptador', () => {
+    const v = readSheet('gpu', lines('GPU: GeForce RTX 4070 Super', 'Núcleos CUDA: 7.168', 'Interface de memória: 192 bits', 'Velocidade da memória: 21 Gbps', 'Conectores de energia: 1x 16 pinos (adaptador 16 pinos para 2x 8 pinos incluso)'));
+    expect(v).toMatchObject({ architecture: 'Ada Lovelace', shaders: 7168, bandwidthGbs: 504, powerConnectors: '1x 16 pinos' });
+    expect(readSheet('gpu', lines('Chipset: Radeon RX 7600', 'Largura de banda: 288 GB/s', 'Conector de alimentação: 1x 8 pinos'))).toMatchObject({ architecture: 'RDNA 3', bandwidthGbs: 288, powerConnectors: '1x 8 pinos' });
+    expect(readSheet('gpu', lines('GPU: GeForce GTX 1650', 'Não requer alimentação externa')).powerConnectors).toBe('Não');
+  });
+
+  it('memória: XMP e EXPO; DDR4 não tem EXPO', () => {
+    expect(readSheet('ram', lines('Tipo: DDR5', 'Perfis: Intel XMP 3.0 e AMD EXPO'))).toMatchObject({ xmp: true, expo: true });
+    expect(readSheet('ram', lines('Tipo: DDR4', 'Compatível com Intel XMP 2.0'))).toMatchObject({ xmp: true, expo: false });
+    expect(readSheet('ram', 'Tipo: DDR5').expo).toBeUndefined();
+  });
+
+  it('SSD: geração PCIe, NAND (sem confundir com o "SLC cache"), DRAM e TBW', () => {
+    const v = readSheet('ssd', lines('Interface: PCIe 4.0 x4 NVMe', 'Memória: 3D NAND TLC com SLC cache', 'Sem DRAM (HMB)', 'Durabilidade (TBW): 600 TB'));
+    expect(v).toMatchObject({ pcieGen: '4.0', nand: 'TLC', dram: false, tbw: 600 });
+    expect(readSheet('ssd', lines('Interface: PCIe 5.0', 'Cache DRAM: 2 GB LPDDR4', 'Endurance: 1.200 TBW'))).toMatchObject({ pcieGen: '5.0', dram: true, tbw: 1200 });
+    expect(readSheet('ssd', 'Interface: SATA III').pcieGen).toBe('Não');
+  });
+
+  it('fonte: com a lista de conectores e sem o de 16 pinos, não tem', () => {
+    expect(readSheet('psu', lines('Potência: 650W', 'Conectores: 1x 24 pinos ATX, 2x 4+4 pinos CPU, 2x PCIe 6+2 pinos, 6x SATA')).pcie16).toBe(0);
+    expect(readSheet('psu', 'Potência: 650W').pcie16).toBeUndefined();
+  });
+
+  it('cooler: heatpipes (só air cooler) e o tamanho da ventoinha', () => {
+    expect(readSheet('cooler', lines('Dissipador de alumínio com 6 heatpipes', 'Dimensões do ventilador: 120 x 120 x 25 mm'))).toMatchObject({ type: 'ar', heatpipes: 6, fanMm: 120 });
+    expect(readSheet('cooler', lines('Radiador: 240 mm', '6 heatpipes')).heatpipes).toBeUndefined();
+  });
+
+  it('título com "Wifi" sem a versão: tem Wi-Fi', () => {
+    expect(readTitle('motherboard', 'Placa Mae Maxsun B760M Gaming Wifi Gank, DDR5, LGA1700').wifi).toBe('Wi-Fi');
+    expect(readTitle('motherboard', 'Placa Mãe Gigabyte X870M Aorus Elite Wifi7, DDR5').wifi).toBe('Wi-Fi 7');
+  });
+
+  it('web: "Não" é "não tem"; null é "não sei"; o pedido explica a diferença', () => {
+    expect(webPrompt('motherboard', 'Placa Mãe X')).toContain('responda "Não", 0 ou false; null só quando não souber');
+    const r = parseWebReply('motherboard', '{"produto":"X","wifi":"Não","bluetooth_versao":"não","fases_vrm":"14 + 2","bios_flashback":false,"dissipador_vrm":null,"confianca":"alta"}');
+    expect(r?.values).toEqual({ wifi: 'Não', bluetooth: 'Não', vrmPhases: '14+2', biosFlashback: false });
+    expect(parseWebReply('gpu', '{"produto":"X","conectores_alimentacao":"2 x 8-pin","confianca":"media"}')?.values).toEqual({ powerConnectors: '2x 8 pinos' });
   });
 });

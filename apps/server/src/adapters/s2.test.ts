@@ -113,6 +113,10 @@ describe('S2: ficha técnica da página do produto', () => {
       lengthMm: 228,
       pcie: '5.0',
       power16Pin: false,
+      // RTX 5060: Blackwell, 3.840 núcleos CUDA, 128 bits x 28 Gbps = 448 GB/s.
+      architecture: 'Blackwell',
+      shaders: 3840,
+      bandwidthGbs: 448,
     });
     expect(readSheet('case', sheetText(s2SheetFromHtml(fixture('s2-product-case.html'))!))).toMatchObject({
       brand: 'Acegeek',

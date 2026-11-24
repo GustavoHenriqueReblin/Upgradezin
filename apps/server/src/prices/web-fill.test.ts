@@ -61,6 +61,15 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
   }
   const signal = () => new AbortController().signal;
 
+  it('completo com opcional vazio também vai à web, depois dos que falta campo principal; com tudo preenchido (ou "não tem"), não vai', () => {
+    const db = caseDb();
+    // Um segundo gabinete, completo (tamanho e placas-mãe), mas sem as medidas: entra na fila, depois do incompleto.
+    const offer2 = { store: 's1', storeSku: '2', title: 'Gabinete Gamer Outro ABC, Mid Tower, ATX', url: 'https://www.s1.example/produto/2', priceCash: 300, inStock: true, specs: {}, modelKey: 'case:2', collectedAt: '' } as Offer;
+    saveCollection(db, { store: 's1', category: 'case', offers: [offer2], at: new Date().toISOString() });
+    savePage(db, { store: 's1', sku: '2', category: 'case', text: 'Tipo: Mid Tower\nPlacas-mãe: ATX, Micro-ATX' });
+    expect(webQueue(db).map((q) => q.title)).toEqual(['Gabinete Gamer Pichau XYZ, Preto, PXG-100A', 'Gabinete Gamer Outro ABC, Mid Tower, ATX']);
+  });
+
   it('um pedido por produto com o JSON da categoria; os valores entram na ficha como "web" e o produto sai da fila', async () => {
     const db = caseDb();
     const [q] = webQueue(db);
@@ -170,7 +179,11 @@ describe('precisa de você: a web não achou o que falta; preenchido à mão', (
     expect(after.origin.mbFormats).toMatchObject({ from: 'manual' });
     expect(after.origin.dimensions).toMatchObject({ from: 'manual' }); // vale mais que a página (450 x 210 x 480)
     expect(after.missing).toEqual([]);
-    expect(listSheetProducts(db, { category: 'case', state: 'manual' }).total).toBe(0);
+    // Completa, mas com opcionais vazios que a web já foi perguntada: continua na revisão (quanto mais dado, melhor).
+    expect(listSheetProducts(db, { category: 'case', state: 'manual' }).total).toBe(1);
+    const [done] = catalogProducts(db, 'case', since);
+    expect(done).toMatchObject({ state: 'complete', needsHuman: true });
+    expect(done!.gaps).toContain('maxGpuMm');
     // null apaga: volta o da página.
     setManualSheet(db, p!.key, 'case', { dimensions: null });
     expect(productSheet(db, 's1', '1')!.values.dimensions).toBe('450 x 210 x 480');

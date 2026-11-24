@@ -31,7 +31,7 @@ describe('tabelas de ficha por categoria', () => {
 
   it('guarda a página (texto e campos lidos); página sem ficha também fica guardada; ler de novo troca', () => {
     const db = openDb(':memory:');
-    expect(savePage(db, { store: 's1', sku: '1', category: 'ram', text: RAM_FULL, at: NOW })).toEqual({ brand: 'Kingston', capacityGb: 16, modules: 2, type: 'DDR4', mhz: 3200, cl: 16 });
+    expect(savePage(db, { store: 's1', sku: '1', category: 'ram', text: RAM_FULL, at: NOW })).toEqual({ brand: 'Kingston', capacityGb: 16, modules: 2, type: 'DDR4', mhz: 3200, cl: 16, expo: false });
     expect(db.prepare('SELECT capacity_gb, modules, type, mhz, cl FROM sheet_ram WHERE store_sku = ?').get('1')).toEqual({ capacity_gb: 16, modules: 2, type: 'DDR4', mhz: 3200, cl: 16 });
     expect(pageText(db, 's1', '1')).toEqual({ text: RAM_FULL, at: NOW });
     expect(savePage(db, { store: 's1', sku: '2', category: 'ram', text: null })).toEqual({});
@@ -109,6 +109,16 @@ describe('produtos, fila e cobertura', () => {
 
 describe('ficha completada pelo título e pelo padrão da categoria', () => {
   const page = (sku: string, values: Record<string, string | number>, hasSheet = true) => ({ store: 's3' as StoreId, sku, at: NOW, hasSheet, values });
+
+  it('"não tem" da página cede para um valor de verdade do título (a página não fala de Wi-Fi, o título diz "Wifi7")', () => {
+    const board = (sku: string, values: Record<string, string | number>) => ({ store: 's3' as StoreId, sku, at: NOW, hasSheet: true, values });
+    const titles = [{ store: 's3' as StoreId, sku: '1', title: 'Placa Mãe Gigabyte X870M Aorus Elite Wifi7, DDR5, AM5' }];
+    expect(mergeSources('motherboard', [board('1', { chipset: 'X870', wifi: 'Não', bluetooth: 'Não' })], titles).values).toMatchObject({ wifi: 'Wi-Fi 7', bluetooth: 'Não' });
+    // Sem nada contra, o "não tem" fica.
+    expect(mergeSources('motherboard', [board('1', { chipset: 'B650', wifi: 'Não' })], [{ store: 's3', sku: '1', title: 'Placa Mãe B650M' }]).values.wifi).toBe('Não');
+    // À mão, o "não tem" vale contra tudo.
+    expect(mergeSources('motherboard', [board('1', { chipset: 'X870' })], titles, undefined, { wifi: 'Não' }).values.wifi).toBe('Não');
+  });
 
   it('o que a página não trouxe vem do título; a página vale mais; fonte sem "modular" na página nem no título: não modular', () => {
     const titles = [{ store: 's3' as StoreId, sku: '1', title: 'Fonte ASRock Phantom Gaming, 750W, 80 Plus Gold, Cybenetics Platinum, Full Modular, ATX 3.1, PCIe 5.1, Preto, PG-750G' }];

@@ -189,7 +189,7 @@ function Coverage({ fail, onPick }: { fail: (err: unknown) => void; onPick: (c: 
       {!rows ? (
         <p className="text-sm text-zinc-500">Carregando…</p>
       ) : (
-        <Table head={['Categoria', 'Produtos', 'Completas', 'Incompletas', 'Não lidas', 'Só a web completa', 'Precisa de você', 'Campos que mais faltam']}>
+        <Table head={['Categoria', 'Produtos', 'Completas', 'Incompletas', 'Não lidas', 'Só a web completa', 'Precisa de você', 'Completas com opcional vazio', 'Campos que mais faltam']}>
           {rows.map((r) => {
             const top = Object.entries(r.missing)
               .sort((a, b) => b[1] - a[1])
@@ -205,6 +205,7 @@ function Coverage({ fail, onPick }: { fail: (err: unknown) => void; onPick: (c: 
                 <Td className="tabular-nums">{r.unread}</Td>
                 <Td className="tabular-nums">{r.exhausted}</Td>
                 <Td className={`tabular-nums ${r.needsHuman ? 'text-amber-600 dark:text-amber-400' : ''}`}>{r.needsHuman}</Td>
+                <Td className="tabular-nums">{r.gaps ?? 0}</Td>
                 <Td className="text-xs text-zinc-500">{top.length ? top.map(([k, n]) => `${fieldLabels(r.category, [k])} ${n}`).join(' · ') : '—'}</Td>
               </tr>
             );
@@ -362,7 +363,8 @@ function Products({
  * Opções fechadas viram lista; o servidor valida como na busca na web (tipo, opções, faixa).
  */
 function ManualFill({ p, fail, onMessage, edit, onDone }: Shared & { p: SheetProduct; edit?: boolean; onDone?: () => void }) {
-  const keys = webKeys(p.category).filter((k) => edit || p.missing.includes(k.field));
+  // Os vazios: principais e opcionais (o "não sei"); o "não tem" se preenche com "Não", 0 ou "não".
+  const keys = webKeys(p.category).filter((k) => edit || p.missing.includes(k.field) || (p.gaps ?? []).includes(k.field));
   const initial = edit ? Object.fromEntries(keys.map((k) => [k.field, formValue(p.values[k.field])])) : {};
   const [form, setForm] = useState<Record<string, string>>(initial);
   const [saving, setSaving] = useState(false);
@@ -501,7 +503,7 @@ function ProductDetail({ p, names, fail, onMessage }: Shared & { p: SheetProduct
         {editing ? (
           <ManualFill p={p} fail={fail} onMessage={onMessage} edit onDone={() => setEditing(false)} />
         ) : (
-          p.missing.length > 0 && <ManualFill p={p} fail={fail} onMessage={onMessage} />
+          (p.missing.length > 0 || p.needsHuman) && <ManualFill p={p} fail={fail} onMessage={onMessage} />
         )}
         <p className="mb-1 flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">
           Campos

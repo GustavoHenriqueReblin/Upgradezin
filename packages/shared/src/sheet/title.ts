@@ -79,6 +79,8 @@ function cpu(title: string, t: string): SheetValues {
 function motherboard(title: string, t: string): SheetValues {
   const s = extractMotherboardSpecs(title);
   const wifi = t.match(/wi-?fi\s*(7|6e|6|5)\b/)?.[1];
+  // "Wifi" sem a versão: tem Wi-Fi (vale contra o "não tem" de uma página que não fala dele).
+  const hasWifi = !wifi && /\bwi-?fi\b|\bwireless\b/.test(t);
   return {
     ...(s.chipset && { chipset: s.chipset }),
     ...(s.socket && { socket: s.socket }),
@@ -86,6 +88,7 @@ function motherboard(title: string, t: string): SheetValues {
     ...(s.memory && { ramType: s.memory.toUpperCase() }),
     ...(s.memorySlots && { ramSlots: s.memorySlots }),
     ...(wifi && { wifi: `Wi-Fi ${wifi.toUpperCase()}` }),
+    ...(hasWifi && { wifi: 'Wi-Fi' }),
   };
 }
 

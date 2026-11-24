@@ -7,11 +7,13 @@ import { dec, firstInt, isNo, isYes, numberWith, pick, sheetDoc, thousands, type
  * Leitor da ficha técnica: do texto da ficha (sheetText) tira os campos fixos da categoria
  * (fields.ts). Cada loja e cada fabricante escreve de um jeito; o leitor procura os rótulos de
  * sempre ("Soquete", "Socket", "CPU Socket"…) e, para alguns campos, o padrão no texto todo. O que
- * não achar fica de fora: nunca chuta.
+ * não achar fica de fora: nunca chuta. "Não tem" (o `none` do campo) só quando a ficha deixa claro: a
+ * placa-mãe com a parte de rede e sem Wi-Fi em lugar nenhum, a fonte com a lista de conectores e sem o de
+ * 16 pinos, a memória DDR4 (EXPO é só da DDR5), o SSD SATA (sem geração PCIe).
  *
  * READER_VERSION: mudou o leitor ou os campos, sobe o número: o servidor relê as fichas guardadas.
  */
-export const READER_VERSION = 12;
+export const READER_VERSION = 13;
 
 type Reader = (doc: SheetDoc) => SheetValues;
 
@@ -135,7 +137,11 @@ const cpu: Reader = (doc) => {
   const memPairs = doc.pairs.filter((p) => /tipos? de memoria|memory types?|^memoria$|tipo de memoria do sistema|velocidade (maxima )?(de |da )?memoria|^ddr[345]$/.test(p.label));
   const ramTypes = [...new Set(memPairs.flatMap((p) => [...`${p.label} ${p.value}`.matchAll(/ddr([345])/g)].map((m) => `DDR${m[1]}`)))];
   const ramType = ramTypes.length ? ramTypes.sort().join(', ') : undefined;
-  return clean({ socket, architecture, cores, threads, baseGhz: base, boostGhz: boost && base && boost < base ? undefined : boost, l2Mb: l2, l3Mb: l3, tdpW: tdp, igpu, ramType });
+  // Potência máxima (turbo): "Maximum Turbo Power: 253 W", "Potência turbo máxima", PPT dos Ryzen.
+  const maxPowerW = pick(doc, [/potencia (turbo )?maxima|maximum turbo power|potencia turbo|max(imum)? (turbo )?power|\bppt\b|\bpl2\b|potencia de pico/], (v, l) =>
+    /memoria|grafic/.test(l) ? undefined : inRange(numberWith(v, /w(?:atts?)?\b/) ?? (/\(w\)/.test(l) ? firstInt(v) : undefined), 5, 500),
+  );
+  return clean({ socket, architecture, cores, threads, baseGhz: base, boostGhz: boost && base && boost < base ? undefined : boost, l2Mb: l2, l3Mb: l3, tdpW: tdp, igpu, ramType, maxPowerW });
 };
 
 // ---------- placa-mãe ----------
@@ -221,10 +227,58 @@ const motherboard: Reader = (doc) => {
   const wifiM = doc.all.match(/wi-?fi\s*(7|6e|6|5)\b/);
   const wifi = wifiM ? `Wi-Fi ${wifiM[1]!.toUpperCase()}` : undefined;
   const bt = doc.all.match(/bluetooth[^\d\n]{0,12}(\d\.\d)/)?.[1];
-  return clean({ chipset, socket, formFactor, ramType, ramSlots, ramMaxGb, ramMaxMhz, pcieX16, m2Slots, m2Pcie, sataPorts, lan, wifi, bluetooth: bt });
+  // "Não tem": a ficha traz a parte de rede (o chip ou a velocidade) e não fala de Wi-Fi ou Bluetooth em lugar nenhum.
+  const noWifi = !!lan && !/wi-?fi|wireless|wlan|802\.11/.test(doc.all);
+  const noBt = !!lan && !/bluetooth/.test(doc.all);
+  // Fases: "12+2+1 fases", "Design de energia: 14 + 2", "16 power stages".
+  // Fases com pelo menos 4 no total e um grupo de 3 ou mais ("1+1+1+1" e "3" são outra coisa: slots, portas).
+  const plausible = (x: string | undefined) => (x && x.split('+').reduce((a, n) => a + Number(n), 0) >= 4 && x.split('+').some((n) => Number(n) >= 3) ? x : undefined);
+  const phaseOf = (v: string) => plausible(v.match(/(\d{1,2}(?:\s*\+\s*\d{1,2}){1,3})/)?.[1]?.replace(/\s/g, '')) ?? plausible(v.match(/\b(\d{1,2})\s*(?:fases|phases?|power stages?|estagios)/)?.[1]);
+  const vrmPhases =
+    phaseOf(doc.all.match(/\d{1,2}(?:\s*\+\s*\d{1,2}){1,3}\s*(?:fases|phases?|power stages?|estagios|drmos|vrm)|\b\d{1,2}\s*(?:fases|phases?|power stages?)\b/)?.[0] ?? '') ??
+    pick(doc, [/fases|\bvrm\b|power design|power phases?|design de (energia|alimentacao)|alimentacao digital/], (v) => phaseOf(v));
+  const vrmHeatsink = /dissipador[^\n]{0,40}\b(vrm|mosfet)|\b(vrm|mosfet)\b[^\n]{0,40}dissipador|(vrm|mosfet) heatsink|heatsink[^\n]{0,30}\b(vrm|mosfet)/.test(doc.all) ? true : undefined;
+  const biosFlashback = /bios flash ?back|flash ?back|q-?flash plus|botao (de )?flash (da )?bios|flash bios button/.test(doc.all) ? true : undefined;
+  return clean({
+    chipset,
+    socket,
+    formFactor,
+    ramType,
+    ramSlots,
+    ramMaxGb,
+    ramMaxMhz,
+    pcieX16,
+    m2Slots,
+    m2Pcie,
+    sataPorts,
+    lan,
+    wifi: wifi ?? (noWifi ? 'Não' : undefined),
+    bluetooth: bt ?? (noBt ? 'Não' : undefined),
+    vrmPhases,
+    vrmHeatsink,
+    biosFlashback,
+  });
 };
 
 // ---------- placa de vídeo ----------
+
+/** Arquitetura pelo chip (cada série é de uma arquitetura só). */
+export function gpuArchitecture(chip: string | undefined): string | undefined {
+  if (!chip) return undefined;
+  if (/^RTX 50/.test(chip)) return 'Blackwell';
+  if (/^RTX 40/.test(chip)) return 'Ada Lovelace';
+  if (/^RTX 30/.test(chip)) return 'Ampere';
+  if (/^(RTX 20|GTX 16)/.test(chip)) return 'Turing';
+  if (/^GTX 10/.test(chip)) return 'Pascal';
+  if (/^RX 9\d{3}/.test(chip)) return 'RDNA 4';
+  if (/^RX 7\d{3}/.test(chip)) return 'RDNA 3';
+  if (/^RX 6\d{3}/.test(chip)) return 'RDNA 2';
+  if (/^RX 5\d{3}/.test(chip)) return 'RDNA';
+  if (/^RX [45]\d{2}\b/.test(chip)) return 'Polaris';
+  if (/^Arc B/.test(chip)) return 'Battlemage';
+  if (/^Arc A/.test(chip)) return 'Alchemist';
+  return undefined;
+}
 
 const gpu: Reader = (doc) => {
   const chip =
@@ -284,7 +338,47 @@ const gpu: Reader = (doc) => {
   // Também "Thermal Solution: 3 Fan".
   const fansM = doc.all.match(/(\d)\s*x?\s*(?:ventoinhas|ventiladores|fans?)\b|\b(dual|triple|tri|twin)[- ]?fan|(tres|duas) ventoinhas/);
   const fans = fansM ? (fansM[1] ? Number(fansM[1]) : /triple|tri|tres/.test(fansM[0]) ? 3 : 2) : undefined;
-  return clean({ chip, vramGb, memType, busBits, baseMhz, boostMhz, tdpW, psuW, lengthMm, pcie, power16Pin, fans: inRange(fans, 1, 4) });
+  // Unidades de processamento: núcleos CUDA (NVIDIA) ou processadores de fluxo (AMD), "3.584" ou "3584".
+  const unitsOf = (v: string) => inRange(thousands(v.match(/(\d[\d.,]*)/)?.[1] ?? ''), 128, 32768);
+  const shaders =
+    pick(doc, [/nucleos cuda|cuda cores?|^cuda$|stream processors?|processadores (de fluxo|stream)|shading units|unidades de (sombreamento|shader)|nucleos de shader/], unitsOf) ??
+    unitsOf(doc.all.match(/(\d[\d.,]{2,6})\s*(?:nucleos\s*)?(?:cuda|stream processors|processadores de fluxo)/)?.[1] ?? '');
+  // Largura de banda: a da ficha ou, sem ela, o barramento × a velocidade da memória ("20 Gbps").
+  const gbps = dec(doc.all.match(/(\d{1,2}(?:[.,]\d+)?)\s*gbps/)?.[1] ?? '');
+  const bandwidthGbs =
+    pick(doc, [/largura de banda|bandwidth/], (v, l) => (/pci/.test(`${l} ${v}`) ? undefined : inRange(numberWith(v, /gb\/s/), 10, 3000))) ??
+    (busBits && gbps >= 6 && gbps <= 40 ? inRange(Math.round((busBits * gbps) / 8), 10, 3000) : undefined);
+  // Conectores de alimentação: "1x 8 pinos", "2x 8 pinos", "1x 16 pinos"; sem conector (alimentada pelo slot): "Não".
+  const powerOf = (v: string) => {
+    const t = v.replace(/12v-?2x6|12vhpwr|12\s*\+\s*4/g, '16');
+    // Sem o adaptador que acompanha a placa ("adaptador 16 pinos para 2x 8 pinos"): o que vem depois de "adaptador/para" sai.
+    const own = t.split(/\badaptador|\badapter|\bpara\b|\bto\b/)[0]!;
+    const items = [...new Set([...own.matchAll(/(?:(\d)\s*x\s*)?(16|8|6\s*\+\s*2|6)\s*-?\s*(?:pinos?|pins?)/g)].map((m) => `${m[1] ?? 1}x ${m[2]!.replace(/\s/g, '')} pinos`))];
+    // Com o de 16 pinos, ele é o conector (os de 8 citados junto são do adaptador).
+    const main = items.some((x) => x.endsWith('16 pinos')) ? items.filter((x) => x.endsWith('16 pinos')).slice(0, 1) : items;
+    return main.length ? main.join(' + ') : undefined;
+  };
+  const powerConnectors =
+    pick(doc, [/conector(es)? (de )?(energia|alimentacao|forca)|power connectors?|alimentacao (suplementar|adicional|externa)|power input|entrada de energia/], (v) => (/nao (requer|possui|precisa)|nenhum|sem conector/.test(v) ? 'Não' : powerOf(v))) ??
+    (/nao (requer|precisa de) (alimentacao|conector)|sem conector de (alimentacao|energia)|alimentad[ao] (apenas |somente )?pelo slot/.test(doc.all) ? 'Não' : undefined);
+  return clean({
+    chip,
+    vramGb,
+    memType,
+    busBits,
+    baseMhz,
+    boostMhz,
+    tdpW,
+    psuW,
+    lengthMm,
+    pcie,
+    power16Pin,
+    fans: inRange(fans, 1, 4),
+    architecture: gpuArchitecture(chip),
+    shaders,
+    bandwidthGbs,
+    powerConnectors,
+  });
 };
 
 // ---------- memória ----------
@@ -309,7 +403,10 @@ const ram: Reader = (doc) => {
   const cl =
     pick(doc, [/latencia|^cas|^cl\b|cl \(ddi\)/], (v) => inRange(Number(v.match(/c(?:l)?\s*(\d{2})\b/)?.[1] ?? v.match(/^(\d{2})\b/)?.[1]), 4, 60)) ??
     inRange(Number(doc.all.match(/\bcl\s*(\d{2})\b/)?.[1]), 4, 60);
-  return clean({ capacityGb, modules, type, mhz, cl });
+  // XMP/EXPO citados; EXPO é só da DDR5 (a DDR4 e a DDR3 não têm).
+  const xmp = /\bxmp\b|extreme memory profile/.test(doc.all) ? true : undefined;
+  const expo = /\bexpo\b|extended profiles? for overclocking/.test(doc.all) ? true : type === 'DDR4' || type === 'DDR3' ? false : undefined;
+  return clean({ capacityGb, modules, type, mhz, cl, xmp, expo });
 };
 
 // ---------- SSD ----------
@@ -342,7 +439,22 @@ const ssd: Reader = (doc) => {
   const both = pick(doc, [/leitura\s*\/\s*(gravacao|escrita)/], (v, l) => (/aleatori|4k/.test(l) ? undefined : v.match(/(\d[\d.,]*)\s*\/\s*(\d[\d.,]*)\s*mb/)));
   const readMbs = (both ? speed(`${both[1]} mb`) : undefined) ?? pick(doc, [/leitura/, /read/], (v, l) => (/aleatori|4k|iops/.test(`${l} ${v}`) && !/mb/.test(v) ? undefined : speed(v)));
   const writeMbs = (both ? speed(`${both[2]} mb`) : undefined) ?? pick(doc, [/gravacao|escrita/, /write/], (v, l) => (/aleatori|4k/.test(l) && !/mb/.test(v) ? undefined : speed(v)));
-  return clean({ capacityGb, formFactor, interface: iface, readMbs, writeMbs });
+  // Geração PCIe pela interface; SATA não tem.
+  const pcieGen = iface?.match(/pcie (\d)\.0/i) ? `${iface.match(/pcie (\d)\.0/i)![1]}.0` : iface === 'SATA' ? 'Não' : undefined;
+  // Tipo de NAND: o das células ("3D NAND TLC"); o "SLC cache" que os TLC/QLC anunciam não é o tipo.
+  const nands = [...doc.all.matchAll(/\b(slc|mlc|tlc|qlc)\b(?![\s-]*(?:cache|caching|buffer))/g)].map((m) => m[1]!.toUpperCase());
+  const nand = nands.find((x) => x !== 'SLC') ?? nands[0];
+  // Cache DRAM: "DRAM-less", "sem DRAM", "HMB" (usa a memória do PC) = não tem; "cache DRAM", "LPDDR4" = tem.
+  const dram = /dram-?less|sem (cache )?dram|\bhmb\b|host memory buffer/.test(doc.all)
+    ? false
+    : /cache (de )?dram|dram cache|cache:?\s*\d+\s*(mb|gb)\s*(lp)?ddr|\blpddr\d|ddr\d (cache|dram)|cache ddr/.test(doc.all)
+      ? true
+      : undefined;
+  // Durabilidade: "600 TBW", "Endurance: 1200 TB", "Resistência (TBW): 640".
+  const tbw =
+    pick(doc, [/\btbw\b|endurance|resistencia|durabilidade|total bytes written/], (v, l) => inRange(numberWith(v, /tb/, { thousands: true }) ?? (/tbw/.test(l) ? firstInt(v.replace(/\./g, '')) : undefined), 10, 30000)) ??
+    inRange(thousands(doc.all.match(/(\d[\d.]*)\s*tbw/)?.[1] ?? ''), 10, 30000);
+  return clean({ capacityGb, formFactor, interface: iface, readMbs, writeMbs, pcieGen, nand, dram, tbw });
 };
 
 // ---------- fonte ----------
@@ -405,7 +517,8 @@ function psuConnectors(doc: SheetDoc) {
   return {
     eps: seen.eps ? inRange(counts.eps, 1, 4) : undefined,
     pcie8: seen.pcie8 ? inRange(counts.pcie8, 0, 12) : undefined,
-    pcie16: seen.pcie16 ? inRange(counts.pcie16, 0, 4) : undefined,
+    // A ficha lista os conectores e o de 16 pinos não está: a fonte não tem.
+    pcie16: seen.pcie16 ? inRange(counts.pcie16, 0, 4) : seen.eps || seen.pcie8 ? 0 : undefined,
     sata: seen.sata ? inRange(counts.sata, 0, 20) : undefined,
   };
 }
@@ -728,7 +841,16 @@ const cooler: Reader = (doc) => {
     });
   const s = sockets(expanded);
   const fansM = doc.all.match(/(\d)\s*x\s*(?:ventoinhas?|fans?|ventiladores?)\b/) ?? doc.all.match(/(?:ventoinhas?|fans?)[^\n\d]{0,15}(\d)\b(?!\d|\s*mm)/);
-  return clean({ type, heightMm, radiatorMm, tdpW, noiseDba, sockets: s.length ? s.join(',') : undefined, fans: inRange(fansM ? Number(fansM[1]) : undefined, 1, 6) });
+  // Heatpipes (só air cooler): "4 heatpipes", "Heatpipes: 6", "4 tubos de calor".
+  const heatpipes = water
+    ? undefined
+    : (pick(doc, [/heat ?pipes?|tubos de (calor|cobre)/], (v) => inRange(firstInt(v), 1, 12)) ?? inRange(Number(doc.all.match(/(\d{1,2})\s*(?:x\s*)?(?:heat ?pipes?|tubos de (?:calor|cobre))/)?.[1]), 1, 12));
+  // Ventoinha: "Dimensões do ventilador: 120 x 120 x 25 mm", "ventoinha de 120mm".
+  const FAN = /\b(80|92|120|140|200)\s*(?:mm|x)/;
+  const fanMm =
+    pick(doc, [/ventoinha|ventilador|\bfan\b/], (v, l) => (/rpm|ruido|fluxo|pressao|velocidade|conector|rolamento|vida/.test(l) ? undefined : Number(v.match(FAN)?.[1]) || undefined)) ??
+    (Number(doc.all.match(/(?:ventoinhas?|ventiladores?|fans?)[^\n]{0,30}?\b(80|92|120|140|200)\s*(?:mm|x)/)?.[1]) || undefined);
+  return clean({ type, heightMm, radiatorMm, tdpW, noiseDba, sockets: s.length ? s.join(',') : undefined, fans: inRange(fansM ? Number(fansM[1]) : undefined, 1, 6), heatpipes, fanMm });
 };
 
 const READERS: Record<CategoryId, Reader> = { cpu, motherboard, gpu, ram, ssd, psu, case: caseReader, cooler };

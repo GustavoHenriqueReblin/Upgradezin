@@ -118,31 +118,34 @@ export interface WebQuestion {
 }
 
 /**
- * Perguntas na fila: um produto só a web completa por pergunta, se algum campo principal que falta ainda
- * não foi perguntado. Produto em estoque primeiro, depois o achado há menos tempo.
+ * Perguntas na fila: um produto com as páginas todas lidas por pergunta, se algum campo vazio (principal
+ * ou opcional, o "não sei") ainda não foi perguntado. O produto completo com opcional vazio também vai:
+ * já aparece na busca do site, e a web completa a ficha. Primeiro os que falta campo principal; depois
+ * em estoque; depois o achado há menos tempo.
  */
 export function webQueue(db: Db, now = Date.now()): WebQuestion[] {
   const since = new Date(now - SHEET_SCOPE_DAYS * 86_400_000).toISOString();
-  const out: (WebQuestion & { inStock: boolean; first: string })[] = [];
+  const out: (WebQuestion & { main: boolean; inStock: boolean; first: string })[] = [];
   const asked = new Set((ready(db).prepare("SELECT product_key || '|' || field AS k FROM sheet_web").all() as { k: string }[]).map((r) => r.k));
   for (const category of ENABLED_CATEGORIES) {
     for (const p of catalogProducts(db, category, since)) {
-      if (p.state !== 'incomplete' || !p.listings.every((l) => l.read)) continue;
+      if (p.state === 'unread' || !p.listings.every((l) => l.read)) continue;
       const fields = webKeys(category).map((k) => k.field);
-      if (!p.missing.some((f) => fields.includes(f) && !asked.has(`${p.key}|${f}`))) continue;
+      if (![...p.missing, ...p.gaps].some((f) => fields.includes(f) && !asked.has(`${p.key}|${f}`))) continue;
       out.push({
         key: p.key,
         category,
         fields,
         title: p.title,
         question: webPrompt(category, p.title),
+        main: p.missing.length > 0,
         inStock: p.listings.some((l) => l.inStock),
         first: p.listings.map((l) => l.firstSeenAt).sort().pop() ?? '',
       });
     }
   }
-  out.sort((a, b) => Number(b.inStock) - Number(a.inStock) || b.first.localeCompare(a.first));
-  return out.map(({ inStock: _i, first: _f, ...q }) => q);
+  out.sort((a, b) => Number(b.main) - Number(a.main) || Number(b.inStock) - Number(a.inStock) || b.first.localeCompare(a.first));
+  return out.map(({ main: _m, inStock: _i, first: _f, ...q }) => q);
 }
 
 // ---------- página de resultados ----------

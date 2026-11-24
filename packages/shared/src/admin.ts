@@ -339,8 +339,10 @@ export interface SheetCoverageRow {
   unread: number;
   /** Incompletos com as páginas de todas as lojas já lidas: só a busca na web completaria. */
   exhausted: number;
-  /** Desses, os que a web já foi perguntada de tudo o que falta: só uma pessoa completa. */
+  /** Com as páginas lidas e a web já perguntada de tudo o que falta (principal ou opcional): só uma pessoa completa. */
   needsHuman: number;
+  /** Completos com algum campo opcional vazio ("não sei"; o "não tem" conta como preenchido). */
+  gaps: number;
   /** Campo principal -> quantos produtos lidos ainda não o têm. */
   missing: Record<string, number>;
 }
@@ -357,7 +359,9 @@ export interface SheetProduct {
   origin: Record<string, { store: StoreId; sku: string; from?: SheetValueFrom }>;
   /** Campos principais que faltam. */
   missing: string[];
-  /** Incompleta, com todas as páginas lidas e a web já perguntada de tudo o que falta: só uma pessoa completa. */
+  /** Campos opcionais vazios ("não sei"), dos que fazem sentido para o produto: também vão à web. */
+  gaps: string[];
+  /** Com todas as páginas lidas, algum campo (principal ou opcional) vazio e a web já perguntada de todos eles: só uma pessoa completa. */
   needsHuman: boolean;
   listings: {
     store: StoreId;

@@ -3,6 +3,7 @@ import {
   ENABLED_CATEGORIES,
   fieldColumn,
   missingMain,
+  missingOptional,
   READER_VERSION,
   readSheet,
   acceptSheetValue,
@@ -293,6 +294,9 @@ export interface ProductSheet {
 
 /** Campos do título, guardados por título (a lista de produtos junta tudo a cada consulta). */
 const titleCache = new Map<string, SheetValues>();
+/** O valor de "não tem" de cada campo da categoria que pode não ter o recurso. */
+const noneOf = (category: CategoryId): Record<string, SheetValue> =>
+  Object.fromEntries(SHEET_FIELDS[category].filter((f) => f.none !== undefined).map((f) => [f.key, f.none!]));
 function titleValues(category: CategoryId, title: string): SheetValues {
   const key = `${category}|${title}`;
   let v = titleCache.get(key);
@@ -308,10 +312,16 @@ function titleValues(category: CategoryId, title: string): SheetValues {
  * Junta, campo a campo: o preenchido à mão no admin; as páginas, na ordem dada (a primeira com o campo vale); depois o que os
  * títulos dos anúncios dizem; depois a busca na web; depois a estimativa do campo que a web não
  * respondeu; depois o padrão da categoria, se alguma página com ficha foi lida.
+ *
+ * "Não tem" (o `none` do campo) que não veio da mão de uma pessoa cede para um valor de verdade de outra
+ * fonte: a página que não fala de Wi-Fi diz "Não", mas o título "… Wifi7" ou a outra loja ganham.
  */
 export function mergeSources(category: CategoryId, sources: SheetSource[], titles: SheetTitle[] = [], web?: WebSheet, manual?: SheetValues): Omit<ProductSheet, 'sources'> {
   const values: SheetValues = {};
   const origin: ProductSheet['origin'] = {};
+  const none = noneOf(category);
+  /** O campo já tem valor que fica: qualquer um, menos o "não tem" automático contra um valor de verdade. */
+  const taken = (k: string, v: SheetValue) => values[k] !== undefined && !(k in none && values[k] === none[k] && v !== none[k] && origin[k]?.from !== 'manual');
   // Preenchido à mão no admin: vale mais que tudo (conferido por uma pessoa).
   const owner = sources[0] ?? titles[0];
   if (manual && owner)
@@ -321,14 +331,14 @@ export function mergeSources(category: CategoryId, sources: SheetSource[], title
     }
   for (const s of sources) {
     for (const [k, v] of Object.entries(s.values)) {
-      if (values[k] !== undefined) continue;
+      if (taken(k, v)) continue;
       values[k] = v;
       origin[k] = { store: s.store, sku: s.sku };
     }
   }
   for (const t of titles) {
     for (const [k, v] of Object.entries(titleValues(category, t.title))) {
-      if (values[k] !== undefined) continue;
+      if (taken(k, v)) continue;
       values[k] = v;
       origin[k] = { store: t.store, sku: t.sku, from: 'title' };
     }
@@ -337,7 +347,7 @@ export function mergeSources(category: CategoryId, sources: SheetSource[], title
   const first = sources[0] ?? titles[0];
   if (web && first) {
     for (const [k, v] of Object.entries(web.values)) {
-      if (values[k] !== undefined) continue;
+      if (taken(k, v)) continue;
       values[k] = v;
       origin[k] = { store: first.store, sku: first.sku, from: 'web' };
     }
@@ -445,6 +455,9 @@ export function catalogProducts(db: Db, category: CategoryId, since: string): Sh
       web.get(key),
       manual.get(key),
     );
+    // Opcionais vazios ("não sei"): só depois de ler alguma página (antes, tudo falta).
+    const gaps = sources.length ? missingOptional(category, merged.values) : [];
+    const empty = [...merged.missing, ...gaps];
     return {
       key,
       category,
@@ -461,8 +474,9 @@ export function catalogProducts(db: Db, category: CategoryId, since: string): Sh
       })),
       state: !sources.length ? 'unread' : merged.missing.length ? 'incomplete' : 'complete',
       ...merged,
-      // Só a web completa, e a web já foi perguntada de tudo o que falta: só uma pessoa completa.
-      needsHuman: !!sources.length && merged.missing.length > 0 && g.every((r) => r.page !== null) && merged.missing.every((f) => web.get(key)?.asked.has(f)),
+      gaps,
+      // Algum campo vazio (principal ou opcional), as páginas todas lidas e a web já perguntada de todos: só uma pessoa completa.
+      needsHuman: !!sources.length && empty.length > 0 && g.every((r) => r.page !== null) && empty.every((f) => web.get(key)?.asked.has(f)),
     };
   });
 }
@@ -512,6 +526,7 @@ export function sheetCoverage(db: Db, since: string): SheetCoverageRow[] {
       unread: ps.filter((p) => p.state === 'unread').length,
       exhausted: ps.filter((p) => p.state === 'incomplete' && p.listings.every((l) => l.read)).length,
       needsHuman: ps.filter((p) => p.needsHuman).length,
+      gaps: ps.filter((p) => p.state === 'complete' && p.gaps.length > 0).length,
       missing,
     };
   });

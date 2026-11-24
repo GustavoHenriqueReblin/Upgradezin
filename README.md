@@ -58,6 +58,7 @@ Para lançar uma versão nova: anote as mudanças em "Não lançado" no CHANGELO
 
 ## Documentação
 
+- [docs/PROJECT.md](docs/PROJECT.md): visão consolidada (objetivos, estado atual, implementado × planejado, regras, algoritmos, decisões, problemas conhecidos, roadmap). Agentes de código: [AGENTS.md](AGENTS.md).
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): arquitetura, investigação das lojas, decisões e questões em aberto.
 
 ## Uso responsável

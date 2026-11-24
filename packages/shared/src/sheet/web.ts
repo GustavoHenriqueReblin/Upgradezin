@@ -37,6 +37,8 @@ const RANGE: Record<string, [number, number]> = {
   bits: [32, 1024],
   'MB/s': [50, 20000],
   CL: [4, 60],
+  'GB/s': [10, 3000],
+  TBW: [10, 30000],
 };
 
 const opts = (...xs: string[]) => Object.fromEntries(xs.map((x) => [x.toLowerCase(), x]));
@@ -57,6 +59,19 @@ const board = (s: string) =>
       .replace(/^(mini ?itx|itx)$/, 'mini-itx')
       .replace(/^eatx$/, 'e-atx')
   ];
+/** "Não tem" num campo de texto: "não", "nao", "nenhum", "sem". */
+const NO = /^(n[aã]o( possui| tem)?|nenhum|sem|none|no)$/i;
+/** Bluetooth: a versão ("5.3") ou "Não". */
+const btItem = (s: string) => (NO.test(s.trim()) ? 'Não' : s.match(/\d\.\d/)?.[0]);
+/** Fases do VRM: "14+2+1" (sem espaços). */
+const phases = (s: string) => s.replace(/\s/g, '').match(/^\d{1,2}(\+\d{1,2}){0,3}$/)?.[0];
+/** Conectores de alimentação da placa de vídeo: "1x 8 pinos", "2x 8 pinos", "1x 16 pinos" ou "Não". */
+const powerItem = (s: string) => {
+  if (NO.test(s.trim())) return 'Não';
+  const t = s.toLowerCase().replace(/12v-?2x6|12vhpwr|12\s*\+\s*4/g, '16');
+  const items = [...t.matchAll(/(?:(\d)\s*x\s*)?(16|8|6\s*\+\s*2|6)\s*-?\s*(?:pinos?|pins?)/g)].map((m) => `${m[1] ?? 1}x ${m[2]!.replace(/\s/g, '')} pinos`);
+  return items.length ? items.join(' + ') : undefined;
+};
 const radiator = (s: string) => (['120', '140', '240', '280', '360', '420', '480'].includes(s.replace(/\D/g, '')) ? s.replace(/\D/g, '') : undefined);
 
 /** As chaves de cada categoria: nome da chave, opções e normalização (o tipo e a faixa vêm do campo). */
@@ -73,6 +88,7 @@ const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>
     tdpW: { key: 'tdp_w', min: 5, max: 500 },
     igpu: { key: 'video_integrado' },
     ramType: { key: 'memoria', options: opts('DDR4', 'DDR5', 'DDR4, DDR5') },
+    maxPowerW: { key: 'potencia_maxima_w', min: 5, max: 500 },
   },
   motherboard: {
     chipset: { key: 'chipset' },
@@ -87,8 +103,11 @@ const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>
     m2Pcie: { key: 'm2_pcie_versao', options: opts('3.0', '4.0', '5.0') },
     sataPorts: { key: 'portas_sata', min: 0, max: 12 },
     lan: { key: 'rede', options: opts('1 Gb', '2.5 Gb', '5 Gb', '10 Gb') },
-    wifi: { key: 'wifi', options: opts('Wi-Fi 5', 'Wi-Fi 6', 'Wi-Fi 6E', 'Wi-Fi 7') },
-    bluetooth: { key: 'bluetooth_versao' },
+    wifi: { key: 'wifi', options: opts('Wi-Fi 5', 'Wi-Fi 6', 'Wi-Fi 6E', 'Wi-Fi 7', 'Wi-Fi', 'Não') },
+    bluetooth: { key: 'bluetooth_versao', item: btItem },
+    vrmPhases: { key: 'fases_vrm', item: phases },
+    vrmHeatsink: { key: 'dissipador_vrm' },
+    biosFlashback: { key: 'bios_flashback' },
   },
   gpu: {
     chip: { key: 'chip' },
@@ -103,6 +122,10 @@ const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>
     pcie: { key: 'pcie' },
     power16Pin: { key: 'conector_16_pinos' },
     fans: { key: 'ventoinhas', min: 0, max: 4 },
+    architecture: { key: 'arquitetura', options: opts('Blackwell', 'Ada Lovelace', 'Ampere', 'Turing', 'Pascal', 'RDNA 4', 'RDNA 3', 'RDNA 2', 'RDNA', 'Polaris', 'Battlemage', 'Alchemist') },
+    shaders: { key: 'nucleos_cuda_ou_stream', min: 128, max: 32768 },
+    bandwidthGbs: { key: 'largura_banda_gbs' },
+    powerConnectors: { key: 'conectores_alimentacao', item: powerItem },
   },
   ram: {
     capacityGb: { key: 'capacidade_total_gb', min: 1, max: 512 },
@@ -110,6 +133,8 @@ const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>
     type: { key: 'tipo', options: opts('DDR3', 'DDR4', 'DDR5') },
     mhz: { key: 'frequencia_mhz', min: 800, max: 12000 },
     cl: { key: 'latencia_cl' },
+    xmp: { key: 'xmp' },
+    expo: { key: 'expo' },
   },
   ssd: {
     capacityGb: { key: 'capacidade_gb', min: 60, max: 16000 },
@@ -117,6 +142,10 @@ const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>
     interface: { key: 'interface', options: opts('SATA', 'NVMe PCIe 3.0', 'NVMe PCIe 4.0', 'NVMe PCIe 5.0') },
     readMbs: { key: 'leitura_mbs' },
     writeMbs: { key: 'gravacao_mbs' },
+    pcieGen: { key: 'geracao_pcie', options: opts('3.0', '4.0', '5.0', 'Não') },
+    nand: { key: 'tipo_nand', options: opts('SLC', 'MLC', 'TLC', 'QLC') },
+    dram: { key: 'cache_dram' },
+    tbw: { key: 'durabilidade_tbw' },
   },
   psu: {
     watts: { key: 'potencia_w', min: 150, max: 2500 },
@@ -163,6 +192,8 @@ const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>
     noiseDba: { key: 'ruido_dba' },
     sockets: { key: 'soquetes', item: socket },
     fans: { key: 'ventoinhas', min: 1, max: 6 },
+    heatpipes: { key: 'heatpipes', min: 1, max: 12 },
+    fanMm: { key: 'ventoinha_mm', options: opts('80', '92', '120', '140', '200') },
   },
 };
 
@@ -220,7 +251,8 @@ export function webPrompt(category: CategoryId, title: string): string {
   const template = JSON.stringify({ produto: name, ...Object.fromEntries(keys.map((k) => [k.key, k.type === 'list' ? [] : null])), confianca: null });
   return (
     `Preencha este JSON com as especificações ${NOUN[category]} ${name}, pelo site do fabricante. ` +
-    'Não invente: o que não achar fica null. Números sem unidade; listas com os itens. confianca: alta, media ou baixa. ' +
+    'Não invente: o que não achar fica null. Se o produto não tem o recurso (sem Wi-Fi, sem conector de 16 pinos), responda "Não", 0 ou false; null só quando não souber. ' +
+    'Números sem unidade; listas com os itens. confianca: alta, media ou baixa. ' +
     (legend ? `Opções: ${legend}. ` : '') +
     'RESPONDA SOMENTE O JSON PREENCHIDO, VÁLIDO, SEM TEXTO ANTES OU DEPOIS. ' +
     template

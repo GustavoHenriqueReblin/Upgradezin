@@ -14,9 +14,11 @@ describe('página do produto', () => {
       ['Tipo', NOT_INFORMED],
       ['Frequência', '3.200 MHz'],
       ['Latência', 'CL16'],
+      ['XMP', 'não informado'],
+      ['EXPO', 'não informado'],
     ]);
     expect(rows.filter((r) => r.informed).length).toBe(4);
-    expect(sheetRows('gpu', { power16Pin: false }).find((r) => r.key === 'power16Pin')).toMatchObject({ value: 'não', informed: true });
+    expect(sheetRows('gpu', { power16Pin: false }).find((r) => r.key === 'power16Pin')).toMatchObject({ value: 'não tem', informed: true });
   });
 
   it('endereço com a chave codificada', () => {
