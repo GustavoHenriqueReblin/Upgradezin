@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react';
-import { ChevronDown, ExternalLink, FileSearch, FileText, Search } from 'lucide-react';
+import { ChevronDown, ExternalLink, FileSearch, FileText, Search, Pencil } from 'lucide-react';
 import {
   ENABLED_CATEGORIES,
   CATEGORY_DEFS,
@@ -24,7 +24,7 @@ import {
 } from '@upgradezin/shared';
 import { AdminError, adminApi } from './api.ts';
 import { Box, Table, Td } from './DataPanels.tsx';
-import { countdown, fieldLabels, formatWhen, intervalLabel, SHEET_FILTER_LABEL, SHEET_STATE_LABEL, sheetEta } from './format.ts';
+import { countdown, fieldLabels, formatWhen, intervalLabel, SHEET_FILTER_LABEL, SHEET_STATE_LABEL, sheetEta, formValue, manualChanges } from './format.ts';
 import { IntervalInputs } from './IntervalInputs.tsx';
 import { useLiveReload } from './live.ts';
 import { Pager } from './Pager.tsx';
@@ -354,30 +354,37 @@ function Products({
   );
 }
 
+
 /**
- * Preencher à mão os campos principais que faltam (produto "precisa de você", ou qualquer incompleto).
+ * Preencher à mão os campos principais que faltam (produto "precisa de você", ou qualquer incompleto) ou,
+ * com `edit`, todos os campos, já com os valores de agora. O valor à mão vale mais que o de qualquer outra
+ * origem; apagar um campo à mão (deixar vazio) volta para o valor das lojas, do título ou da web.
  * Opções fechadas viram lista; o servidor valida como na busca na web (tipo, opções, faixa).
  */
-function ManualFill({ p, fail, onMessage }: Shared & { p: SheetProduct }) {
-  const keys = webKeys(p.category).filter((k) => p.missing.includes(k.field));
-  const [form, setForm] = useState<Record<string, string>>({});
+function ManualFill({ p, fail, onMessage, edit, onDone }: Shared & { p: SheetProduct; edit?: boolean; onDone?: () => void }) {
+  const keys = webKeys(p.category).filter((k) => edit || p.missing.includes(k.field));
+  const initial = edit ? Object.fromEntries(keys.map((k) => [k.field, formValue(p.values[k.field])])) : {};
+  const [form, setForm] = useState<Record<string, string>>(initial);
   const [saving, setSaving] = useState(false);
   if (!keys.length) return null;
+  const changes = manualChanges(initial, form, (k) => p.origin[k]?.from === 'manual');
   const save = () => {
-    const values = Object.fromEntries(Object.entries(form).filter(([, v]) => v.trim() !== ''));
-    if (!Object.keys(values).length) return;
+    if (!Object.keys(changes).length) return;
     setSaving(true);
-    adminApi('/sheets/manual', { method: 'PUT', body: { key: p.key, category: p.category, values } })
+    adminApi('/sheets/manual', { method: 'PUT', body: { key: p.key, category: p.category, values: changes } })
       .then(() => {
-        onMessage({ ok: true, text: `${p.title.slice(0, 60)}: ${fieldLabels(p.category, Object.keys(values))} preenchido à mão.` });
-        setForm({});
+        onMessage({ ok: true, text: `${p.title.slice(0, 60)}: ${fieldLabels(p.category, Object.keys(changes))} salvo à mão.` });
+        setForm(edit ? form : {});
+        onDone?.();
       })
       .catch(fail)
       .finally(() => setSaving(false));
   };
   return (
-    <div className={`mb-3 rounded-lg border p-2 ${p.needsHuman ? 'border-amber-500/40 bg-amber-500/5' : 'border-zinc-200 dark:border-zinc-800'}`}>
-      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">{p.needsHuman ? 'Precisa de você: a busca na web não achou' : 'Preencher à mão'}</p>
+    <div className={`mb-3 rounded-lg border p-2 ${p.needsHuman && !edit ? 'border-amber-500/40 bg-amber-500/5' : 'border-zinc-200 dark:border-zinc-800'}`}>
+      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        {edit ? 'Editar à mão (vazio: volta para o valor das lojas, do título ou da web)' : p.needsHuman ? 'Precisa de você: a busca na web não achou' : 'Preencher à mão'}
+      </p>
       <div className="grid grid-cols-[auto,1fr] items-center gap-x-3 gap-y-1 text-xs">
         {keys.map((k) => {
           const label = fieldLabels(p.category, [k.field]);
@@ -411,14 +418,21 @@ function ManualFill({ p, fail, onMessage }: Shared & { p: SheetProduct }) {
           );
         })}
       </div>
-      <button
-        type="button"
-        disabled={saving || !Object.values(form).some((v) => v.trim())}
-        onClick={save}
-        className="mt-2 rounded-lg border border-zinc-300 px-2.5 py-1 text-xs hover:border-accent-500 disabled:opacity-50 dark:border-zinc-700"
-      >
-        {saving ? 'Salvando…' : 'Salvar'}
-      </button>
+      <div className="mt-2 flex gap-2">
+        <button
+          type="button"
+          disabled={saving || !Object.keys(changes).length}
+          onClick={save}
+          className="rounded-lg border border-zinc-300 px-2.5 py-1 text-xs hover:border-accent-500 disabled:opacity-50 dark:border-zinc-700"
+        >
+          {saving ? 'Salvando…' : 'Salvar'}
+        </button>
+        {onDone && (
+          <button type="button" onClick={onDone} className="rounded-lg px-2.5 py-1 text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">
+            Cancelar
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -426,6 +440,7 @@ function ManualFill({ p, fail, onMessage }: Shared & { p: SheetProduct }) {
 /** Um produto: os anúncios (página lida ou não, texto guardado, "Ler ficha") e de onde veio cada campo. */
 function ProductDetail({ p, names, fail, onMessage }: Shared & { p: SheetProduct; names: Map<string, string> }) {
   const [page, setPage] = useState<SheetPageText | null>(null);
+  const [editing, setEditing] = useState(false);
   const name = (s: StoreId) => names.get(s) ?? s;
   const fields = sheetFields(p.category);
   const readSheet = (store: StoreId, sku: string, title: string) =>
@@ -483,8 +498,19 @@ function ProductDetail({ p, names, fail, onMessage }: Shared & { p: SheetProduct
         )}
       </div>
       <div>
-        {p.missing.length > 0 && <ManualFill p={p} fail={fail} onMessage={onMessage} />}
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">Campos</p>
+        {editing ? (
+          <ManualFill p={p} fail={fail} onMessage={onMessage} edit onDone={() => setEditing(false)} />
+        ) : (
+          p.missing.length > 0 && <ManualFill p={p} fail={fail} onMessage={onMessage} />
+        )}
+        <p className="mb-1 flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+          Campos
+          {!editing && (
+            <button type="button" onClick={() => setEditing(true)} className="inline-flex items-center gap-1 normal-case tracking-normal text-accent-600 hover:underline dark:text-accent-400">
+              <Pencil className="h-3 w-3" /> Editar
+            </button>
+          )}
+        </p>
         <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5 text-xs">
           {fields.map((f) => {
             const v = formatSheetValue(f, p.values[f.key]);

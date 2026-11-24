@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sheetEta, shortDuration, SHEET_STATE_LABEL, SHEET_FILTER_LABEL, fieldLabels, specPairs, countdown, intervalLabel, queueLabel, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground, probeLabel } from './format.ts';
+import { sheetEta, shortDuration, SHEET_STATE_LABEL, SHEET_FILTER_LABEL, fieldLabels, specPairs, countdown, intervalLabel, queueLabel, routineStores, mergeLines, attemptLabel, attemptResult, attemptWhat, formatDuration, formatWhen, loginError, pauseLabel, previewBackground, probeLabel, formValue, manualChanges } from './format.ts';
 
 describe('formatação do admin', () => {
   it('resultado do teste de página', () => {
@@ -118,5 +118,17 @@ describe('ficha técnica e specs na aba Produtos', () => {
     expect(sheetEta(100, { minS: 180, maxS: 216 })).toBe('cerca de 6 h'); // 100 × 198 s = 5,5 h
     expect(sheetEta(2460, { minS: 180, maxS: 216 })).toBe('cerca de 6 dias');
     expect(sheetEta(5000, { minS: 10, maxS: 15 })).toBe('cerca de 18 h'); // 5000 × 12,5 s = 17,4 h
+  });
+});
+
+describe('ficha à mão: o que salvar', () => {
+  it('só o que mudou; esvaziar apaga só o valor que era à mão', () => {
+    const initial = { radiatorMm: formValue(360), sockets: formValue('AM4,AM5'), heightMm: formValue(undefined), tdpW: formValue(250) };
+    expect(initial).toEqual({ radiatorMm: '360', sockets: 'AM4,AM5', heightMm: '', tdpW: '250' });
+    const manual = new Set(['tdpW']);
+    const form = { radiatorMm: '480', sockets: ' AM4,AM5 ', heightMm: '', tdpW: '' };
+    expect(manualChanges(initial, form, (k) => manual.has(k))).toEqual({ radiatorMm: '480', tdpW: null });
+    // Esvaziar um valor que veio da loja: nada a apagar.
+    expect(manualChanges(initial, { ...initial, sockets: '' }, (k) => manual.has(k))).toEqual({});
   });
 });

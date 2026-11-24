@@ -144,3 +144,21 @@ export function probeLabel(r: ProbeResult): string {
   if (r.status === 'ok') return `Abriu${via}: ${r.count} produtos (${r.inStock ?? 0} em estoque), lista com ${r.totalPages ?? '?'} páginas, em ${secs}.`;
   return `${r.status === 'blocked' ? 'Bloqueou' : 'Erro'}: ${r.detail ?? 'sem detalhe'} (${secs}).`;
 }
+
+/** Valor da ficha como texto do formulário (lista: "AM4,AM5"; sem valor: ""). */
+export const formValue = (v: unknown): string => (v === undefined || v === null ? '' : String(v));
+
+/**
+ * O que mandar ao salvar a ficha à mão: só os campos que mudaram. Campo esvaziado vira null (apaga o valor
+ * à mão, e volta o das lojas, do título ou da web) só se o valor era à mão; senão não há o que apagar.
+ */
+export function manualChanges(initial: Record<string, string>, form: Record<string, string>, isManual: (field: string) => boolean): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  for (const [k, raw] of Object.entries(form)) {
+    const v = raw.trim();
+    if (v === (initial[k] ?? '').trim()) continue;
+    if (v) out[k] = v;
+    else if (isManual(k)) out[k] = null;
+  }
+  return out;
+}
