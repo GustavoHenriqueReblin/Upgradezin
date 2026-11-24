@@ -3,6 +3,7 @@ import { config } from './config.ts';
 import { getDb } from './db/instance.ts';
 import { backoffInfo, BlockedError, SearchRedirectError, PageLimitError, pageLimitUntil, registerSuccess } from './pace.ts';
 import { collectText, partialOf, withBrowserSession } from './prices/collect.ts';
+import { applySheets } from './prices/offer-sheets.ts';
 import { matchingListings, titleMatches, withHistoryStats } from './prices/prices.ts';
 import { isLive } from './prices/routine.ts';
 import { sweepState } from './prices/sweep.ts';
@@ -67,7 +68,8 @@ async function runStores(p: SearchParams, h: SearchHandlers, signal: AbortSignal
     p.stores.map(async (store) => {
       if (signal.aborted) return;
       // Lista completa da loja (não os lotes de página): vai com o resumo do histórico de cada anúncio.
-      const sendList = (offers: Offer[]) => h.onOffers(store, withHistoryStats(db, offers));
+      // Com a ficha de cada produto (o que veio da busca ao vivo ainda não tinha).
+      const sendList = (offers: Offer[]) => h.onOffers(store, withHistoryStats(db, applySheets(db, p.category, offers)));
       const now = Date.now();
       // Texto buscado na loja há menos de REVALIDATE_MIN ("Atualizar": FORCE_MIN_AGE_MIN) vale o banco.
       const fresh = (Math.max(config.REVALIDATE_MIN, force ? config.FORCE_MIN_AGE_MIN : 0) || 0) * 60_000;
@@ -102,7 +104,7 @@ async function runStores(p: SearchParams, h: SearchHandlers, signal: AbortSignal
           const offers = await collectText(store, p.category, text, background.signal, {
             onPage: ({ page, total, found, offers: batch }) => {
               pending.push(...batch);
-              if (batch.length) h.onOffers(store, batch, true);
+              if (batch.length) h.onOffers(store, applySheets(db, p.category, batch), true);
               h.onStatus({ store, state: 'running', page, totalPages: total, count: before + found });
             },
             onNeedsHuman: () => h.onStatus({ store, state: 'needs-human' }),

@@ -10,7 +10,7 @@ import './index.css';
 const root = createRoot(document.getElementById('root')!);
 
 /** Site fora do ar para quem usa (só o admin funciona) enquanto o banco de fichas é montado. */
-const MAINTENANCE = true;
+const MAINTENANCE = false;
 
 // /admin: tela de quem opera o servidor, em pacote separado (não pesa no app).
 const Admin = lazy(() => import('./admin/Admin.tsx').then((m) => ({ default: m.Admin })));

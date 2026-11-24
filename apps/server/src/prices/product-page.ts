@@ -1,5 +1,6 @@
 import { effectiveCash, type CategoryId, type Offer, type ProductPage, type StoreId } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
+import { offerWithSheet } from './offer-sheets.ts';
 import { NOT_BROKEN } from './page-errors.ts';
 import { withHistoryStats } from './prices.ts';
 import { productSheet } from './sheets.ts';
@@ -18,9 +19,10 @@ export function productPage(db: Db, key: string, stores: readonly StoreId[]): Pr
   const live = rows.filter((r) => stores.includes(r.store));
   const newest = live[0];
   if (!newest) return undefined;
+  const values = productSheet(db, newest.store, newest.store_sku)?.values ?? {};
   const offers = withHistoryStats(
     db,
-    live.map((r) => JSON.parse(r.offer) as Offer),
+    live.map((r) => offerWithSheet(newest.category, JSON.parse(r.offer) as Offer, values, key)),
   ).sort((a, b) => Number(b.inStock) - Number(a.inStock) || effectiveCash(a) - effectiveCash(b));
   const image = offers.find((o) => o.image)?.image;
   return {
@@ -28,7 +30,7 @@ export function productPage(db: Db, key: string, stores: readonly StoreId[]): Pr
     category: newest.category,
     title: newest.title,
     ...(image && { image }),
-    values: productSheet(db, newest.store, newest.store_sku)?.values ?? {},
+    values,
     offers,
   };
 }

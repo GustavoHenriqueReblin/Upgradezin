@@ -1,4 +1,4 @@
-import { effectiveCash, type Offer } from '@upgradezin/shared';
+import { effectiveCash, productPath, type Offer, type ProductGroup } from '@upgradezin/shared';
 
 /** Chave do produto no endereço (/produto/<chave>, codificada como em productPath). null: não é a página do produto. */
 export function productKeyFromUrl(path = location.pathname): string | null {
@@ -34,4 +34,10 @@ export function splitOffers(offers: Offer[]) {
     othersInStock: others.filter((o) => o.inStock).length,
     history: main.length ? main : others,
   };
+}
+
+/** Página do produto de um card: a da melhor oferta, ou a de qualquer oferta do grupo que o servidor conheça. */
+export function productHref(group: Pick<ProductGroup, 'best' | 'offers'>): string | undefined {
+  const key = group.best.productKey ?? group.offers.find((o) => o.productKey)?.productKey;
+  return key ? productPath(key) : undefined;
 }

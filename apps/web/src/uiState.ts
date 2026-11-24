@@ -25,6 +25,15 @@ function sanitizeFilters(raw: unknown): Filters {
   // Campos opcionais sem padrão (ex. faixa de preço, eficiência mínima).
   for (const k of ['priceMin', 'priceMax']) if (typeof src[k] === 'number') out[k] = src[k];
   if (typeof src.effMin === 'string') out.effMin = src.effMin;
+  // Filtros da ficha: campo -> valores (texto) e campo -> faixa (números); o resto fica de fora.
+  const obj = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+  out.sheet = Object.fromEntries(Object.entries(obj(src.sheet)).filter(([, v]) => Array.isArray(v) && v.every((x) => typeof x === 'string')));
+  out.sheetRange = Object.fromEntries(
+    Object.entries(obj(src.sheetRange)).map(([k, v]) => {
+      const r = obj(v);
+      return [k, { ...(typeof r.min === 'number' && { min: r.min }), ...(typeof r.max === 'number' && { max: r.max }) }];
+    }),
+  );
   return out as unknown as Filters;
 }
 

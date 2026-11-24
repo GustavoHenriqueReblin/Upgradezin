@@ -139,8 +139,8 @@ const ORDER: Record<BuildIssue['level'], number> = { error: 0, warn: 1, unknown:
 
 /** Como a peça ficaria na montagem: as outras peças continuam, esta entra no lugar da atual. */
 /**
- * "Confira a medida" num card de resultado é ruído: a ficha técnica só é lida quando a peça entra
- * na montagem. Lá a observação aparece, se a loja não informar.
+ * "Confira a medida" num card de resultado é ruído (a medida vem da ficha, que nem sempre a tem).
+ * Na montagem a observação aparece. Medida que a ficha tem e não cabe aparece no card como erro.
  */
 const NOT_MEASURED_YET = new Set(['case-gpu-unknown', 'case-cooler-unknown']);
 

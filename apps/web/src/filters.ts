@@ -3,8 +3,10 @@ import {
   effectiveCash,
   FORM_FACTORS,
   ssdTier,
+  SHEET_FIELDS,
   stripAccents,
   type CategoryId,
+  type SheetField,
   type CoolerType,
   type Efficiency,
   type FormFactor,
@@ -84,6 +86,12 @@ export interface Filters {
   /** Aparência (todas as categorias). Vazio = qualquer cor. */
   colors: ColorOpt[];
   rgb: boolean;
+  /**
+   * Campos da ficha técnica sem filtro próprio acima (SHEET_ONLY_FIELDS): valores escolhidos (texto, lista,
+   * sim/não e números com poucos valores) e faixas (números com muitos valores). Lê a ficha da oferta.
+   */
+  sheet: Record<string, string[]>;
+  sheetRange: Record<string, { min?: number; max?: number }>;
   /** Busca local no título dos resultados já carregados (não consulta as lojas). */
   text: string;
   priceMin?: number;
@@ -136,6 +144,8 @@ export const DEFAULT_FILTERS: Filters = {
   caseFans: false,
   colors: [],
   rgb: false,
+  sheet: {},
+  sheetRange: {},
   text: '',
   inStockOnly: true,
   couponOnly: false,
@@ -177,8 +187,62 @@ export type FilterKey =
   | 'ssdInterfaces' | 'ssdCapacity' | 'ssdPcie' | 'coolerTypes' | 'radiators' | 'caseFormFactors' | 'caseGlass' | 'caseFans'
   | 'colors' | 'rgb' | 'text' | 'price' | 'stock' | 'coupon' | 'trusted';
 
-function predicates(f: Filters): Record<FilterKey, (o: Offer) => boolean> {
+// ---------- Filtros da ficha técnica ----------
+
+/**
+ * Campos da ficha que ganham filtro genérico no painel: os que não têm filtro próprio (soquete, chipset,
+ * memória, VRAM, potência, selo, radiador… já têm, e leem a ficha pelas specs que o servidor monta).
+ */
+const COVERED: Record<CategoryId, string[]> = {
+  motherboard: ['socket', 'chipset', 'formFactor', 'ramType', 'wifi', 'bluetooth'],
+  cpu: ['socket', 'cores', 'igpu'],
+  gpu: ['chip', 'vramGb', 'memType'],
+  ram: ['capacityGb', 'modules', 'type', 'mhz', 'cl'],
+  ssd: ['capacityGb', 'interface'],
+  psu: ['watts', 'efficiency', 'modular', 'standard'],
+  case: ['mbFormats', 'fansIncluded', 'dimensions'],
+  cooler: ['type', 'radiatorMm'],
+};
+export const sheetOnlyFields = (category: CategoryId): SheetField[] => SHEET_FIELDS[category].filter((fd) => !COVERED[category].includes(fd.key));
+
+/** Campo pela chave (o mesmo nome tem o mesmo tipo em todas as categorias). */
+const FIELD_BY_KEY = new Map(Object.values(SHEET_FIELDS).flatMap((fs) => fs.map((fd) => [fd.key, fd] as const)));
+
+/** Valores da oferta no campo, como texto (lista: cada item; sim/não: "sim"/"não"). Sem ficha ou sem o campo: nenhum. */
+export function sheetValues(o: Offer, field: SheetField): string[] {
+  const v = o.sheet?.[field.key];
+  if (v === undefined || v === null || v === '') return [];
+  if (field.type === 'bool') return [v === true || v === 1 || v === '1' ? 'sim' : 'não'];
+  if (field.type === 'list') return String(v).split(',').map((s) => s.trim()).filter(Boolean);
+  return [String(v)];
+}
+const sheetNumber = (o: Offer, key: string): number | undefined => {
+  const v = o.sheet?.[key];
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : undefined;
+};
+
+/** Predicados dos campos da ficha com filtro ativo ("sheet:<campo>"): sem o valor na ficha, não passa. */
+function sheetPredicates(f: Filters): Record<string, (o: Offer) => boolean> {
+  const out: Record<string, (o: Offer) => boolean> = {};
+  for (const [key, selected] of Object.entries(f.sheet)) {
+    if (!selected.length) continue;
+    const field = FIELD_BY_KEY.get(key) ?? { key, label: key, type: 'text' as const };
+    out[`sheet:${key}`] = (o) => sheetValues(o, field).some((x) => selected.includes(x));
+  }
+  for (const [key, r] of Object.entries(f.sheetRange)) {
+    if (r.min == null && r.max == null) continue;
+    out[`sheet:${key}`] = (o) => {
+      const n = sheetNumber(o, key);
+      return n !== undefined && (r.min == null || n >= r.min) && (r.max == null || n <= r.max);
+    };
+  }
+  return out;
+}
+
+function predicates(f: Filters): Record<string, (o: Offer) => boolean> {
   return {
+    ...sheetPredicates(f),
     stores: (o) => anyOf(f.stores, o.store),
     brands: (o) => anyOf(f.brands, o.brand),
     watts: (o) => anyOf(f.watts, o.specs.watts),
@@ -236,9 +300,11 @@ export function resetResultFilters(f: Filters, category: CategoryId): Filters {
   return { ...DEFAULT_FILTERS, ...kept, sort: f.sort };
 }
 
-export function applyFilters(offers: Offer[], f: Filters, except?: FilterKey): Offer[] {
+export function applyFilters(offers: Offer[], f: Filters, except?: FilterKey | `sheet:${string}`): Offer[] {
   const p = predicates(f);
-  const active = (Object.keys(p) as FilterKey[]).filter((k) => k !== except).map((k) => p[k]);
+  const active = Object.keys(p)
+    .filter((k) => k !== except)
+    .map((k) => p[k]!);
   return offers.filter((o) => active.every((fn) => fn(o)));
 }
 

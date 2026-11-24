@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ChartLine, Check, Clock, Plus, Ticket, TrendingDown } from 'lucide-react';
 import { couponApplies, effectiveCash, ssdCapacityLabel, type Offer, type ProductGroup } from '@upgradezin/shared';
 import type { CandidateCheck } from '../build.ts';
+import { productHref } from '../product.ts';
 import { CompatBadge, IssueList } from './Compat.tsx';
 import { PriceHistory } from './PriceHistory.tsx';
 import { storeName } from '../stores.ts';
@@ -94,6 +95,7 @@ export function ProductCard({ group, compat, onPick, picked, replacing }: Props)
   const low = lowBadge(best, price);
   const [historyOpen, setHistoryOpen] = useState(false);
   const discount = Math.round(discountOf(best) * 100);
+  const href = productHref(group);
 
   return (
     <article className="relative flex flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
@@ -101,13 +103,24 @@ export function ProductCard({ group, compat, onPick, picked, replacing }: Props)
         <span className="absolute left-2 top-2 z-10 rounded-md bg-emerald-600 px-2 py-0.5 text-sm font-bold text-white shadow">-{discount}%</span>
       )}
       <div className="flex gap-3 p-4">
-        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">
+        <a
+          href={href}
+          tabIndex={-1}
+          aria-hidden
+          className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white"
+        >
           {group.image ? <img src={group.image} alt="" loading="lazy" className="max-h-full max-w-full object-contain" /> : null}
-        </div>
+        </a>
         <div className="min-w-0 flex-1">
           {group.brand && <div className="text-xs font-semibold text-zinc-500">{group.brand}</div>}
           <h2 className="line-clamp-2 text-sm font-medium leading-snug" title={group.title}>
-            {group.title}
+            {href ? (
+              <a href={href} className="hover:text-accent-700 hover:underline dark:hover:text-accent-400">
+                {group.title}
+              </a>
+            ) : (
+              group.title
+            )}
           </h2>
           <div className="mt-2 flex flex-wrap gap-1">
             {chips.map((c) => (

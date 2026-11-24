@@ -319,6 +319,13 @@ export interface Offer {
   /** Resumo do histórico do anúncio (banco): menor preço à vista com cupom, com estoque, nos últimos 30 dias, e desde quando é acompanhado. */
   history?: { min30: number; since: string };
   specs: Specs;
+  /**
+   * Ficha técnica juntada do produto (campo → valor, ver sheet/fields.ts), posta pelo servidor ao
+   * responder a busca; os filtros da ficha leem daqui. Sem ela: produto ainda sem ficha conhecida.
+   */
+  sheet?: Record<string, number | string | boolean>;
+  /** Chave do produto (a da página /produto/<chave>), posta pelo servidor junto com a ficha. */
+  productKey?: string;
   /** Chave de agrupamento entre lojas (ver group.ts). */
   modelKey: string;
   collectedAt: string;

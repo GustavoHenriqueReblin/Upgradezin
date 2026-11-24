@@ -1,6 +1,7 @@
 import { effectiveCash, stripAccents, termMatches, type CategoryId, type ListingHistory, type Offer, type PricePoint, type StoreId } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
 import { emitCollected } from './events.ts';
+import { applySheets } from './offer-sheets.ts';
 import { NOT_BROKEN } from './page-errors.ts';
 
 /**
@@ -112,18 +113,18 @@ export function markOutOfStock(db: Db, store: StoreId, category: CategoryId, see
 
 /**
  * Anúncios da loja na categoria, vistos desde `seenSince`, que batem com algum dos termos do
- * formulário pelas specs (termMatches). É o resultado da busca do site.
+ * formulário pelas specs (termMatches), já com a ficha do produto (as specs que a ficha cobre vêm
+ * dela). É o resultado da busca do site.
  */
 export function matchingListings(db: Db, store: StoreId, category: CategoryId, terms: string[], seenSince: string): Offer[] {
   const rows = db
     .prepare(`SELECT offer FROM listings WHERE store = ? AND category = ? AND last_seen_at >= ? AND ${NOT_BROKEN}`)
     .all(store, category, seenSince) as { offer: string }[];
-  const out: Offer[] = [];
-  for (const r of rows) {
-    const o = JSON.parse(r.offer) as Offer;
-    if (terms.some((t) => termMatches(category, t, o.specs))) out.push(o);
-  }
-  return out;
+  return applySheets(
+    db,
+    category,
+    rows.map((r) => JSON.parse(r.offer) as Offer),
+  ).filter((o) => terms.some((t) => termMatches(category, t, o.specs)));
 }
 
 const fold = (s: string) => stripAccents(s).toLowerCase();
@@ -138,16 +139,24 @@ export function titleMatches(db: Db, store: StoreId, category: CategoryId, text:
   const rows = db
     .prepare(`SELECT title, offer FROM listings WHERE store = ? AND category = ? AND last_seen_at >= ? AND ${NOT_BROKEN}`)
     .all(store, category, seenSince) as { title: string; offer: string }[];
-  return rows.filter((r) => words.every((w) => fold(r.title).includes(w))).map((r) => JSON.parse(r.offer) as Offer);
+  return applySheets(
+    db,
+    category,
+    rows.filter((r) => words.every((w) => fold(r.title).includes(w))).map((r) => JSON.parse(r.offer) as Offer),
+  );
 }
 
 /**
- * Ofertas da categoria em todas as lojas, vistas desde `seenSince` (a última oferta de cada anúncio).
- * Como na busca, sem os anúncios com a página quebrada (prices/page-errors.ts).
+ * Ofertas da categoria em todas as lojas, vistas desde `seenSince` (a última oferta de cada anúncio),
+ * com a ficha do produto. Como na busca, sem os anúncios com a página quebrada (prices/page-errors.ts).
  */
 export function recentOffers(db: Db, category: CategoryId, seenSince: string): Offer[] {
   const rows = db.prepare(`SELECT offer FROM listings WHERE category = ? AND last_seen_at >= ? AND ${NOT_BROKEN}`).all(category, seenSince) as { offer: string }[];
-  return rows.map((r) => JSON.parse(r.offer) as Offer);
+  return applySheets(
+    db,
+    category,
+    rows.map((r) => JSON.parse(r.offer) as Offer),
+  );
 }
 
 /** Marcas (já normalizadas na coleta) dos anúncios da categoria vistos desde `seenSince`, sem "Outros"/"Genérica". */

@@ -240,6 +240,12 @@ export function App() {
   };
 
   /**
+   * "Não achou? Buscar nas lojas" desligado por enquanto: a varredura completa das lojas já traz
+   * praticamente todas as peças. Para voltar, true.
+   */
+  const STORE_TEXT_SEARCH = false;
+
+  /**
    * "Buscar nas lojas" do filtro de texto: os termos da busca atual mais o texto, que vai às lojas
    * como termo próprio (na S2, que rende uma página por consulta, a página já traz o produto). O filtro de
    * texto continua, então a tela mostra o que bate com ele.
@@ -584,7 +590,7 @@ export function App() {
                 value={filters.text}
                 onChange={(text) => setFilters({ ...filters, text })}
                 suggestions={suggestions}
-                onSearchStores={running || lastTerms?.some((t) => t.toLowerCase() === filters.text.trim().replace(/s+/g, ' ').toLowerCase()) ? undefined : searchText}
+                onSearchStores={!STORE_TEXT_SEARCH || running || lastTerms?.some((t) => t.toLowerCase() === filters.text.trim().replace(/s+/g, ' ').toLowerCase()) ? undefined : searchText}
               />
             )}
 

@@ -33,6 +33,7 @@ import {
 } from '../format.ts';
 import { storeList } from '../stores.ts';
 import { Check, Pill, PriceInput, Section, toggle } from './ui.tsx';
+import { SheetFilters } from './SheetFilters.tsx';
 
 interface Props {
   category: CategoryId;
@@ -274,6 +275,8 @@ export function FilterPanel({ category, offers, filters: f, onChange, onEditSear
           </Section>
         </>
       )}
+
+      <SheetFilters category={category} offers={offers} filters={f} onChange={onChange} />
 
       <Section title="Visual">
         {(['black', 'white'] as ColorOpt[]).map((c) => (

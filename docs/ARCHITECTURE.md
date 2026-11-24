@@ -338,6 +338,8 @@ A migração 12 apaga os termos (`search_terms`, `term_runs`, `listing_terms`): 
 
 ### 8.2 Preços e rotina de coleta
 
+**Ficha nas ofertas:** toda oferta que o site recebe (busca no banco, texto livre, busca ao vivo, upgrades, página do produto) leva a ficha juntada do produto (`sheet`), e as specs dos campos que a ficha cobre vêm só dela (`withSheetSpecs` em `packages/shared/src/sheet/specs.ts`; índice anúncio → ficha por categoria em `apps/server/src/prices/offer-sheets.ts`, refeito a cada minuto). Filtros, montagem e os termos abaixo leem a ficha; o título só dá o que a ficha não cobre (linha e geração do processador, série da placa de vídeo, cor, RGB). Os campos da ficha sem filtro próprio ganham filtro genérico no painel (`SheetFilters`).
+
 **O que a busca do site mostra de cada loja** = os anúncios dela no banco que batem com algum termo do formulário pelas specs (`termMatches` em `packages/shared/src/terms.ts`: "AM4" = encaixe AM4, "Ryzen 7" = linha, "750W" = potência, chipset, tipo e capacidade de memória, interface do SSD, tipo de cooler, formato do gabinete, fabricante do chip de vídeo), vistos nas últimas `SEARCH_DB_MAX_AGE_H` (72 h). Com texto livre, também os de título com todas as palavras (`titleMatches`, sem acento nem maiúsculas) e o que a busca da loja trouxer. Cada anúncio leva a data da própria coleta ("preço visto há X").
 
 **Termos do formulário:** `allSearchTerms()` (`packages/shared/src/terms.ts`) lista tudo o que o formulário de busca pode gerar (potências de fonte, plataformas e chipsets, linhas de processador, fabricantes de chip de vídeo, tipo × capacidade de memória); um teste garante que o `searchPlan` do site só gera termos dessa lista. Não vão às lojas nem ficam guardados: só escolhem anúncios do banco.

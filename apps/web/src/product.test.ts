@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { productPath, type Offer } from '@upgradezin/shared';
-import { productKeyFromUrl, splitOffers } from './product.ts';
+import { productHref, productKeyFromUrl, splitOffers } from './product.ts';
 
 describe('endereço da página do produto', () => {
   it('lê a chave codificada (ida e volta com productPath); outros endereços e código quebrado, nada', () => {
@@ -42,5 +42,14 @@ describe('ofertas da página do produto', () => {
     const only = splitOffers([o('s1', 'p', 90, { marketplace: true })]);
     expect(only.main).toEqual([]);
     expect(only.history.map((x) => x.storeSku)).toEqual(['p']);
+  });
+});
+
+describe('card → página do produto', () => {
+  const o = (productKey?: string) => ({ store: 's1', storeSku: '1', productKey }) as Offer;
+  it('a chave da melhor oferta; sem ela, a de outra oferta do grupo; nenhuma: sem link', () => {
+    expect(productHref({ best: o('gpu:ABC'), offers: [o('gpu:ABC')] })).toBe('/produto/gpu%3AABC');
+    expect(productHref({ best: o(), offers: [o(), o('id:7')] })).toBe('/produto/id%3A7');
+    expect(productHref({ best: o(), offers: [o()] })).toBeUndefined();
   });
 });
