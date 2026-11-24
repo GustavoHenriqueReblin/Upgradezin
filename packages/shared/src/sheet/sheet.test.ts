@@ -309,6 +309,8 @@ describe('leitor da ficha', () => {
     expect(readSheet('cooler', lines('Dimensões do radiador, incl. ventilador (A x L x P), (mm): 397 x 140 x 52', 'Especificações do radiador:', 'Dimensões (A x L x P), (mm) : 397 x 120 x 27')).radiatorMm).toBe(360);
     expect(readSheet('cooler', lines('Bomba: 2800 RPM', 'Dimensões do Radiador: 120×120×27mm')).radiatorMm).toBe(120);
     expect(readSheet('cooler', lines('Material do radiador:Alumínio', 'Dimensões do radiador:Comprimento: 275 mm')).radiatorMm).toBe(240);
+    // Quatro ventoinhas de 120: radiador de 480.
+    expect(readSheet('cooler', lines('Bomba: 2800 RPM', 'Dimensões do radiador: 518 x 120 x 27 mm')).radiatorMm).toBe(480);
   });
 
   it('placa-mãe, processador, placa de vídeo e fonte: mais formatos das fichas (nov/2026, 3ª leva)', () => {
@@ -488,6 +490,7 @@ describe('campos pelo título do anúncio', () => {
     expect(readTitle('case', 'Gabinete Gamer Mid-Tower Vidro Temperado')).not.toHaveProperty('mbFormats');
     expect(readTitle('case', 'Gabinete Gamer Mini Tower, M-ATX, 3 Fans')).toMatchObject({ formFactor: 'Mini Tower', mbFormats: 'Micro-ATX,Mini-ITX', fansIncluded: 3 });
     expect(readTitle('cooler', 'Water Cooler Rise Mode Frost 360mm, AM5/AM4/LGA1700, TDP 250W')).toMatchObject({ type: 'water', radiatorMm: 360, tdpW: 250 });
+    expect(readTitle('cooler', 'Water Cooler Valkyrie Jarn C480, RGB, 480mm, Branco, C480W-RGB-WH')).toMatchObject({ type: 'water', radiatorMm: 480 });
     // O "360W" do código é "360 White", não TDP.
     expect(readTitle('cooler', 'Water Cooler Round5 Boreah White, ARGB, 360mm, Intel-AMD, R5-WC-BOREAH-360W-2254')).not.toHaveProperty('tdpW');
   });
@@ -528,6 +531,9 @@ describe('busca na web: o JSON da categoria preenchido pela IA, e a estimativa',
     expect(r.confidence).toBe('high');
     expect(parseWebReply('cooler', `Pesquisa ${q}`)).toBeUndefined();
     expect(parseWebReply('cooler', 'sem json nenhum aqui')).toBeUndefined();
+    // Radiador de 480 está nas opções (antes a IA devolvia null por não achar a opção).
+    expect(q).toContain('480');
+    expect(parseWebReply('cooler', JSON.stringify({ ...answer, tipo: 'water', altura_mm: null, radiador_mm: '480 mm' }))!.values).toMatchObject({ type: 'water', radiatorMm: 480 });
     // Confiança baixa: nenhum valor entra.
     expect(parseWebReply('cooler', JSON.stringify({ ...answer, confianca: 'baixa' }))).toMatchObject({ values: {}, confidence: 'low' });
   });

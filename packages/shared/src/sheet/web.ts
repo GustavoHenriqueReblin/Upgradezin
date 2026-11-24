@@ -57,7 +57,7 @@ const board = (s: string) =>
       .replace(/^(mini ?itx|itx)$/, 'mini-itx')
       .replace(/^eatx$/, 'e-atx')
   ];
-const radiator = (s: string) => (['120', '140', '240', '280', '360', '420'].includes(s.replace(/\D/g, '')) ? s.replace(/\D/g, '') : undefined);
+const radiator = (s: string) => (['120', '140', '240', '280', '360', '420', '480'].includes(s.replace(/\D/g, '')) ? s.replace(/\D/g, '') : undefined);
 
 /** As chaves de cada categoria: nome da chave, opções e normalização (o tipo e a faixa vêm do campo). */
 const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>> = {
@@ -158,7 +158,7 @@ const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>
   cooler: {
     type: { key: 'tipo', options: { air: 'ar', ar: 'ar', water: 'water' } },
     heightMm: { key: 'altura_mm', min: 20, max: 200 },
-    radiatorMm: { key: 'radiador_mm', options: opts('120', '140', '240', '280', '360', '420') },
+    radiatorMm: { key: 'radiador_mm', options: opts('120', '140', '240', '280', '360', '420', '480') },
     tdpW: { key: 'tdp_w', min: 50, max: 500 },
     noiseDba: { key: 'ruido_dba' },
     sockets: { key: 'soquetes', item: socket },
@@ -288,7 +288,13 @@ export function acceptWebValue(k: WebKey, v: unknown): SheetValue | undefined {
     return ok.length ? ok.join(',') : undefined;
   }
   if (k.type === 'bool') return typeof v === 'boolean' ? v : /^(sim|true|yes)$/i.test(String(v)) ? true : /^(n[aã]o|false|no)$/i.test(String(v)) ? false : undefined;
-  if (k.options) return k.options[String(v).trim().toLowerCase()];
+  if (k.options) {
+    // Também com a unidade no fim ("480 mm" para a opção "480").
+    const s = String(v).trim().toLowerCase();
+    const o = k.options[s] ?? k.options[s.replace(/\s*mm$/, '')];
+    // Campo numérico com opções (radiador): o valor é o número, não o texto da opção.
+    return o !== undefined && (k.type === 'int' || k.type === 'real') ? Number(o) : o;
+  }
   if (k.type === 'int' || k.type === 'real') {
     const n = toNumber(v);
     if (n === undefined || (k.min !== undefined && n < k.min) || (k.max !== undefined && n > k.max)) return undefined;

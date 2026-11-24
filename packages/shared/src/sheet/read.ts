@@ -11,7 +11,7 @@ import { dec, firstInt, isNo, isYes, numberWith, pick, sheetDoc, thousands, type
  *
  * READER_VERSION: mudou o leitor ou os campos, sobe o número: o servidor relê as fichas guardadas.
  */
-export const READER_VERSION = 10;
+export const READER_VERSION = 11;
 
 type Reader = (doc: SheetDoc) => SheetValues;
 
@@ -607,7 +607,7 @@ const caseReader: Reader = (doc) => {
     const re = /\(mm\)/.test(l) ? /\b(\d{3}(?:\s*\/\s*\d{3})*)\b/g : /\b(\d{3}(?:\s*\/\s*\d{3})*)\s*mm/g;
     // Texto corrido: sem as medidas de placa de vídeo e de cooler da mesma frase ("… radiadores de até 360mm … uma GPU de 420mm").
     const text = l.length > 120 ? l.replace(/(?:gpu|vga|placas? de video|cooler (?:de )?(?:cpu|processador))[^0-9|]{0,25}\d{3}\s*mm/g, '') : l;
-    for (const m of text.matchAll(re)) for (const n of m[1]!.split('/').map(Number)) if ([120, 140, 240, 280, 360, 420].includes(n)) radiators.add(n);
+    for (const m of text.matchAll(re)) for (const n of m[1]!.split('/').map(Number)) if ([120, 140, 240, 280, 360, 420, 480].includes(n)) radiators.add(n);
   }
   return clean({
     formFactor,
@@ -654,7 +654,7 @@ const cooler: Reader = (doc) => {
   // ("402 x 120 x 27 mm"), quantas ventoinhas de 120/140 cabem no comprimento.
   let radiatorMm: number | undefined;
   if (water) {
-    const named = doc.all.match(/radiador[^\n\d]{0,30}(120|140|240|280|360|420)\s*m/) ?? doc.all.match(/\b(120|140|240|280|360|420)\s*mm\b(?!\s*x)/);
+    const named = doc.all.match(/radiador[^\n\d]{0,30}(120|140|240|280|360|420|480)\s*m/) ?? doc.all.match(/\b(120|140|240|280|360|420|480)\s*mm\b(?!\s*x)/);
     // "396 x 120 x 27", "277.5mm x 119.2mm x 27mm", "(C) 277 x (L) 119,6 x (A) 27 mm", "143 x 315 x 30 mm".
     const DIMS = /(\d{2,3})(?:[.,]\d+)?\s*(?:mm)?\s*(?:\([a-z]\))?\s*[x*]\s*(?:\([a-z]\)\s*)?(\d{2,3})(?:[.,]\d+)?/;
     // Comprimento e largura, em qualquer ordem: a maior medida e a seguinte.
@@ -687,7 +687,8 @@ const cooler: Reader = (doc) => {
       const [len, wid] = lw;
       const fan = wid >= 135 ? 140 : 120;
       const n = Math.round((len - 30) / fan);
-      if (n >= 1 && n <= 3) radiatorMm = n * fan;
+      // Até 3 ventoinhas, ou 4 de 120 (radiador de 480).
+      if ((n >= 1 && n <= 3) || (n === 4 && fan === 120)) radiatorMm = n * fan;
     }
     if (!radiatorMm && named) radiatorMm = Number(named[1]);
   }

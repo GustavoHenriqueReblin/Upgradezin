@@ -32,7 +32,7 @@ export function extractCoolerSpecs(title: string): CoolerSpecs {
 
   const mm = [...t.matchAll(/\b(\d{2,3})\s*mm\b/g)].map((m) => Number(m[1]));
   if (specs.coolerType === 'water') {
-    const r = mm.find((v) => [120, 140, 240, 280, 360, 420].includes(v)) ?? Number(t.match(/\b(120|240|280|360|420)\b/)?.[1] ?? 0);
+    const r = mm.find((v) => [120, 140, 240, 280, 360, 420, 480].includes(v)) ?? Number(t.match(/\b(120|240|280|360|420|480)\b/)?.[1] ?? 0);
     if (r) specs.radiator = r;
   }
 
