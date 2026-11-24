@@ -1,4 +1,4 @@
-import { ADMIN_PAGE_SIZE_MAX, INTERVAL_KINDS, type IntervalKind, STORE_INTERVAL_S_MAX, STORE_INTERVAL_S_MIN, type StoreInterval, CATEGORIES, STORES, type FullSweepSettings, type AdminPage, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type CategoryId, type CoverageRow, type PerfGap, type ProbeResult, type AdminProductFilter, type AdminProductPage, type SheetRoutineStatus, type SheetRoutineInput, type SheetCoverageRow, type SheetPageText, type SheetProductFilter, type SheetProductPage, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId } from '@upgradezin/shared';
+import { ADMIN_PAGE_SIZE_MAX, INTERVAL_KINDS, type IntervalKind, STORE_INTERVAL_S_MAX, STORE_INTERVAL_S_MIN, type StoreInterval, CATEGORIES, STORES, type FullSweepSettings, type AdminPage, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type CategoryId, type CoverageRow, type PerfGap, type ProbeResult, type AdminProductFilter, type AdminProductPage, type SheetRoutineStatus, type SheetRoutineInput, type WebAnswer, type WebAnswerFilter, type WebAnswerPage, type WebFillInput, type WebFillStatus, type SheetManualInput, type SheetCoverageRow, type SheetPageText, type SheetProductFilter, type SheetProductPage, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId } from '@upgradezin/shared';
 import { createReadStream } from 'node:fs';
 import { emitChange, onChange } from '../changes.ts';
 import type { ActivityInfo } from '@upgradezin/shared';
@@ -46,6 +46,14 @@ export interface AdminDeps {
     list: (f: SheetProductFilter) => SheetProductPage;
     page: (store: StoreId, sku: string) => SheetPageText | undefined;
     read: (store: StoreId, sku: string) => CollectNowResult;
+    web: () => WebFillStatus;
+    setWeb: (s: WebFillInput) => WebFillStatus;
+    /** Pergunta a próxima agora (ou refaz o produto `key`); null: nada na fila, pausada ou já perguntando. */
+    askWeb: (key?: string) => Promise<WebAnswer | null>;
+    resumeWeb: () => WebFillStatus;
+    webAnswers: (f: WebAnswerFilter) => WebAnswerPage;
+    /** Preenche à mão campos de um produto; devolve os campos recusados (fora do tipo, das opções ou da faixa). */
+    setManual: (m: SheetManualInput) => { errors: string[] };
   };
   data: {
     coverage: () => CoverageRow[];
@@ -83,7 +91,7 @@ const ProductsQuery = z.object({
 });
 const SheetProductsQuery = z.object({
   category: z.enum(CATEGORIES),
-  state: z.enum(['complete', 'incomplete', 'unread', 'exhausted']).optional(),
+  state: z.enum(['complete', 'incomplete', 'unread', 'exhausted', 'manual']).optional(),
   q: z.string().max(80).optional(),
   ...Paging,
 });
@@ -112,6 +120,25 @@ const IntervalBody = z
   .object({ kind: z.enum(INTERVAL_KINDS), minS: intervalSeconds, maxS: intervalSeconds })
   .strict()
   .refine((v) => v.minS <= v.maxS);
+const ManualBody = z
+  .object({
+    key: z.string().min(1).max(200),
+    category: z.enum(CATEGORIES),
+    values: z.record(z.string().max(40), z.union([z.string().max(80), z.number(), z.boolean(), z.null()])),
+  })
+  .strict();
+const WebAnswersQuery = z.object({
+  category: z.enum(CATEGORIES).optional(),
+  status: z.enum(['ok', 'none']).optional(),
+  q: z.string().max(80).optional(),
+  ...Paging,
+});
+const WebFillBody = z
+  .object({
+    enabled: z.boolean().optional(),
+    interval: z.object({ minS: intervalSeconds, maxS: intervalSeconds }).strict().refine((v) => v.minS <= v.maxS).optional(),
+  })
+  .strict();
 const ProbeBody = z
   .object({
     category: z.enum(CATEGORIES),
@@ -277,6 +304,39 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
         return deps.sheets.setRoutine(b.data);
       });
       admin.get('/sheets/coverage', async () => deps.sheets.coverage());
+      // Busca na web: ligar, intervalo, perguntar agora, tirar a pausa.
+      admin.get('/sheets/web', async () => deps.sheets.web());
+      admin.get('/sheets/web/answers', async (req, reply) => {
+        const q = WebAnswersQuery.safeParse(req.query);
+        return q.success ? deps.sheets.webAnswers(q.data) : reply.code(400).send({ error: 'invalid' });
+      });
+      admin.put('/sheets/web', async (req, reply) => {
+        const b = WebFillBody.safeParse(req.body);
+        if (!b.success) return reply.code(400).send({ error: 'invalid', errors: [`Busca na web: intervalo de ${STORE_INTERVAL_S_MIN} a ${STORE_INTERVAL_S_MAX} segundos, o primeiro não maior que o segundo.`] });
+        req.log.info(b.data, 'admin: busca na web');
+        emitChange('admin');
+        return deps.sheets.setWeb(b.data);
+      });
+      admin.post('/sheets/web/ask', async (req, reply) => {
+        const b = z.object({ key: z.string().min(1).max(200).optional() }).strict().safeParse(req.body ?? {});
+        if (!b.success) return reply.code(400).send({ error: 'invalid' });
+        if (b.data.key) req.log.info({ key: b.data.key }, 'admin: busca na web, refazer');
+        return { answer: await deps.sheets.askWeb(b.data.key) };
+      });
+      // Ficha preenchida à mão (produto "precisa de você").
+      admin.put('/sheets/manual', async (req, reply) => {
+        const b = ManualBody.safeParse(req.body);
+        if (!b.success) return reply.code(400).send({ error: 'invalid' });
+        const r = deps.sheets.setManual(b.data);
+        req.log.info({ key: b.data.key, fields: Object.keys(b.data.values), errors: r.errors }, 'admin: ficha à mão');
+        emitChange('admin');
+        if (r.errors.length) return reply.code(400).send({ error: 'invalid', errors: [`Valor fora do formato: ${r.errors.join(', ')}.`] });
+        return { ok: true };
+      });
+      admin.post('/sheets/web/resume', async () => {
+        emitChange('admin');
+        return deps.sheets.resumeWeb();
+      });
       admin.get('/sheets/products', async (req, reply) => {
         const q = SheetProductsQuery.safeParse(req.query);
         return q.success ? deps.sheets.list(q.data) : reply.code(400).send({ error: 'invalid' });

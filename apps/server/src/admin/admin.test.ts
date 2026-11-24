@@ -12,7 +12,8 @@ import { listAttempts, onAttempt, pageAttempts } from '../prices/attempts.ts';
 import { attemptTimeline, coverage, perfGaps } from './data.ts';
 import { listProducts } from './products.ts';
 import { listSheetProducts, sheetPageText, sheetStoreStatus } from './sheets.ts';
-import { savePage, SHEET_SCOPE_DAYS, sheetCoverage } from '../prices/sheets.ts';
+import { savePage, setManualSheet, SHEET_SCOPE_DAYS, sheetCoverage } from '../prices/sheets.ts';
+import { webAnswers } from '../prices/web-fill.ts';
 import { saveCollection } from '../prices/prices.ts';
 import { registerAdmin } from './routes.ts';
 import { emitChange, onChange } from '../changes.ts';
@@ -121,6 +122,12 @@ function makeApp() {
       list: (f) => listSheetProducts(db, f),
       page: (store, sku) => sheetPageText(db, store, sku),
       read: (id, sku) => (calls.push(['sheet', id, sku]), sku === 'pausada' ? { ok: false, error: 'Loja em pausa.' } : { ok: true, startsAt: '2026-11-20T21:00:00.000Z' }),
+      web: () => ({ enabled: false, interval: { minS: 90, maxS: 150 }, queue: 0, answered: 0, empty: 0, pausedUntil: null, pauseReason: null, nextAt: null, busy: false }),
+      setWeb: (s) => ({ enabled: s.enabled ?? false, interval: s.interval ?? { minS: 90, maxS: 150 }, queue: 0, answered: 0, empty: 0, pausedUntil: null, pauseReason: null, nextAt: null, busy: false }),
+      askWeb: async () => null,
+      setManual: (m) => setManualSheet(db, m.key, m.category, m.values),
+      webAnswers: (f) => webAnswers(db, f),
+      resumeWeb: () => ({ enabled: false, interval: { minS: 90, maxS: 150 }, queue: 0, answered: 0, empty: 0, pausedUntil: null, pauseReason: null, nextAt: null, busy: false }),
     },
     data: {
       coverage: () => coverage(db, () => 0),

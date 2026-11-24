@@ -26,8 +26,9 @@ export function sheetStoreStatus(db: Db, stores: { id: StoreId; name: string; ca
 export function listSheetProducts(db: Db, f: SheetProductFilter, now = Date.now()): SheetProductPage {
   const { page, pageSize, offset } = pageOf(f);
   const q = f.q?.trim().toLowerCase();
-  // "Só a web completa": incompleta com a página de todas as lojas já lida (como na cobertura).
-  const inState = (p: SheetProduct) => !f.state || (f.state === 'exhausted' ? p.state === 'incomplete' && p.listings.every((l) => l.read) : p.state === f.state);
+  // "Só a web completa": incompleta com a página de todas as lojas já lida (como na cobertura); "precisa de você": e a web já perguntada.
+  const inState = (p: SheetProduct) =>
+    !f.state || (f.state === 'exhausted' ? p.state === 'incomplete' && p.listings.every((l) => l.read) : f.state === 'manual' ? p.needsHuman : p.state === f.state);
   const all = catalogProducts(db, f.category, since(now)).filter(
     (p) => inState(p) && (!q || p.listings.some((l) => l.title.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q))),
   );

@@ -123,7 +123,7 @@ export function sheetEta(missing: number, interval: StoreInterval): string {
 
 export const SHEET_STATE_LABEL: Record<SheetState, string> = { complete: 'completa', incomplete: 'incompleta', unread: 'não lida' };
 /** Opções do filtro de situação da lista de fichas (as situações e "só a web completa"). */
-export const SHEET_FILTER_LABEL: Record<SheetFilterState, string> = { ...SHEET_STATE_LABEL, exhausted: 'só a web completa' };
+export const SHEET_FILTER_LABEL: Record<SheetFilterState, string> = { ...SHEET_STATE_LABEL, exhausted: 'só a web completa', manual: 'precisa de você' };
 
 /** Nomes dos campos da ficha ("architecture,tdpW" -> "Arquitetura, TDP"). */
 export function fieldLabels(category: CategoryId, keys: string[]): string {

@@ -121,11 +121,12 @@ export const SHEET_FIELDS: Record<CategoryId, SheetField[]> = {
   ],
   cooler: [
     f('type', 'Tipo', 'text', undefined, M),
-    f('heightMm', 'Altura', 'int', 'mm', ['type', 'ar']),
+    // Altura e ruído: opcionais (quando a loja diz, ótimo; não faltando, a ficha não fica incompleta).
+    f('heightMm', 'Altura', 'int', 'mm'),
     f('radiatorMm', 'Radiador', 'int', 'mm', ['type', 'water']),
     // TDP suportado: opcional (a loja quase nunca informa).
     f('tdpW', 'TDP suportado', 'int', 'W'),
-    f('noiseDba', 'Ruído', 'real', 'dBA', M),
+    f('noiseDba', 'Ruído', 'real', 'dBA'),
     f('sockets', 'Soquetes', 'list', undefined, M),
     f('fans', 'Ventoinhas', 'int'),
   ],

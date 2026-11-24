@@ -5,6 +5,8 @@ import {
   missingMain,
   READER_VERSION,
   readSheet,
+  acceptSheetValue,
+  estimateSheet,
   readTitle,
   SHEET_DEFAULTS,
   sheetFields,
@@ -12,6 +14,7 @@ import {
   type CategoryId,
   type SheetField,
   type SheetValue,
+  type SheetValueFrom,
   type SheetCoverageRow,
   type SheetProduct,
   type SheetValues,
@@ -33,8 +36,10 @@ import { getMeta, setMeta, type Db } from '../db/db.ts';
  * A ficha de um produto junta as páginas de todos os anúncios dele (listings.product_key: o mesmo
  * produto nas várias lojas), campo a campo: a página da própria loja primeiro, depois as outras, da
  * lida há menos tempo. Nenhuma loja tem preferência. O que nenhuma página trouxe vem do título dos
- * anúncios (readTitle) e, por fim, do valor padrão da categoria (SHEET_DEFAULTS, só com página lida).
- * Título e padrão entram na hora de juntar, sem gravar: mudou o leitor do título, vale na hora.
+ * anúncios (readTitle), depois da busca na web (sheet_web: a resposta de cada pergunta feita, por
+ * produto e campo; prices/web-fill.ts), da estimativa (estimateSheet, só do campo que a web já foi
+ * perguntada e não respondeu) e, por fim, do valor padrão da categoria (SHEET_DEFAULTS, só com página
+ * lida). Título, estimativa e padrão entram na hora de juntar, sem gravar: mudou o leitor, vale na hora.
  */
 
 /** A rotina lê a ficha dos produtos vistos nas lojas nos últimos dias (os que saíram do catálogo ficam de fora). */
@@ -46,7 +51,7 @@ const SQL_TYPE: Record<SheetField['type'], string> = { int: 'INTEGER', bool: 'IN
 const synced = new WeakSet<Db>();
 
 /** Tabelas por categoria prontas nesta conexão (uma vez por conexão). */
-function ready(db: Db): Db {
+export function ready(db: Db): Db {
   if (!synced.has(db)) syncSheetTables(db);
   return db;
 }
@@ -77,7 +82,114 @@ export function syncSheetTables(db: Db): { added: string[]; dropped: string[] } 
       dropped.push(`${t}.${col}`);
     }
   }
+  // Preenchido à mão no admin (produto "precisa de você"): vale mais que tudo.
+  db.exec(`CREATE TABLE IF NOT EXISTS sheet_manual (
+    product_key TEXT NOT NULL,
+    field       TEXT NOT NULL,
+    category    TEXT NOT NULL,
+    value       TEXT NOT NULL,
+    set_at      TEXT NOT NULL,
+    PRIMARY KEY (product_key, field)
+  )`);
+  // Busca na web: uma linha por campo perguntado (produto + campo), com a resposta, o valor lido (JSON), a confiança e as fontes.
+  db.exec(`CREATE TABLE IF NOT EXISTS sheet_web (
+    product_key TEXT NOT NULL,
+    field       TEXT NOT NULL,
+    category    TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    question    TEXT NOT NULL,
+    answer      TEXT NOT NULL DEFAULT '',
+    value       TEXT,
+    status      TEXT NOT NULL,
+    store       TEXT NOT NULL,
+    asked_at    TEXT NOT NULL,
+    confidence  TEXT,
+    sources     TEXT,
+    PRIMARY KEY (product_key, field)
+  )`);
+  // Colunas que vieram depois (a confiança e as fontes da resposta em JSON).
+  const webCols = new Set((db.prepare('PRAGMA table_info(sheet_web)').all() as { name: string }[]).map((c) => c.name));
+  for (const col of ['confidence', 'sources']) if (!webCols.has(col)) db.exec(`ALTER TABLE sheet_web ADD COLUMN ${col} TEXT`);
   return { added, dropped };
+}
+
+/** Campos preenchidos à mão, por produto, de uma categoria (ou só dos produtos dados). */
+export function manualSheets(db: Db, category: CategoryId, keys?: string[]): Map<string, SheetValues> {
+  ready(db);
+  const rows = (
+    keys
+      ? keys.length
+        ? db.prepare(`SELECT product_key, field, value FROM sheet_manual WHERE category = ? AND product_key IN (${keys.map(() => '?').join(', ')})`).all(category, ...keys)
+        : []
+      : db.prepare('SELECT product_key, field, value FROM sheet_manual WHERE category = ?').all(category)
+  ) as { product_key: string; field: string; value: string }[];
+  const out = new Map<string, SheetValues>();
+  for (const r of rows) {
+    const v = out.get(r.product_key) ?? {};
+    v[r.field] = JSON.parse(r.value) as SheetValue;
+    out.set(r.product_key, v);
+  }
+  return out;
+}
+
+/**
+ * Preenche à mão campos de um produto (admin): cada valor validado como no JSON da web (tipo, opções,
+ * faixa); null ou vazio apaga o campo. Devolve os campos recusados.
+ */
+export function setManualSheet(db: Db, key: string, category: CategoryId, values: Record<string, unknown>, now = new Date().toISOString()): { errors: string[] } {
+  ready(db);
+  const errors: string[] = [];
+  const known = new Set(SHEET_FIELDS[category].map((f) => f.key));
+  db.exec('BEGIN');
+  try {
+    for (const [field, raw] of Object.entries(values)) {
+      if (!known.has(field)) {
+        errors.push(field);
+        continue;
+      }
+      if (raw === null || raw === '') {
+        db.prepare('DELETE FROM sheet_manual WHERE product_key = ? AND field = ?').run(key, field);
+        continue;
+      }
+      const v = acceptSheetValue(category, field, raw);
+      if (v === undefined) {
+        errors.push(field);
+        continue;
+      }
+      db.prepare('INSERT OR REPLACE INTO sheet_manual (product_key, field, category, value, set_at) VALUES (?, ?, ?, ?, ?)').run(key, field, category, JSON.stringify(v), now);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  return { errors };
+}
+
+/** Respostas da busca na web de um produto: os valores lidos e os campos já perguntados (com ou sem resposta). */
+export interface WebSheet {
+  values: SheetValues;
+  asked: Set<string>;
+}
+
+/** Respostas da busca na web por produto, de uma categoria (ou só dos produtos dados). */
+export function webSheets(db: Db, category: CategoryId, keys?: string[]): Map<string, WebSheet> {
+  ready(db);
+  const rows = (
+    keys
+      ? keys.length
+        ? db.prepare(`SELECT product_key, field, value FROM sheet_web WHERE category = ? AND product_key IN (${keys.map(() => '?').join(', ')})`).all(category, ...keys)
+        : []
+      : db.prepare('SELECT product_key, field, value FROM sheet_web WHERE category = ?').all(category)
+  ) as { product_key: string; field: string; value: string | null }[];
+  const out = new Map<string, WebSheet>();
+  for (const r of rows) {
+    let w = out.get(r.product_key);
+    if (!w) out.set(r.product_key, (w = { values: {}, asked: new Set() }));
+    w.asked.add(r.field);
+    if (r.value !== null) w.values[r.field] = JSON.parse(r.value) as SheetValue;
+  }
+  return out;
 }
 
 /** Valor do campo para a coluna (bool vira 0/1). */
@@ -173,8 +285,8 @@ export interface SheetTitle {
 
 export interface ProductSheet {
   values: SheetValues;
-  /** De qual página veio cada campo (from: do título do anúncio, ou o valor padrão). */
-  origin: Record<string, { store: StoreId; sku: string; from?: 'title' | 'default' }>;
+  /** De qual página veio cada campo (from: do título do anúncio, da busca na web, estimado ou o valor padrão). */
+  origin: Record<string, { store: StoreId; sku: string; from?: SheetValueFrom }>;
   missing: string[];
   sources: SheetSource[];
 }
@@ -193,12 +305,20 @@ function titleValues(category: CategoryId, title: string): SheetValues {
 }
 
 /**
- * Junta as páginas, campo a campo, na ordem dada (a primeira com o campo vale); depois o que os
- * títulos dos anúncios dizem; depois o padrão da categoria, se alguma página com ficha foi lida.
+ * Junta, campo a campo: o preenchido à mão no admin; as páginas, na ordem dada (a primeira com o campo vale); depois o que os
+ * títulos dos anúncios dizem; depois a busca na web; depois a estimativa do campo que a web não
+ * respondeu; depois o padrão da categoria, se alguma página com ficha foi lida.
  */
-export function mergeSources(category: CategoryId, sources: SheetSource[], titles: SheetTitle[] = []): Omit<ProductSheet, 'sources'> {
+export function mergeSources(category: CategoryId, sources: SheetSource[], titles: SheetTitle[] = [], web?: WebSheet, manual?: SheetValues): Omit<ProductSheet, 'sources'> {
   const values: SheetValues = {};
   const origin: ProductSheet['origin'] = {};
+  // Preenchido à mão no admin: vale mais que tudo (conferido por uma pessoa).
+  const owner = sources[0] ?? titles[0];
+  if (manual && owner)
+    for (const [k, v] of Object.entries(manual)) {
+      values[k] = v;
+      origin[k] = { store: owner.store, sku: owner.sku, from: 'manual' };
+    }
   for (const s of sources) {
     for (const [k, v] of Object.entries(s.values)) {
       if (values[k] !== undefined) continue;
@@ -211,6 +331,20 @@ export function mergeSources(category: CategoryId, sources: SheetSource[], title
       if (values[k] !== undefined) continue;
       values[k] = v;
       origin[k] = { store: t.store, sku: t.sku, from: 'title' };
+    }
+  }
+  // A web e a estimativa: em nome do primeiro anúncio do produto.
+  const first = sources[0] ?? titles[0];
+  if (web && first) {
+    for (const [k, v] of Object.entries(web.values)) {
+      if (values[k] !== undefined) continue;
+      values[k] = v;
+      origin[k] = { store: first.store, sku: first.sku, from: 'web' };
+    }
+    for (const [k, v] of Object.entries(estimateSheet(category, values))) {
+      if (values[k] !== undefined || !web.asked.has(k)) continue;
+      values[k] = v;
+      origin[k] = { store: first.store, sku: first.sku, from: 'estimate' };
     }
   }
   const read = sources.find((s) => s.hasSheet);
@@ -253,7 +387,8 @@ export function productSheet(db: Db, store: StoreId, sku: string): (ProductSheet
   const own = (a: { store: StoreId; sku: string }) => Number(a.store === store && a.sku === sku);
   const sources = sourcesOf(db, l.category, rows).sort((a, b) => own(b) - own(a) || b.at.localeCompare(a.at));
   const titles = rows.map((r) => ({ store: r.store, sku: r.store_sku, title: r.title })).sort((a, b) => own(b) - own(a));
-  const merged = mergeSources(l.category, sources, titles);
+  const key = l.product_key ?? `id:${l.id}`;
+  const merged = mergeSources(l.category, sources, titles, webSheets(db, l.category, [key]).get(key), manualSheets(db, l.category, [key]).get(key));
   // Sem página lida: o que o título diz, se diz algo.
   if (!sources.length && !Object.keys(merged.values).length) return undefined;
   return { category: l.category, ...merged, sources };
@@ -289,6 +424,8 @@ export function catalogProducts(db: Db, category: CategoryId, since: string): Sh
     has_sheet: number | null;
     page: string | null;
   })[];
+  const web = webSheets(db, category);
+  const manual = manualSheets(db, category);
   const groups = new Map<string, typeof rows>();
   for (const r of rows) {
     const k = r.product_key ?? `id:${r.id}`;
@@ -305,6 +442,8 @@ export function catalogProducts(db: Db, category: CategoryId, since: string): Sh
       category,
       sources,
       g.map((r) => ({ store: r.store, sku: r.store_sku, title: r.title })),
+      web.get(key),
+      manual.get(key),
     );
     return {
       key,
@@ -322,6 +461,8 @@ export function catalogProducts(db: Db, category: CategoryId, since: string): Sh
       })),
       state: !sources.length ? 'unread' : merged.missing.length ? 'incomplete' : 'complete',
       ...merged,
+      // Só a web completa, e a web já foi perguntada de tudo o que falta: só uma pessoa completa.
+      needsHuman: !!sources.length && merged.missing.length > 0 && g.every((r) => r.page !== null) && merged.missing.every((f) => web.get(key)?.asked.has(f)),
     };
   });
 }
@@ -370,6 +511,7 @@ export function sheetCoverage(db: Db, since: string): SheetCoverageRow[] {
       incomplete: ps.filter((p) => p.state === 'incomplete').length,
       unread: ps.filter((p) => p.state === 'unread').length,
       exhausted: ps.filter((p) => p.state === 'incomplete' && p.listings.every((l) => l.read)).length,
+      needsHuman: ps.filter((p) => p.needsHuman).length,
       missing,
     };
   });

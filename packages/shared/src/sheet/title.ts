@@ -190,3 +190,20 @@ export const SHEET_DEFAULTS: Partial<Record<CategoryId, SheetValues>> = {
   psu: { modular: 'Não', efficiency: 'Sem certificação' },
   case: { fansIncluded: 0 },
 };
+
+/**
+ * Estimativa pelo que já se sabe do produto, para o campo que nem a página, nem o título, nem a busca na
+ * web trouxe: tamanho do gabinete pelas placas-mãe que cabem (ATX ou E-ATX: mid tower; E-ATX com 560 mm
+ * ou mais: full tower) e, sem ATX, pela maior medida (440 mm ou mais: mid; menos: mini). Nos gabinetes
+ * com o tamanho informado (nov/2026), acerta cerca de 4 em 5: os vendedores chamam de "mid" gabinetes de
+ * tamanhos parecidos com os "mini". Por isso só depois da busca na web.
+ */
+export function estimateSheet(category: CategoryId, values: SheetValues): SheetValues {
+  if (category !== 'case' || values.formFactor !== undefined) return {};
+  const mb = typeof values.mbFormats === 'string' ? values.mbFormats.split(',') : [];
+  const dims = typeof values.dimensions === 'string' ? values.dimensions.split(' x ').map(Number).filter(Number.isFinite) : [];
+  const max = dims.length ? Math.max(...dims) : undefined;
+  if (mb.includes('ATX') || mb.includes('E-ATX')) return { formFactor: mb.includes('E-ATX') && max !== undefined && max >= 560 ? 'Full Tower' : 'Mid Tower' };
+  if (max !== undefined) return { formFactor: max >= 440 ? 'Mid Tower' : 'Mini Tower' };
+  return mb.length ? { formFactor: 'Mini Tower' } : {};
+}

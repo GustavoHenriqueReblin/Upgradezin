@@ -1,4 +1,4 @@
-import type { SheetValues } from './sheet/fields.ts';
+import type { SheetValue, SheetValues } from './sheet/fields.ts';
 import type { BlockReason, CategoryId, Specs, StoreId } from './types.ts';
 
 /** Tipos das respostas do admin (/api/admin), usados pelo servidor e pela tela /admin. */
@@ -325,6 +325,8 @@ export interface SheetCoverageRow {
   unread: number;
   /** Incompletos com as páginas de todas as lojas já lidas: só a busca na web completaria. */
   exhausted: number;
+  /** Desses, os que a web já foi perguntada de tudo o que falta: só uma pessoa completa. */
+  needsHuman: number;
   /** Campo principal -> quantos produtos lidos ainda não o têm. */
   missing: Record<string, number>;
 }
@@ -337,10 +339,12 @@ export interface SheetProduct {
   title: string;
   state: SheetState;
   values: SheetValues;
-  /** De qual página (loja + código) veio cada campo; from: do título desse anúncio, ou o valor padrão da categoria. */
-  origin: Record<string, { store: StoreId; sku: string; from?: 'title' | 'default' }>;
+  /** De qual página (loja + código) veio cada campo; from: do título desse anúncio, da busca na web, estimado ou o valor padrão da categoria. */
+  origin: Record<string, { store: StoreId; sku: string; from?: SheetValueFrom }>;
   /** Campos principais que faltam. */
   missing: string[];
+  /** Incompleta, com todas as páginas lidas e a web já perguntada de tudo o que falta: só uma pessoa completa. */
+  needsHuman: boolean;
   listings: {
     store: StoreId;
     sku: string;
@@ -358,8 +362,68 @@ export interface SheetProduct {
 export type SheetProductPage = AdminPage<SheetProduct>;
 
 /** Filtros da lista de fichas (uma categoria por vez: cada uma tem seus campos). */
-/** Situação no filtro da lista: as da ficha e "só a web completa" (incompleta com a página de todas as lojas lida). */
-export type SheetFilterState = SheetState | 'exhausted';
+/** De onde veio um campo que não é da página da loja. */
+export type SheetValueFrom = 'manual' | 'title' | 'web' | 'estimate' | 'default';
+
+/** Busca na web (fichas incompletas com as páginas de todas as lojas lidas): ligada e o intervalo entre perguntas. */
+export interface WebFillSettings {
+  enabled: boolean;
+  interval: StoreInterval;
+}
+
+export type WebFillInput = Partial<WebFillSettings>;
+
+/** Uma pergunta feita na busca na web (o JSON da categoria para um produto) e o que voltou. */
+export interface WebAnswer {
+  key: string;
+  category: CategoryId;
+  title: string;
+  /** O pedido feito à IA do buscador. */
+  question: string;
+  /** O JSON da resposta como veio (vazio: a página não trouxe). */
+  answer: string;
+  /** Cada campo do JSON e o valor aceito (sem: veio null, ou fora do tipo, das opções ou da faixa). */
+  fields: { field: string; value?: SheetValue }[];
+  confidence?: 'high' | 'medium' | 'low';
+  /** ok: algum valor lido; none: nenhum; blocked: o buscador pediu verificação ou confirmação (nada guardado). */
+  status: 'ok' | 'none' | 'blocked';
+  /** Loja cujo navegador fez a pergunta. */
+  store: StoreId;
+  at: string;
+}
+
+export interface WebFillStatus extends WebFillSettings {
+  /** Produtos na fila agora (só a web completa, com campo principal que falta ainda não perguntado). */
+  queue: number;
+  /** Campos perguntados: com valor lido e sem. */
+  answered: number;
+  empty: number;
+  /** Pausa depois de o buscador pedir verificação ou confirmação (ISO), ou null. */
+  pausedUntil: string | null;
+  /** Por que pausou: verificação ("tráfego incomum") ou a confirmação do Modo IA para pedido vindo pelo endereço. */
+  pauseReason: 'verification' | 'confirmation' | null;
+  nextAt: string | null;
+  busy: boolean;
+}
+
+/** Filtros da lista de produtos já perguntados na busca na web. */
+export interface WebAnswerFilter {
+  category?: CategoryId;
+  /** ok: com algum valor aceito; none: sem nenhum. */
+  status?: 'ok' | 'none';
+  /** Título ou código do produto. */
+  q?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export type WebAnswerPage = AdminPage<WebAnswer>;
+
+/**
+ * Situação no filtro da lista: as da ficha, "só a web completa" (incompleta com a página de todas as lojas
+ * lida) e "precisa de você" (só a web completa, e a web já foi perguntada de tudo o que falta).
+ */
+export type SheetFilterState = SheetState | 'exhausted' | 'manual';
 
 export interface SheetProductFilter {
   category: CategoryId;
@@ -367,6 +431,13 @@ export interface SheetProductFilter {
   q?: string;
   page?: number;
   pageSize?: number;
+}
+
+/** Campos preenchidos à mão no admin (produto "precisa de você"); null apaga o campo. */
+export interface SheetManualInput {
+  key: string;
+  category: CategoryId;
+  values: Record<string, string | number | boolean | null>;
 }
 
 /** Texto guardado da ficha de uma página (para conferir o que o leitor leu). */

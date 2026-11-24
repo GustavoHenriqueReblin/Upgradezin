@@ -27,7 +27,8 @@ import { closeDb, getDb } from './db/instance.ts';
 import { activeSessions, canReadSheet } from './prices/collect.ts';
 import { listingBrands, listingsHistory, recentOffers } from './prices/prices.ts';
 import { productPage } from './prices/product-page.ts';
-import { rereadSheets, SHEET_SCOPE_DAYS, sheetCoverage, syncSheetTables } from './prices/sheets.ts';
+import { rereadSheets, setManualSheet, SHEET_SCOPE_DAYS, sheetCoverage, syncSheetTables } from './prices/sheets.ts';
+import { askNextNow, clearWebPause, setWebFill, startWebFill, stopWebFill, useWebFillStorage, webAnswers, webFillStatus } from './prices/web-fill.ts';
 import { startProductKeys } from './prices/identity.ts';
 import { setSheetRoutine, sheetNextAt, sheetRoutineBusy, sheetRoutineSettings, startSheetRoutine, stopSheetRoutine, useSheetRoutineStorage } from './prices/sheet-routine.ts';
 import { routineInfo, routineSettings, setRoutineSettings, startRoutine, stopRoutine, useRoutineStorage } from './prices/routine.ts';
@@ -94,6 +95,8 @@ const SearchQuery = z.object({
   // Rotina de fichas (separada da coleta): do admin (meta "sheet-routine"); sem nada guardado, vale o .env.
   const sheetRoutine = getMeta(db, 'sheet-routine');
   useSheetRoutineStorage(sheetRoutine ? JSON.parse(sheetRoutine) : null, (s) => setMeta(db, 'sheet-routine', JSON.stringify(s)));
+  // Busca na web das fichas: ligada e intervalo, do admin (meta "web-fill"); desligada por padrão.
+  useWebFillStorage(db);
   // Fichas: colunas por categoria conforme a lista de campos; leitor ou campos mudaram, relê as páginas guardadas.
   const cols = syncSheetTables(db);
   if (cols.added.length || cols.dropped.length) app.log.info(`Fichas: colunas criadas ${cols.added.join(', ') || '-'}; apagadas ${cols.dropped.join(', ') || '-'}.`);
@@ -149,6 +152,12 @@ if (AdminAuth.isConfigured(config.ADMIN_USER, config.ADMIN_PASSWORD)) {
       list: (f) => listSheetProducts(getDb(), f),
       page: (store, sku) => sheetPageText(getDb(), store, sku),
       read: (store, sku) => readSheetNow(getDb(), store, sku),
+      web: () => webFillStatus(getDb()),
+      setWeb: (s) => (setWebFill(s), webFillStatus(getDb())),
+      askWeb: (key) => askNextNow(getDb(), key),
+      resumeWeb: () => (clearWebPause(), webFillStatus(getDb())),
+      setManual: (m) => setManualSheet(getDb(), m.key, m.category, m.values),
+      webAnswers: (f) => webAnswers(getDb(), f),
     },
     data: {
       coverage: () => coverage(getDb(), (store, category) => (ACTIVE_STORES.includes(store) ? sweepPaths(store, category).length : 0)),
@@ -400,6 +409,7 @@ const shutdown = async () => {
   setTimeout(() => process.exit(1), 10_000).unref();
   stopRoutine();
   stopSheetRoutine();
+  stopWebFill();
   stopNightlySweep();
   stopProductKeys();
   stopAdminJobs();
@@ -423,6 +433,7 @@ app.log.info(`Upgradezin v${VERSION}`);
 }
 startRoutine();
 startSheetRoutine();
+startWebFill();
 // Varredura completa automática de madrugada (antes do backup do cron).
 startNightlySweep(
   config.NIGHTLY_SWEEP_HOUR,

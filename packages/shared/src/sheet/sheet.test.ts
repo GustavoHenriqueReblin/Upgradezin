@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { fieldColumn, formatSheetValue, isMainFor, missingMain, sheetFields, SHEET_FIELDS } from './fields.ts';
 import { readSheet } from './read.ts';
-import { readTitle } from './title.ts';
+import { estimateSheet, readTitle } from './title.ts';
+import { parseWebReply, webKeys, webProductName, webPrompt } from './web.ts';
 import { norm, numberWith, pick, sheetDoc, sheetText, thousands } from './text.ts';
 
 /** Fichas no formato das lojas (texto como a página traz, nov/2026). */
@@ -50,13 +51,14 @@ describe('campos por categoria', () => {
     expect(fieldColumn('power16Pin')).toBe('power16_pin');
     for (const fs of Object.values(SHEET_FIELDS)) for (const f of fs) expect(f.label && f.type).toBeTruthy();
     expect(sheetFields('cpu').slice(0, 2).map((f) => f.key)).toEqual(['brand', 'model']);
-    const height = SHEET_FIELDS.cooler.find((f) => f.key === 'heightMm')!;
-    expect(isMainFor(height, { type: 'ar' })).toBe(true);
-    expect(isMainFor(height, { type: 'water' })).toBe(false);
-    expect(missingMain('cooler', { type: 'water', radiatorMm: 360, tdpW: 250, noiseDba: 30, sockets: 'AM5' })).toEqual([]);
-    expect(missingMain('cooler', { type: 'ar', tdpW: 250 })).toEqual(['heightMm', 'noiseDba', 'sockets']);
-    // Sem o TDP suportado (opcional): completa.
-    expect(missingMain('cooler', { type: 'ar', heightMm: 155, noiseDba: 25, sockets: 'AM4' })).toEqual([]);
+    // Principal condicional: o radiador, só no water cooler.
+    const radiator = SHEET_FIELDS.cooler.find((f) => f.key === 'radiatorMm')!;
+    expect(isMainFor(radiator, { type: 'water' })).toBe(true);
+    expect(isMainFor(radiator, { type: 'ar' })).toBe(false);
+    expect(missingMain('cooler', { type: 'water', sockets: 'AM5' })).toEqual(['radiatorMm']);
+    expect(missingMain('cooler', { type: 'ar' })).toEqual(['sockets']);
+    // TDP, altura e ruído: opcionais.
+    expect(missingMain('cooler', { type: 'ar', sockets: 'AM4' })).toEqual([]);
   });
 
   it('valor para mostrar com a unidade', () => {
@@ -497,5 +499,74 @@ describe('campos pelo título do anúncio', () => {
       'Traseira: 120 mm x 1 (Incluso 1x fan frost de 120 mm)',
     ].join('\n');
     expect(readSheet('case', text).fansIncluded).toBe(4);
+  });
+});
+
+describe('busca na web: o JSON da categoria preenchido pela IA, e a estimativa', () => {
+  it('nome do produto sem o tipo e sem as especificações do título; o pedido leva o JSON da categoria com tudo null', () => {
+    expect(webProductName('Cooler Processador Universal Hi Level Midnight Lite Tdp 95w')).toBe('Hi Level Midnight Lite');
+    expect(webProductName('Cooler para Processador Cooler Master MasterAir MA410P, RGB 120mm, Intel-AMD, MAP-T4PN-220PC-R1')).toBe('Cooler Master MasterAir MA410P MAP-T4PN-220PC-R1');
+    expect(webProductName('Gabinete Gamer Atx Msi Mag Pano 100r Pz ARGB Vidro Temperado Preto')).toBe('Atx Msi Mag Pano 100r Pz Vidro Temperado');
+    const q = webPrompt('cooler', 'Cooler Processador Universal Hi Level Midnight Lite Tdp 95w');
+    expect(q).toContain('Preencha este JSON com as especificações do cooler Hi Level Midnight Lite');
+    expect(q).toContain('RESPONDA SOMENTE O JSON PREENCHIDO, VÁLIDO, SEM TEXTO ANTES OU DEPOIS.');
+    expect(q).toContain('tipo: ar | water');
+    expect(q).toContain('{"produto":"Hi Level Midnight Lite","tipo":null,"altura_mm":null,"radiador_mm":null,"tdp_w":null,"ruido_dba":null,"soquetes":[],"ventoinhas":null,"confianca":null}');
+    // Todas as categorias cabem no endereço da busca.
+    for (const c of ['cpu', 'motherboard', 'gpu', 'ram', 'ssd', 'psu', 'case', 'cooler'] as const) {
+      expect(webKeys(c).length).toBeGreaterThan(3);
+      expect(encodeURIComponent(webPrompt(c, 'Produto Marca Modelo Comprido XYZ-1234, CODIGO-123456')).length, c).toBeLessThan(2000);
+    }
+  });
+
+  it('lê cada chave validando tipo, opções e faixa; o pedido repetido na página não é resposta', () => {
+    const q = webPrompt('cooler', 'Cooler Processador Universal Hi Level Midnight Lite Tdp 95w');
+    const answer = { produto: 'Hi Level Midnight Lite', tipo: 'air', altura_mm: '114 mm', radiador_mm: null, tdp_w: 95, ruido_dba: '25,5', soquetes: ['LGA 1700', 'LGA1200', 'AM4', 'AM5', 'LGA 115X'], ventoinhas: 9, confianca: 'alta' };
+    const r = parseWebReply('cooler', `Pesquisa ${q} Resposta: ${JSON.stringify(answer)} Mostrar mais`)!;
+    // ventoinhas 9: fora da faixa (1 a 6); LGA 115X: não é um soquete.
+    expect(r.values).toEqual({ type: 'ar', heightMm: 114, tdpW: 95, noiseDba: 25.5, sockets: 'LGA1700,LGA1200,AM4,AM5' });
+    expect(r.confidence).toBe('high');
+    expect(parseWebReply('cooler', `Pesquisa ${q}`)).toBeUndefined();
+    expect(parseWebReply('cooler', 'sem json nenhum aqui')).toBeUndefined();
+    // Confiança baixa: nenhum valor entra.
+    expect(parseWebReply('cooler', JSON.stringify({ ...answer, confianca: 'baixa' }))).toMatchObject({ values: {}, confidence: 'low' });
+  });
+
+  it('resposta real com texto da tela misturado e aspas de polegada sem escape: lê só o que está entre as chaves', () => {
+    const page =
+      'Pesquisa ... {"produto":" Msi Mag Pano 100r Pz Acesse a caixa de diálogo de visualização de produtos para esse item. ", [Início do texto destacado] "tamanho":"Mid Tower","placas_mae":["ATX","Micro-ATX","Mini-ITX","Back-connect ATX"],"placa_de_video_max_mm":400,"cooler_max_mm":"166 mm","dimensoes_mm":"518.7 x 290 x 482", [Fim do texto destacado] "baias":["3 x 2.5"","2 x 2.5"/3.5" combo"],"frente":"vidro","ventoinhas_inclusas":4,"radiadores_mm":["120","240","360"],"confianca":"alta"} Se precisar de mais…';
+    expect(parseWebReply('case', page)!.values).toEqual({
+      formFactor: 'Mid Tower',
+      mbFormats: 'ATX,Micro-ATX,Mini-ITX',
+      maxGpuMm: 400,
+      maxCoolerMm: 166,
+      dimensions: '518.7 x 290 x 482',
+      front: 'Vidro',
+      fansIncluded: 4,
+      radiators: '120,240,360',
+    });
+  });
+
+  it('tamanho do gabinete estimado pelas placas-mãe e pela maior medida', () => {
+    expect(estimateSheet('case', { mbFormats: 'ATX,Micro-ATX,Mini-ITX', dimensions: '450 x 210 x 480' })).toEqual({ formFactor: 'Mid Tower' });
+    expect(estimateSheet('case', { mbFormats: 'E-ATX,ATX', dimensions: '600 x 240 x 560' })).toEqual({ formFactor: 'Full Tower' });
+    expect(estimateSheet('case', { mbFormats: 'Micro-ATX,Mini-ITX', dimensions: '380 x 200 x 410' })).toEqual({ formFactor: 'Mini Tower' });
+    expect(estimateSheet('case', { mbFormats: 'Micro-ATX,Mini-ITX', dimensions: '400 x 210 x 460' })).toEqual({ formFactor: 'Mid Tower' });
+    expect(estimateSheet('case', { formFactor: 'Mini Tower', mbFormats: 'ATX' })).toEqual({});
+    expect(estimateSheet('cooler', { type: 'ar' })).toEqual({});
+  });
+});
+
+describe('cooler: soquetes grudados no LGA (título) e abreviados (ficha)', () => {
+  it('"Socket LGA1151" no título e "Sockets 1151/56/50" na ficha', () => {
+    expect(readTitle('cooler', 'Cooler Para Processador Intel Thermal Solution TS15A Socket LGA1151, BXTS15A').sockets).toBe('LGA1151');
+    expect(readSheet('cooler', 'Desenvolvido para a 6ª geração. Compátivel com Sockets 1151/56/50.\nNível de ruído: 25 dBA').sockets).toBe('LGA1151,LGA1156,LGA1150');
+  });
+});
+
+describe('cooler: bloco do air cooler não é water cooler', () => {
+  it('"Bloco de alumínio com 2 heatpipes" é air cooler; "Bloco: cobre" (do water cooler) continua water', () => {
+    expect(readSheet('cooler', '- Bloco de alumínio com 2 heatpipes de contato direto de cobre de 6mm, aletas de alumínio').type).toBe('ar');
+    expect(readSheet('cooler', 'Bloco: cobre com microcanais\nVentoinha: 120 mm').type).toBe('water');
   });
 });

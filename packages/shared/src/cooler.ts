@@ -15,14 +15,14 @@ export function isCooler(title: string): boolean {
   return /processador|\bcpu\b|water\s*cooler|watercooler|\baio\b/.test(t);
 }
 
-/** Encaixes que o título lista (os de Intel 115x viram um só). */
+/** Encaixes que o título lista (os de Intel 115x viram um só). O número solto ("1700") ou grudado no "LGA" ("LGA1151"). */
 const SOCKET_RES: [RegExp, string][] = [
   [/\bam5\b/, 'AM5'],
   [/\bam4\b/, 'AM4'],
-  [/\b1851p?\b/, 'LGA1851'],
-  [/\b1700p?\b/, 'LGA1700'],
-  [/\b1200p?\b/, 'LGA1200'],
-  [/\b115[0156x]p?\b/, 'LGA115X'],
+  [/(?:\b|(?<=lga))1851p?\b/, 'LGA1851'],
+  [/(?:\b|(?<=lga))1700p?\b/, 'LGA1700'],
+  [/(?:\b|(?<=lga))1200p?\b/, 'LGA1200'],
+  [/(?:\b|(?<=lga))115[0156x]p?\b/, 'LGA115X'],
 ];
 
 export function extractCoolerSpecs(title: string): CoolerSpecs {

@@ -11,7 +11,7 @@ import { dec, firstInt, isNo, isYes, numberWith, pick, sheetDoc, thousands, type
  *
  * READER_VERSION: mudou o leitor ou os campos, sobe o número: o servidor relê as fichas guardadas.
  */
-export const READER_VERSION = 8;
+export const READER_VERSION = 10;
 
 type Reader = (doc: SheetDoc) => SheetValues;
 
@@ -625,7 +625,8 @@ const caseReader: Reader = (doc) => {
 // ---------- cooler ----------
 
 const cooler: Reader = (doc) => {
-  const water = /radiador|\bbomba\b|\bpump\b|water\s*cooler|watercooler|refrigeracao liquida|\btubo\b(?! de calor)|^bloco\b/m.test(doc.all);
+  // "Bloco" na linha de um air cooler ("Bloco de alumínio com 2 heatpipes") não é o bloco do water cooler.
+  const water = /radiador|\bbomba\b|\bpump\b|water\s*cooler|watercooler|refrigeracao liquida|\btubo\b(?! de calor)|^bloco\b(?![^\n]*(?:heat ?pipe|aleta|dissipador))/m.test(doc.all);
   const type = water ? 'water' : /dissipador|heatpipe|tubo de calor|air ?cooler|ventoinha|\bfan\b/.test(doc.all) ? 'ar' : undefined;
   let heightMm: number | undefined;
   if (!water) {
@@ -706,7 +707,12 @@ const cooler: Reader = (doc) => {
   // "LGA 1700/1851", "Intel: 1851 / 1700 / 1200": cada número de soquete Intel vira LGA.
   const expanded = sockText
     .replace(/lga\s*\d{3,4}(?:\s*[/,]\s*(?:lga\s*)?\d{3,4})+/g, (m) => m.replace(/lga\s*/g, '').split(/[/,]/).map((x) => `lga${x.trim()}`).join(' '))
-    .replace(/intel\W{0,6}((?:\d{3,4}\s*(?:[/,]|e\b)?\s*)+)/g, (_m, nums: string) => nums.split(/[/,]|\be\b/).map((x) => (/^(775|115\d|1200|1366|1700|1851|2011|2066)$/.test(x.trim()) ? `lga${x.trim()}` : '')).join(' '));
+    .replace(/intel\W{0,6}((?:\d{3,4}\s*(?:[/,]|e\b)?\s*)+)/g, (_m, nums: string) => nums.split(/[/,]|\be\b/).map((x) => (/^(775|115\d|1200|1366|1700|1851|2011|2066)$/.test(x.trim()) ? `lga${x.trim()}` : '')).join(' '))
+    // "Sockets 1151/56/50": os números seguintes abreviados (56 = 1156, 50 = 1150).
+    .replace(/(?:soquetes?|sockets?)\W{0,6}(\d{3,4}(?:\s*\/\s*\d{2,4})+)/g, (_m, list: string) => {
+      const [head, ...rest] = list.split('/').map((x) => x.trim());
+      return [head!, ...rest.map((x) => head!.slice(0, head!.length - x.length) + x)].map((x) => (/^(775|115\d|1200|1366|1700|1851|2011|2066)$/.test(x) ? `lga${x}` : x)).join(' ');
+    });
   const s = sockets(expanded);
   const fansM = doc.all.match(/(\d)\s*x\s*(?:ventoinhas?|fans?|ventiladores?)\b/) ?? doc.all.match(/(?:ventoinhas?|fans?)[^\n\d]{0,15}(\d)\b(?!\d|\s*mm)/);
   return clean({ type, heightMm, radiatorMm, tdpW, noiseDba, sockets: s.length ? s.join(',') : undefined, fans: inRange(fansM ? Number(fansM[1]) : undefined, 1, 6) });
@@ -719,5 +725,7 @@ export function readSheet(category: CategoryId, text: string): SheetValues {
   const doc = sheetDoc(text);
   const values = { brand: brand(doc), model: model(doc), ...READERS[category](doc) };
   const keys = new Set(['brand', 'model', ...SHEET_FIELDS[category].map((f) => f.key)]);
-  return clean(Object.fromEntries(Object.entries(values).filter(([k]) => keys.has(k))));
+  // Campo inteiro com decimal na ficha ("Altura: 158,5 mm"): arredondado.
+  const ints = new Set(SHEET_FIELDS[category].filter((f) => f.type === 'int').map((f) => f.key));
+  return clean(Object.fromEntries(Object.entries(values).filter(([k]) => keys.has(k)).map(([k, v]) => [k, ints.has(k) && typeof v === 'number' ? Math.round(v) : v])));
 }

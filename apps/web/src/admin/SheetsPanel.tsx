@@ -6,6 +6,8 @@ import {
   formatSheetValue,
   productPath,
   sheetFields,
+  SHEET_FIELDS,
+  webKeys,
   type AdminStoreConfig,
   type CategoryId,
   type SheetCoverageRow,
@@ -15,6 +17,7 @@ import {
   type SheetRoutineInput,
   type SheetRoutineStatus,
   type SheetFilterState,
+  type SheetValueFrom,
   type SheetState,
   type StoreId,
   type StoreInterval,
@@ -36,6 +39,8 @@ const STATE_TONE: Record<SheetState, string> = {
   incomplete: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
   unread: 'bg-zinc-500/15 text-zinc-600 dark:text-zinc-300',
 };
+/** De onde veio o campo que não é da página da loja. */
+const VALUE_FROM_LABEL: Record<SheetValueFrom, string> = { manual: 'manual', title: 'título', web: 'web', estimate: 'estimado', default: 'padrão' };
 const pct = (x: number, total: number) => (total ? Math.round((x / total) * 100) : 0);
 
 /**
@@ -183,7 +188,7 @@ function Coverage({ fail, onPick }: { fail: (err: unknown) => void; onPick: (c: 
       {!rows ? (
         <p className="text-sm text-zinc-500">Carregando…</p>
       ) : (
-        <Table head={['Categoria', 'Produtos', 'Completas', 'Incompletas', 'Não lidas', 'Só a web completa', 'Campos que mais faltam']}>
+        <Table head={['Categoria', 'Produtos', 'Completas', 'Incompletas', 'Não lidas', 'Só a web completa', 'Precisa de você', 'Campos que mais faltam']}>
           {rows.map((r) => {
             const top = Object.entries(r.missing)
               .sort((a, b) => b[1] - a[1])
@@ -198,6 +203,7 @@ function Coverage({ fail, onPick }: { fail: (err: unknown) => void; onPick: (c: 
                 <Td className="tabular-nums">{r.incomplete}</Td>
                 <Td className="tabular-nums">{r.unread}</Td>
                 <Td className="tabular-nums">{r.exhausted}</Td>
+                <Td className={`tabular-nums ${r.needsHuman ? 'text-amber-600 dark:text-amber-400' : ''}`}>{r.needsHuman}</Td>
                 <Td className="text-xs text-zinc-500">{top.length ? top.map(([k, n]) => `${fieldLabels(r.category, [k])} ${n}`).join(' · ') : '—'}</Td>
               </tr>
             );
@@ -206,7 +212,7 @@ function Coverage({ fail, onPick }: { fail: (err: unknown) => void; onPick: (c: 
       )}
       <p className="mt-2 text-xs text-zinc-500">
         Produto = os anúncios do mesmo produto nas lojas (mesmo part number). Completa: tem todos os campos principais, juntando as páginas de todas as lojas. Só a web completa: incompletas com a página de
-        todas as lojas já lida.
+        todas as lojas já lida. Precisa de você: dessas, as que a busca na web já perguntou e ainda faltam campos; preencha à mão no produto (filtro "precisa de você").
       </p>
     </Box>
   );
@@ -275,7 +281,7 @@ function Products({
           aria-label="Situação da ficha"
         >
           <option value="">qualquer situação</option>
-          {(['complete', 'incomplete', 'exhausted', 'unread'] as const).map((s) => (
+          {(['complete', 'incomplete', 'exhausted', 'manual', 'unread'] as const).map((s) => (
             <option key={s} value={s}>
               {SHEET_FILTER_LABEL[s]}
             </option>
@@ -339,6 +345,75 @@ function Products({
   );
 }
 
+/**
+ * Preencher à mão os campos principais que faltam (produto "precisa de você", ou qualquer incompleto).
+ * Opções fechadas viram lista; o servidor valida como na busca na web (tipo, opções, faixa).
+ */
+function ManualFill({ p, fail, onMessage }: Shared & { p: SheetProduct }) {
+  const keys = webKeys(p.category).filter((k) => p.missing.includes(k.field));
+  const [form, setForm] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  if (!keys.length) return null;
+  const save = () => {
+    const values = Object.fromEntries(Object.entries(form).filter(([, v]) => v.trim() !== ''));
+    if (!Object.keys(values).length) return;
+    setSaving(true);
+    adminApi('/sheets/manual', { method: 'PUT', body: { key: p.key, category: p.category, values } })
+      .then(() => {
+        onMessage({ ok: true, text: `${p.title.slice(0, 60)}: ${fieldLabels(p.category, Object.keys(values))} preenchido à mão.` });
+        setForm({});
+      })
+      .catch(fail)
+      .finally(() => setSaving(false));
+  };
+  return (
+    <div className={`mb-3 rounded-lg border p-2 ${p.needsHuman ? 'border-amber-500/40 bg-amber-500/5' : 'border-zinc-200 dark:border-zinc-800'}`}>
+      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">{p.needsHuman ? 'Precisa de você: a busca na web não achou' : 'Preencher à mão'}</p>
+      <div className="grid grid-cols-[auto,1fr] items-center gap-x-3 gap-y-1 text-xs">
+        {keys.map((k) => {
+          const label = fieldLabels(p.category, [k.field]);
+          const unit = SHEET_FIELDS[p.category].find((f) => f.key === k.field)?.unit;
+          return (
+            <Fragment key={k.field}>
+              <label htmlFor={`m-${p.key}-${k.field}`} className="text-zinc-500">
+                {label}
+                {unit ? ` (${unit})` : ''}
+              </label>
+              {k.options ? (
+                <select id={`m-${p.key}-${k.field}`} className={select} value={form[k.field] ?? ''} onChange={(e) => setForm((f) => ({ ...f, [k.field]: e.target.value }))}>
+                  <option value="">—</option>
+                  {[...new Set(Object.values(k.options))].map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  id={`m-${p.key}-${k.field}`}
+                  className={select}
+                  value={form[k.field] ?? ''}
+                  placeholder={k.type === 'list' ? 'itens separados por vírgula' : k.type === 'int' || k.type === 'real' ? 'número' : ''}
+                  maxLength={80}
+                  onChange={(e) => setForm((f) => ({ ...f, [k.field]: e.target.value }))}
+                />
+              )}
+            </Fragment>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        disabled={saving || !Object.values(form).some((v) => v.trim())}
+        onClick={save}
+        className="mt-2 rounded-lg border border-zinc-300 px-2.5 py-1 text-xs hover:border-accent-500 disabled:opacity-50 dark:border-zinc-700"
+      >
+        {saving ? 'Salvando…' : 'Salvar'}
+      </button>
+    </div>
+  );
+}
+
 /** Um produto: os anúncios (página lida ou não, texto guardado, "Ler ficha") e de onde veio cada campo. */
 function ProductDetail({ p, names, fail, onMessage }: Shared & { p: SheetProduct; names: Map<string, string> }) {
   const [page, setPage] = useState<SheetPageText | null>(null);
@@ -399,6 +474,7 @@ function ProductDetail({ p, names, fail, onMessage }: Shared & { p: SheetProduct
         )}
       </div>
       <div>
+        {p.missing.length > 0 && <ManualFill p={p} fail={fail} onMessage={onMessage} />}
         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">Campos</p>
         <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5 text-xs">
           {fields.map((f) => {
@@ -409,13 +485,11 @@ function ProductDetail({ p, names, fail, onMessage }: Shared & { p: SheetProduct
                 <dt className="text-zinc-500">{f.label}</dt>
                 <dd className={p.missing.includes(f.key) ? 'text-amber-600 dark:text-amber-400' : ''}>
                   {v || (p.missing.includes(f.key) ? 'falta (principal)' : '—')}
-                  {v && from?.from === 'default' && <span className="text-zinc-500"> · padrão</span>}
-                  {v && from && from.from !== 'default' && (p.listings.length > 1 || from.from === 'title') && (
+                  {v && from && (from.from || p.listings.length > 1) && (
                     <span className="text-zinc-500">
                       {' '}
-                      · {from.from === 'title' ? 'título' : ''}
-                      {from.from === 'title' && p.listings.length > 1 ? ' ' : ''}
-                      {p.listings.length > 1 ? name(from.store) : ''}
+                      · {from.from ? VALUE_FROM_LABEL[from.from] : name(from.store)}
+                      {from.from === 'title' && p.listings.length > 1 ? ` ${name(from.store)}` : ''}
                     </span>
                   )}
                 </dd>
