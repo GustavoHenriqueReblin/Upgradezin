@@ -1,4 +1,4 @@
-import { ADMIN_PAGE_SIZE_MAX, INTERVAL_KINDS, type IntervalKind, STORE_INTERVAL_S_MAX, STORE_INTERVAL_S_MIN, type StoreInterval, CATEGORIES, STORES, type FullSweepSettings, type AdminPage, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type CategoryId, type CoverageRow, type PerfGap, type ProbeResult, type AdminProductFilter, type AdminProductPage, type SheetRoutineStatus, type SheetRoutineInput, type WebAnswer, type WebAnswerFilter, type WebAnswerPage, type WebFillInput, type WebFillStatus, type SheetManualInput, type SheetCoverageRow, type SheetPageText, type SheetProductFilter, type SheetProductPage, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId } from '@upgradezin/shared';
+import { ADMIN_PAGE_SIZE_MAX, INTERVAL_KINDS, type IntervalKind, STORE_INTERVAL_S_MAX, STORE_INTERVAL_S_MIN, type StoreInterval, CATEGORIES, STORES, type FullSweepSettings, type AdminPage, type AdminStoreConfig, type AdminStoreInput, type AdminStoreState, type CategoryId, type CoverageRow, type PerfGap, type ProbeResult, type AdminProductFilter, type AdminProductPage, type SheetRoutineStatus, type SheetRoutineInput, type WebAnswer, type WebAnswerFilter, type WebAnswerPage, type WebFillInput, type WebFillStatus, type SheetManualInput, type SheetCoverageRow, type SheetPageText, type SheetProductFilter, type SheetProductPage, type RoutineInfo, type StoreAttempt, type TimelineBucket, type RoutineInput, type StoreId, type SystemSnapshot } from '@upgradezin/shared';
 import { createReadStream } from 'node:fs';
 import { emitChange, onChange } from '../changes.ts';
 import type { ActivityInfo } from '@upgradezin/shared';
@@ -15,6 +15,8 @@ import type { ServerStatus } from './status.ts';
 export interface AdminDeps {
   auth: AdminAuth;
   status: () => ServerStatus;
+  /** Monitor da máquina (CPU, memória, disco, rede, processos), lido na hora. */
+  system: () => Promise<SystemSnapshot>;
   stores: {
     list: () => AdminStoreConfig[];
     save: (id: StoreId, input: AdminStoreInput) => { config: unknown } | { errors: string[] };
@@ -204,6 +206,7 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
       admin.post('/logout', async (req, reply) => endSession(req, reply, deps));
       admin.get('/me', async () => ({ user: deps.auth.user }));
       admin.get('/status', async () => deps.status());
+      admin.get('/system', async () => deps.system());
 
       // Lojas (antes STORE_* no .env): salvar passa a valer na hora, sem reiniciar.
       admin.get('/stores', async () => deps.stores.list());

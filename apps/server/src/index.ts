@@ -16,6 +16,7 @@ import { attemptTimeline, coverage, perfGaps } from './admin/data.ts';
 import { listAttempts, onAttempt, pageAttempts } from './prices/attempts.ts';
 import { registerAdmin } from './admin/routes.ts';
 import { serverStatus } from './admin/status.ts';
+import { SystemMonitor } from './admin/system.ts';
 import { browserOpen, closeBrowser } from './browser.ts';
 import { BUILD_ID, findSharedBuild, getSharedBuild, saveSharedBuild, SharedBuildSchema } from './builds/builds.ts';
 import { config } from './config.ts';
@@ -127,6 +128,7 @@ if (AdminAuth.isConfigured(config.ADMIN_USER, config.ADMIN_PASSWORD)) {
   registerAdmin(app, {
     auth: new AdminAuth({ user: config.ADMIN_USER!, password: config.ADMIN_PASSWORD!, sessionHours: config.ADMIN_SESSION_H }),
     status: () => serverStatus(getDb(), { version: VERSION, browserOpen: browserOpen(), activeSessions: activeSessions() }),
+    system: ((m) => () => m.snapshot())(new SystemMonitor()),
     stores: { list: () => adminStores(getDb()), save: (id, input) => saveStoreConfig(getDb(), id, input) },
     ops: {
       storesState: () => storesState(getDb()),

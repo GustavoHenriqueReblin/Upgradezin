@@ -17,6 +17,20 @@ export interface ServerStatus {
   activeSessions: number;
 }
 
+/** Monitor da máquina (aba Servidor): leitura do momento; as taxas são desde a leitura anterior. */
+export interface SystemSnapshot {
+  at: string;
+  uptimeS: number;
+  /** Uso em % (total e por núcleo), carga de 1/5/15 min, maior temperatura dos sensores. */
+  cpu: { totalPct: number; coresPct: number[]; load: [number, number, number]; tempC: number | null; model: string };
+  /** Em uso = total - disponível; cache = o que o kernel devolve quando precisa. */
+  memory: { totalMb: number; usedMb: number; availableMb: number; cacheMb: number; swapTotalMb: number; swapUsedMb: number };
+  disk: { totalGb: number; usedGb: number } | null;
+  net: { rxKbps: number; txKbps: number } | null;
+  /** Processos agrupados pelo nome, os que mais usam CPU primeiro (CPU em % de um núcleo; memória própria somada, sem a compartilhada). */
+  processes: { name: string; count: number; cpuPct: number; memMb: number }[];
+}
+
 /** Configuração de uma loja no admin (o que antes ficava em STORE_* no .env). */
 export interface AdminStoreConfig {
   id: string;

@@ -97,6 +97,7 @@ function makeApp() {
   registerAdmin(app, {
     auth: new AdminAuth(OPTS),
     status: () => serverStatus(db, { version: '9.9.9', browserOpen: false, activeSessions: 0 }),
+    system: async () => ({ at: '', uptimeS: 1, cpu: { totalPct: 12, coresPct: [10, 14], load: [0.5, 0.4, 0.3], tempC: null, model: 'x' }, memory: { totalMb: 8000, usedMb: 3000, availableMb: 5000, cacheMb: 2000, swapTotalMb: 0, swapUsedMb: 0 }, disk: null, net: null, processes: [] }),
     stores: { list: () => adminStores(db), save: (id, input) => saveStoreConfig(db, id, input) },
     ops: {
       storesState: () => [],
@@ -195,6 +196,9 @@ describe('rotas /api/admin', () => {
     expect(s).toMatchObject({ version: '9.9.9', browserOpen: false, activeSessions: 0, db: { file: ':memory:', migration: 14 } });
     expect(s.uptimeS).toBeGreaterThanOrEqual(0);
     expect(s.memory.rssMb).toBeGreaterThan(0);
+    // Monitor da máquina: só logado.
+    expect((await app.inject({ url: '/api/admin/system' })).statusCode).toBe(401);
+    expect((await app.inject({ url: '/api/admin/system', headers: { cookie } })).json()).toMatchObject({ cpu: { totalPct: 12, coresPct: [10, 14] }, memory: { usedMb: 3000 } });
   });
 });
 
