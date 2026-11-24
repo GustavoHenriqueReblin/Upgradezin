@@ -21,6 +21,8 @@ export interface PickContext {
   target?: number;
   /** Placa-mãe PCIe 3.0: placa de vídeo x8 perde desempenho nela (fica de fora se houver outras). */
   pcie3?: boolean;
+  /** Memória de vídeo da placa atual (GB): placa com menos, ou sem a informação, não entra (seria downgrade). */
+  minVram?: number;
   /** Chipset da placa-mãe: o processador tem de ser aceito por ele. */
   chipset?: string;
   /** Consumo máximo da placa de vídeo que a fonte atual aguenta (W). */
@@ -50,7 +52,7 @@ export interface UpgradePick {
 }
 
 /** Quantas ofertas a dica mostra. */
-export const PICKS = 5;
+export const PICKS = 3;
 /** Ganho mínimo para valer a troca (abaixo disso não aparece). */
 const MIN_GAIN = 0.15;
 
@@ -64,6 +66,7 @@ export function matchesUpgradeFilters(o: Offer, f: UpgradeFilters): boolean {
     has(f.cpuLines, s.cpuLine) &&
     has(f.gpuMakers, s.gpuMaker) &&
     has(f.gpuModels, s.gpuModel) &&
+    has(f.vram, s.vram) &&
     has(f.memory, s.memory) &&
     has(f.ramCapacity, s.ramCapacity) &&
     has(f.ramModules, s.ramModules) &&
@@ -91,6 +94,7 @@ export function pickUpgrades(req: PickRequest, offers: Offer[], now = Date.now()
       const model = req.slot === 'gpu' ? s.gpuModel : s.cpuModel;
       if (!perf || !model || perf < current * (1 + MIN_GAIN)) continue;
       if (req.slot === 'gpu' && ctx.maxGpuPower && (gpuPower(model, o.sheet) ?? Infinity) > ctx.maxGpuPower) continue;
+      if (req.slot === 'gpu' && ctx.minVram && (s.vram ?? 0) < ctx.minVram) continue;
       if (x8Out && gpuX8(model, o.sheet)) continue;
       let needsBios = false;
       if (req.slot === 'cpu' && ctx.chipset) {

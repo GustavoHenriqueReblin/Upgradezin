@@ -403,7 +403,8 @@ Parâmetros validados com zod. Em produção, o Fastify serve o build do front n
 - Resultados parciais com cards de carregamento enquanto as lojas respondem. Aviso quando os filtros escondem todas as ofertas, com atalho para limpar.
 - Painel de filtros (lateral; gaveta no celular).
 - Cards agrupados por produto: imagem, marca, specs como selos (eficiência colorida por nível), menor preço à vista com desconto sobre o "de", parcelamento, uma oferta por loja, a melhor dela (anúncios repetidos e variantes do mesmo modelo não aparecem duplicados; melhor oferta em destaque, marketplace/open box/esgotado sinalizados), idade da coleta.
-- **Montar o PC** ([§17.1](#171-montar-o-pc-montagem-dinâmica)): entrada na tela inicial e botão "Montagem" no cabeçalho (com quantas peças já tem).
+- **Montar pelo Orçamento** ([§17.4](#174-montar-pelo-orçamento)), **escondido do site por enquanto** (`BUDGET_VISIBLE` em `apps/web/src/budget.ts`: sem o card da tela inicial nem o do Identificar Gargalo; a rota e a tela continuam, para refinar): entrada na tela inicial (abre no upgrade se já há um PC importado) e no Identificar Gargalo ("Tem um Valor em Mente?"). Abas "PC Completo" e "Upgrade do Meu PC" e o valor (vem um sugerido, a pessoa digita o dela). No PC completo, a tela (resolução e 144 Hz). No upgrade, antes do valor, o PC importado num cartão recolhido com o resumo numa linha (processador, placa de vídeo, memória e fonte; `pcSummary`), que expande para todos os dados (`PcSpecs.tsx`, a mesma lista da prévia da importação, com a fonte), e o diagnóstico do Identificar Gargalo (veredito, resumo e as sugestões de upgrade e de atenção), para a pessoa saber o que o sistema sugere antes de dizer quanto quer gastar; o resultado lista as peças com preço e loja (cada uma abre a página do produto), as que ficam, o que sobra, o equilíbrio ou o ganho e as observações, e "Levar para a Montagem".
+- **Montar o PC** ([§17.1](#171-montar-o-pc-montagem-dinâmica)): entrada na tela inicial ("Montar Peça por Peça" com o orçamento visível; "Montar o PC" sem ele) e botão "Montagem" no cabeçalho (com quantas peças já tem).
   - A tela lista as 8 peças em ordem (placa-mãe, processador, memória, placa de vídeo, fonte, SSD, cooler, gabinete), com "Escolher" / "Trocar" / remover. Cada peça escolhida mostra o selo de compatibilidade, os motivos, a melhor oferta (loja e idade do preço). A fonte mostra o consumo estimado e a potência recomendada, mesmo antes de escolher uma.
   - Memória tem **quantidade** (1 a 4, para pentes avulsos iguais, ex. 2× 8 GB): o preço da peça e os totais multiplicam, e a compatibilidade conta o total de pentes contra os slots da placa. Trocar a memória mantém a quantidade.
   - Barra fixa no rodapé com o total à vista, o total comprando tudo em cada loja (ou quantas peças faltam nela) e o resumo da compatibilidade.
@@ -625,19 +626,23 @@ Variáveis em `.env.example`.
 | — | Montar o PC, peça por peça (ver [§17.1](#171-montar-o-pc-montagem-dinâmica)) | feito, com compartilhamento por link |
 | — | Importar setup atual pelo CPU-Z ([§17.2](#172-importar-setup-atual-cpu-z)) | feito |
 | — | Identificar gargalo e sugerir upgrades a partir do setup importado ([§17.3](#173-identificar-gargalo-e-sugerir-upgrades)) | feito |
+| — | Montar pelo orçamento: PC completo ou upgrade do PC importado ([§17.4](#174-montar-pelo-orçamento)) | feito |
 | 7.4 | Varredura de categoria: histórico de todo produto à venda (S1) | feito ([§8.2](#82-preços-e-rotina-de-coleta)) |
 
 ### A fazer
 
-#### Até a versão 1.0, nesta ordem
+#### Para lançar a 1ª versão, nesta ordem
 
-1. **Montar pelo orçamento.** A pessoa diz quanto quer gastar, e o app escolhe a melhor configuração técnica com o melhor preço, dentro do orçamento, só com peças compatíveis pela ficha. Dois casos, no mesmo fluxo:
-   - **PC inteiro:** "tenho R$ 12 mil, me dá todas as peças". Distribui o dinheiro entre as peças pelo peso de cada uma em jogos (placa de vídeo e processador primeiro, sem gargalo entre eles), com memória de 32 GB, fonte com folga e SSD NVMe.
-   - **Upgrade:** depois de ler o PC (Identificar Gargalo), em vez de só listar as placas de vídeo compatíveis, pergunta quanto a pessoa quer gastar e devolve a melhor peça (ou par de peças, se a fonte também precisar sair) dentro do valor.
+1. **Montar pelo orçamento.** Feito em nov/2026, escondido do site até refinar mais (`BUDGET_VISIBLE`) ([§17.4](#174-montar-pelo-orçamento)): um ponto de entrada ("quanto quer gastar?") para o PC completo e o upgrade do PC importado, só com peças compatíveis pela ficha, e o resultado vai para a montagem. Falta: as "melhores ofertas" de cada dica do gargalo (`picks.ts`, §17.3) ainda têm ranking próprio; passar a usar o mesmo motor.
+2. **Comparador de hardware**, para começar placa de vídeo e processador. A pessoa escolhe 2 ou 3 modelos (da busca, da página do produto ou de uma sugestão) e vê lado a lado: desempenho em jogos na escala do app (processador pela ficha, `cpuScore`; placa de vídeo pela tabela do chip), quanto um rende a mais que o outro, as specs da ficha (núcleos, threads, clock, cache, TDP e encaixe; memória de vídeo, consumo, comprimento e linhas PCIe), o menor preço de agora e o desempenho por real. Com um PC importado, mostra também o ganho sobre a peça atual e se cada um tem gargalo com a outra peça.
+3. **Mais de um disco na montagem.** Hoje a montagem tem um SSD só. Poder colocar mais de um, NVMe ou SATA, misturados (ex. NVMe de 1 TB para o sistema e jogos + SATA de 2 TB para arquivos), cada um com a sua oferta, no total e na compatibilidade: slots M.2 e portas SATA da placa-mãe contados contra os discos (`m2Slots`, `sataPorts` da ficha), M.2 que divide linhas com SATA ou com o slot da placa de vídeo, quando a ficha disser. O PC importado já lê todos os discos do CPU-Z (`drives`); eles entram como "Atual". Mexe no modelo da montagem (`BuildSlot` com uma peça por categoria), no link compartilhado e no motor do orçamento (que compra um SSD).
 
-   **A tela precisa ser um fluxo só e profissional:** um ponto de entrada ("quanto quer gastar?"), sem funções repetidas espalhadas entre montagem, gargalo e busca. A montagem, o gargalo e as sugestões de upgrade (§17.3) passam a usar o mesmo motor de escolha. O resultado vai para a montagem, onde cada peça pode ser trocada.
-2. **Login e contas de usuário.** Entrar com a conta Google (o Google Sign-In é gratuito; só pede o projeto no Google Cloud e a tela de consentimento). Na conta ficam o PC importado, as montagens e os alertas. Obrigatório antes de divulgar o app.
-3. **Alerta de preço.** Acompanhar um produto (ou uma peça da montagem) e avisar quando cair abaixo de um valor ou atingir o menor preço em 30 dias. O histórico já está no banco; falta a conta (item 2) e o canal de aviso (e-mail, para começar).
+Com o comparador e os discos, a 1ª versão pode ser lançada.
+
+#### Depois do lançamento, nesta ordem
+
+4. **Login e contas de usuário.** Entrar com a conta Google (o Google Sign-In é gratuito; só pede o projeto no Google Cloud e a tela de consentimento). Na conta ficam o PC importado, as montagens e os alertas. Hoje o PC importado (as peças lidas do CPU-Z, nunca o arquivo) e a montagem ficam só no navegador (`localStorage`: `upgradezin.pc.v1`, `upgradezin.build.v1` e as últimas buscas por orçamento, `upgradezin.budget.v1`). Com a conta, vão para o banco ligados ao usuário: no primeiro login, o que estiver no navegador sobe para a conta, e depois a conta vale em qualquer aparelho, com o navegador como cache.
+5. **Alerta de preço.** Acompanhar um produto (ou uma peça da montagem) e avisar quando cair abaixo de um valor ou atingir o menor preço em 30 dias. O histórico já está no banco; falta a conta (item 4) e o canal de aviso (e-mail, para começar).
 
 #### Melhorias
 
@@ -862,17 +867,51 @@ Com o PC importado (17.2), o app diz o que segura o desempenho e o que vale faze
 
 Ordem: upgrades, ajustes grátis, atenção, observações. A tabela de desempenho é a parte que pede manutenção: incluir cada geração nova de placa de vídeo e processador (o teste confere que toda placa com consumo conhecido tem desempenho).
 
-**Melhores ofertas de agora** (`picks.ts`, `POST /api/upgrade/picks`, `UpgradePicks.tsx`): cada dica com ação leva, além do filtro da busca, o contexto do PC (`PickContext`: desempenho atual da peça, chipset, consumo de placa de vídeo que a fonte aguenta, potência mínima de fonte). O servidor lê do banco as ofertas da categoria vistas nas últimas `SEARCH_DB_MAX_AGE_H` horas (sem consultar loja; cache de 1 min) e devolve até 5, só compráveis (em estoque, sem marketplace nem open box):
-- **Processador e placa de vídeo:** uma oferta por modelo (a mais barata entre lojas e marcas), só as que sobem pelo menos 15% e cabem no PC (placa dentro da fonte atual; processador aceito pelo chipset, com o aviso "atualize a BIOS" quando o chipset só aceita depois de atualizar), ordenadas por pontos de desempenho ganhos por real.
+**Melhores ofertas de agora** (`picks.ts`, `POST /api/upgrade/picks`, `UpgradePicks.tsx`): cada dica com ação leva, além do filtro da busca, o contexto do PC (`PickContext`: desempenho atual da peça, chipset, consumo de placa de vídeo que a fonte aguenta, potência mínima de fonte). O servidor lê do banco as ofertas da categoria vistas nas últimas `SEARCH_DB_MAX_AGE_H` horas (sem consultar loja; cache de 1 min) e devolve até 3 (1ª, 2ª e 3ª opção, o mesmo número do Montar pelo Orçamento), só compráveis (em estoque, sem marketplace nem open box):
+- **Processador e placa de vídeo:** uma oferta por modelo (a mais barata entre lojas e marcas), só as que sobem pelo menos 15% e cabem no PC (placa de vídeo com pelo menos a memória de vídeo da atual, `minVram`, também no filtro da busca que a dica abre) (placa dentro da fonte atual; processador aceito pelo chipset, com o aviso "atualize a BIOS" quando o chipset só aceita depois de atualizar), ordenadas por pontos de desempenho ganhos por real.
 - **Memória, fonte e SSD:** as mais baratas que batem com o filtro, uma por produto; fonte com a potência mínima e certificada (bronze ou melhor). Sem comparar desempenho, que a tabela não tem. A fonte mais barata certificada nem sempre é boa (qualidade varia muito por modelo); falta uma lista de qualidade.
 
 **Modelos sem índice** (admin, aba Cobertura; `perfGaps` em `admin/data.ts`): processadores e placas de vídeo vistos nas lojas nos últimos 14 dias que a tabela não conhece, do mais anunciado ao menos, com um título de exemplo. Conta na hora, do banco: modelo novo aparece assim que a rotina ou a varredura o grava. Em nov/2026: RX 9050 e RX 7650 GRE (sem dado confiável ainda) e anúncios cujo modelo o leitor não reconheceu.
 
-### 17.4 Outras ideias
+### 17.4 Montar pelo orçamento
+
+Um ponto de entrada só ("quanto quer gastar?"), na tela inicial e no Identificar Gargalo ("Tem um valor em mente?"), para os dois casos: PC completo ou upgrade do PC importado. O motor é uma função pura (`planBudget`, `packages/shared/src/budget.ts`) que o servidor roda sobre as ofertas de agora de cada peça, com a ficha (`POST /api/budget/plan`, com as mesmas ofertas em cache de 1 min das sugestões de upgrade). A tela é `BudgetView.tsx`. O plano vai para a montagem, onde cada peça pode ser trocada com a compatibilidade conferida. No upgrade, as peças atuais vão ao servidor só como specs lidas do CPU-Z (o relatório nunca sai do navegador), com o desempenho calculado na tela (o processador pela ficha do modelo).
+
+**Como escolhe.** Rendimento em jogos é o menor entre a placa de vídeo e a placa que o processador consegue alimentar na tela da pessoa (`gpuMatching`, §17.3): placa forte com processador fraco não rende mais. O motor percorre todos os pares processador × placa de vídeo à venda (um por modelo, o mais barato) e soma o que cada par arrasta junto. Entre os pares que cabem no orçamento, fica com o mais barato que rende pelo menos 97% do melhor: gastar mais por quase nada não vale.
+
+**Até 3 opções** (`OPTIONS`): a 1ª é a escolha acima; a 2ª e a 3ª saem pela mesma regra, cada uma com uma placa de vídeo que as anteriores não têm (sem outra placa, outro processador), e só se valer a comparação: mais barata ou com placa de vídeo mais forte que todas as já escolhidas (mesma placa e mesmo rendimento por mais dinheiro não entra). Na tela, as opções ficam lado a lado, com o principal que compra, o total e o ganho, e rótulos honestos (`optionLabels`): a 1ª é "Mais desempenho no valor"; a de mais desempenho por real entre as que fecham no valor é "Melhor custo-benefício" (pode ser a 1ª); a que passa do valor, "Acima do valor", e a escolhida mostra as peças e vai para a montagem. Placa de vídeo abaixo de uma GTX 1050 Ti (GT 710, GT 730) nunca entra: rende menos que o vídeo integrado atual.
+
+**Opção acima do valor** (`STRETCH`): a última opção pode passar até 25% do orçamento, se render pelo menos 10% a mais que a 1ª; é a melhor nessa faixa, pela mesma regra. Assim ficam a melhor (1ª), uma intermediária (2ª, dentro do valor) e uma que estica o orçamento (3ª, marcada "Acima do valor", com "+R$ X por Y% a mais de desempenho"), para a pessoa pesar se vale esticar. Sem nada que valha acima do valor, a 3ª é outra alternativa dentro dele. Cada opção leva o rendimento em jogos (`fps`, escala de perf.ts) para essa comparação. São cerca de 10 mil pares, de 10 a 40 ms com o catálogo de nov/2026.
+
+| Peça | PC completo | Upgrade |
+|---|---|---|
+| Processador | Qualquer um com nota (ficha ou tabela) | Mantém; ou um do mesmo encaixe, se a placa-mãe aceita (com o aviso de BIOS); ou plataforma nova |
+| Placa-mãe | A mais barata que aceita o processador sem atualizar a BIOS; sem chipset de entrada para processador de 105 W ou mais | Só na plataforma nova, até o formato da atual (tem de caber no gabinete, que o app não conhece) |
+| Memória | 32 GB em 2 pentes, DDR4 a partir de 3200 ou DDR5 a partir de 5200: um kit ou 2 pentes avulsos iguais, o que sair melhor (o kit com 5% de preferência; em nov/2026, 2 de 16 GB DDR4 custavam R$ 1.880 contra R$ 2.399 do kit); 16 GB se 32 não couber | A atual fica se for do tipo da placa nova; sobrando dinheiro, um kit de 32 GB |
+| Placa de vídeo | Qualquer uma da tabela; placa x8 em placa-mãe PCIe 3.0 rende 8% menos; sem placa só se o valor não fecha com uma e o processador tem vídeo integrado | Mantém ou troca, nunca por uma com menos memória de vídeo que a atual (nem sem a informação): seria downgrade |
+| Fonte | Certificada (bronze ou melhor), com folga de 50% sobre o consumo (`BUDGET_PSU_HEADROOM`; a compatibilidade usa 30%), para picos e um upgrade de placa; a recomendada pelo fabricante da placa de vídeo vale como piso. PC que puxa 400 W ou mais: Gold com preferência (a abaixo de Gold conta 15% a mais na escolha) | Só se a atual não aguenta (ou é simples e a placa muda); sem a fonte informada, avisa para conferir |
+| Cooler | Se o processador não traz ou tem 105 W ou mais: air cooler com TDP informado de 100 W ou mais e 30% acima do processador, ou water de 240 mm ou mais para 105 W ou mais | Se o processador novo não traz |
+| SSD | NVMe de 1 TB (500 GB se não couber) | Fica o atual |
+| Gabinete | Onde a placa-mãe cabe, com 1 ventoinha ou mais (3 com placa de vídeo de 200 W ou mais) | Fica o atual |
+
+**Marcas com prioridade** (`BUDGET_BRANDS`): placa-mãe (ASUS, MSI, Gigabyte, ASRock, Biostar), memória (Kingston, Corsair, G.Skill, Crucial, ADATA, XPG, TeamGroup, Patriot), placa de vídeo (ASUS, MSI, Gigabyte, ASRock, PowerColor, XFX, Zotac, PNY, Galax) e fonte (Corsair, XPG, Cooler Master, Thermaltake, MSI, EVGA, DeepCool, Cougar, Gamemax). Prioridade, não exclusividade: na escolha, o produto de outra marca conta como se custasse mais (15% na placa-mãe, 20% na placa de vídeo, 30% na memória, 70% na fonte; memória e fonte de marca desconhecida são as que mais arriscam o PC); o preço mostrado e o total são os reais. A fonte pesa mais porque é onde a marca desconhecida mais arrisca o PC: em nov/2026, a fonte certificada de marca da lista custava de 40% a 60% a mais que a mais barata (uns R$ 100). Processador, SSD, cooler e gabinete sem lista. A marca vem do anúncio; sem ela, do começo do título.
+
+O gabinete já é escolhido entre os que cabem a placa de vídeo (pela ficha dos dois), para o custo de cada opção ser o real. A montagem final passa por `checkBuild`: gabinete, cooler ou fonte com erro (placa de vídeo que não cabe, cooler alto demais, encaixe) trocam pelo seguinte mais barato. No upgrade, só entram opções que rendem pelo menos 10% a mais que o PC atual.
+
+**Respostas.**
+- `ok`: as peças a comprar, o total, o desempenho e o equilíbrio, o ganho (no upgrade) e as observações (vídeo integrado, 16 GB, SSD de 500 GB, fonte não informada, memória que fica, memória de 32 GB, BIOS).
+- `too-low`: o mínimo que monta (no upgrade, o primeiro que rende 10%), com um botão para usar esse valor.
+- `no-gain`: o PC já está no topo do que se vende.
+- `no-data`: faltam ofertas.
+
+**Lembra entre visitas** (`upgradezin.budget.v1` no navegador, `loadBudgetUi`): a aba, o valor de cada aba, a tela do PC completo e em que abas a pessoa já montou. Ao voltar, a tela abre preenchida e refaz a última busca sozinha, com os preços de agora (o resultado não é guardado); no upgrade, espera a ficha do processador (até 1,5 s). A tela inicial abre na última aba usada (upgrade só com PC importado).
+
+**Limites.** A placa de vídeo e o gabinete mais baratos de cada modelo nem sempre são os melhores (falta uma lista de qualidade, como na fonte). A escolha é para jogos, não para trabalho pesado. Preços sem frete.
+
+### 17.5 Outras ideias
 
 | Ideia | Comentário |
 |---|---|
-| **Upgrade por orçamento** | "Tenho R$ 1.500: qual troca rende mais?" As melhores ofertas por ganho/preço de cada dica já existem (17.3); falta o teto de orçamento e comparar entre dicas. |
 | **Upgrade × PC novo** | Compara o custo de trocar as peças sugeridas com o de uma montagem nova equivalente. |
 | **Montagens prontas por faixa** | Pontos de partida ("entrada", "intermediário", "topo") que abrem na montagem para ajustar. Mantidas no repositório, revisadas quando sai geração nova. |
 | **Checagem física** | Feito (nov/2026): placa de vídeo × gabinete, cooler × gabinete, radiador aceito e conector 12V-2x6 pela ficha técnica; BIOS que precisa de atualização já existia. Fichas das três lojas lidas pela rotina para todo o catálogo de placa de vídeo, gabinete e cooler. |

@@ -48,9 +48,15 @@ describe('ranking de upgrade: placa de vídeo', () => {
     expect(picks.map((p) => p.offer.specs.gpuModel)).toEqual(['RX 9060 XT', 'RTX 5060']); // RTX 5070 pede 250 W
   });
 
-  it('no máximo 5', () => {
+  it('nunca menos memória de vídeo que a placa atual (seria downgrade): a variante de 16 GB entra, a de 8 GB e a sem informação não', () => {
+    const list = [gpu('RTX 5060 Ti', 2500, { specs: { gpuMaker: 'nvidia', gpuModel: 'RTX 5060 Ti', vram: 8 } }), gpu('RTX 5060 Ti', 3000, { specs: { gpuMaker: 'nvidia', gpuModel: 'RTX 5060 Ti', vram: 16 } }), gpu('RTX 5070', 3900)];
+    const picks = pickUpgrades({ slot: 'gpu', filters: {}, context: { current: 100, minVram: 12 } }, list);
+    expect(picks.map((p) => [p.offer.specs.gpuModel, p.offer.specs.vram])).toEqual([['RTX 5060 Ti', 16]]);
+  });
+
+  it('no máximo 3', () => {
     const many = ['RTX 5060', 'RTX 5060 Ti', 'RTX 5070', 'RTX 5070 Ti', 'RTX 5080', 'RX 9060 XT', 'RX 9070'].map((m, i) => gpu(m, 2000 + i * 500));
-    expect(pickUpgrades({ slot: 'gpu', filters: {}, context: { current: 100 } }, many)).toHaveLength(5);
+    expect(pickUpgrades({ slot: 'gpu', filters: {}, context: { current: 100 } }, many)).toHaveLength(3);
   });
 });
 

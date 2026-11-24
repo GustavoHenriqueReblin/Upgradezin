@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
-import { ExternalLink, FileText, HardDrive, Monitor, Upload, X } from 'lucide-react';
-import { CATEGORY_DEFS, EFFICIENCY_LEVELS, normalizeBrand, PSU_POWERS, type Efficiency, type PcDrive, type PcPart, type PcProfile } from '@upgradezin/shared';
-import { loadPc, PC_SLOTS, readReportFile, type ReadResult } from '../pc.ts';
-import { EFF_LABEL, MEMORY_LABEL, SOCKET_LABEL } from '../format.ts';
+import { ExternalLink, FileText, Upload, X } from 'lucide-react';
+import { EFFICIENCY_LEVELS, normalizeBrand, PSU_POWERS, type Efficiency, type PcPart, type PcProfile } from '@upgradezin/shared';
+import { loadPc, readReportFile, type ReadResult } from '../pc.ts';
+import { EFF_LABEL } from '../format.ts';
 import { CATEGORY_ICONS } from './CategoryPicker.tsx';
+import { PcSpecs } from './PcSpecs.tsx';
 
 interface Props {
   onClose: () => void;
@@ -115,42 +116,7 @@ export function ImportPc({ onClose, onApply, replacing = [], applyLabel = 'Usar 
           </>
         ) : (
           <>
-            <ul className="divide-y divide-zinc-200 rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-              {PC_SLOTS.map((slot) => {
-                const Icon = CATEGORY_ICONS[slot];
-                const part = pc[slot];
-                return (
-                  <Row key={slot} icon={<Icon className="h-4 w-4" strokeWidth={1.75} />} label={CATEGORY_DEFS[slot].name}>
-                    {part ? (
-                      <>
-                        <div className="font-medium">{part.title}</div>
-                        <Detail pc={pc} slot={slot} />
-                      </>
-                    ) : slot === 'gpu' && pc.cpu?.specs.igpu ? (
-                      <div className="text-zinc-500">Vídeo integrado do processador.</div>
-                    ) : (
-                      <div className="text-zinc-500">Não encontrada no relatório.</div>
-                    )}
-                  </Row>
-                );
-              })}
-              {pc.drives.length > 0 && (
-                <Row icon={<HardDrive className="h-4 w-4" strokeWidth={1.75} />} label="Armazenamento">
-                  {pc.drives.map((d, i) => (
-                    <div key={i}>{driveText(d)}</div>
-                  ))}
-                </Row>
-              )}
-              {pc.monitors.length > 0 && (
-                <Row icon={<Monitor className="h-4 w-4" strokeWidth={1.75} />} label="Monitor">
-                  {pc.monitors.map((m, i) => (
-                    <div key={i}>
-                      {[m.name, m.width && `${m.width} × ${m.height}`, m.maxHz && `até ${m.maxHz} Hz`].filter(Boolean).join(' · ')}
-                    </div>
-                  ))}
-                </Row>
-              )}
-            </ul>
+            <PcSpecs pc={pc} />
 
             <PsuFields value={psu} onChange={setPsu} />
             {replacing.length > 0 && (
@@ -317,39 +283,5 @@ function Step({ n, children }: { n: number; children: ReactNode }) {
   );
 }
 
-function Row({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
-  return (
-    <li className="flex gap-3 px-3 py-2.5 text-sm">
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent-600/10 text-accent-600 dark:text-accent-400">{icon}</div>
-      <div className="min-w-0 flex-1">
-        <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{label}</div>
-        {children}
-      </div>
-    </li>
-  );
-}
-
-/** Uma linha com o que importa de cada peça. */
-function Detail({ pc, slot }: { pc: PcProfile; slot: (typeof PC_SLOTS)[number] }) {
-  const s = pc[slot]!.specs;
-  let parts: (string | number | false | undefined)[] = [];
-  if (slot === 'cpu') parts = [s.cores && `${s.cores} núcleos`, s.threads && `${s.threads} threads`, s.socket && SOCKET_LABEL[s.socket]];
-  if (slot === 'motherboard')
-    parts = [s.socket && SOCKET_LABEL[s.socket], s.chipset && `Chipset ${s.chipset}`, s.memory && MEMORY_LABEL[s.memory], s.memorySlots && `${s.memorySlots} slots de memória`];
-  if (slot === 'ram') {
-    parts = [pc.ram!.runningSpeed && `Rodando a ${pc.ram!.runningSpeed} MHz`];
-  }
-  if (slot === 'gpu') parts = [s.vram && `${s.vram} GB`, s.vramType];
-  const text = parts.filter(Boolean).join(' · ');
-  return text ? <div className="text-xs text-zinc-500">{text}</div> : null;
-}
-
-const KIND: Record<PcDrive['kind'], string> = { nvme: 'SSD NVMe', ssd: 'SSD', hdd: 'HD', unknown: 'Disco' };
-
-function driveText(d: PcDrive): string {
-  const size = d.capacityGb >= 1000 ? `${(d.capacityGb / 1024).toFixed(1).replace('.', ',')} TB` : `${d.capacityGb} GB`;
-  const extra = [d.system && 'sistema', d.freePercent !== undefined && `${Math.round(d.freePercent)}% livre`].filter(Boolean).join(', ');
-  return `${KIND[d.kind]} ${size} · ${d.name}${extra ? ` (${extra})` : ''}`;
-}
 
 const listText = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} e ${xs.at(-1)}`);

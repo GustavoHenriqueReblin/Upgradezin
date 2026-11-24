@@ -67,9 +67,12 @@ select:not([multiple]):not([size]) {
   color: #fff;
 }
 
-:focus-visible {
-  outline: 2px solid var(--color-accent-500);
-  outline-offset: 2px;
+/* Na camada base: um componente com borda própria de foco (ex. o campo de valor do orçamento) tira o contorno com outline-none. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-accent-500);
+    outline-offset: 2px;
+  }
 }
 
 /* Tailwind 4 tira o cursor de mão dos botões; tudo que é clicável volta a ter. */

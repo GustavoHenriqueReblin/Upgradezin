@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, cpuSheetFor, pickUpgrades, searchOptionCounts, STORES, type CategoryId, type Offer, type SearchOptionCounts, type SheetRoutineStatus, type StoreId } from '@upgradezin/shared';
 import { fullSweep, fullSweepAll, probePage, readSheetNow, resumeRoutines, saveFullSweepSettings, useStoreIntervals, stopAdminJobs, stopFullSweep, storesState } from './admin/actions.ts';
 import { clearFullSweeps } from './prices/sweep.ts';
+import { budgetPlan } from './budget.ts';
 import { nightlySchedule, startNightlySweep, stopNightlySweep } from './admin/nightly.ts';
 import { listProducts } from './admin/products.ts';
 import { listSheetProducts, sheetPageText, sheetStoreStatus } from './admin/sheets.ts';
@@ -217,6 +218,7 @@ const PicksBody = z.object({
       cpuLines: ids,
       gpuMakers: ids,
       gpuModels: ids,
+      vram: nums,
       memory: ids,
       ramCapacity: nums,
       ramModules: nums,
@@ -230,6 +232,7 @@ const PicksBody = z.object({
       current: z.number().positive().optional(),
       chipset: z.string().max(20).optional(),
       maxGpuPower: z.number().positive().optional(),
+      minVram: z.number().positive().max(64).optional(),
       minWatts: z.number().positive().optional(),
       certified: z.boolean().optional(),
     })
@@ -251,6 +254,13 @@ app.post('/api/upgrade/picks', { bodyLimit: 16 * 1024 }, async (req, reply) => {
   const parsed = PicksBody.safeParse(req.body);
   if (!parsed.success) return reply.code(400).send({ error: z.prettifyError(parsed.error) });
   return pickUpgrades(parsed.data as Parameters<typeof pickUpgrades>[0], categoryOffers(parsed.data.slot).value);
+});
+
+/** Montar pelo orçamento: o PC inteiro ou o upgrade do PC importado, com as ofertas de agora (budget.ts). */
+app.post('/api/budget/plan', { bodyLimit: 32 * 1024 }, async (req, reply) => {
+  const r = budgetPlan(req.body, (slot) => (ENABLED_CATEGORIES.includes(slot) ? categoryOffers(slot).value : []));
+  if (!r.ok) return reply.code(400).send({ error: r.error });
+  return r.plan;
 });
 
 /**

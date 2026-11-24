@@ -9,7 +9,7 @@ import { StoreDot } from './StoreDot.tsx';
 import { CATEGORY_ICONS } from './CategoryPicker.tsx';
 import { CompatBadge, IssueList } from './Compat.tsx';
 import { ImportPc } from './ImportPc.tsx';
-import { PC_SLOTS } from '../pc.ts';
+import { loadPc, PC_SLOTS } from '../pc.ts';
 
 interface Props {
   build: SavedBuild;
@@ -77,6 +77,8 @@ export function BuildView({ build, edit, header }: Props) {
           )}
           {edit && importing && (
             <ImportPc
+              // PC já importado (no Identificar Gargalo ou antes): abre direto na prévia, com "Escolher Outro Arquivo".
+              initial={loadPc()}
               onClose={() => setImporting(false)}
               replacing={PC_SLOTS.filter((s) => build[s] && !build[s]!.current).map((s) => `a ${CATEGORY_DEFS[s].name.toLowerCase()}`)}
               onApply={(pc) => {

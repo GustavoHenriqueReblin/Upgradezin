@@ -6,7 +6,7 @@ import { storeName } from '../stores.ts';
 import { StoreDot } from './StoreDot.tsx';
 
 /**
- * As 5 peças que mais acertam a dica de upgrade, com o preço de agora (POST /api/upgrade/picks, só do
+ * As 3 peças que mais acertam a dica de upgrade (1ª, 2ª e 3ª opção), com o preço de agora (POST /api/upgrade/picks, só do
  * banco). Processador e placa de vídeo: primeiro as que resolvem o gargalo, da mais barata; depois as
  * que mais sobem por real, com o ganho de cada uma. Memória, fonte e SSD: as mais baratas que servem.
  * Cada uma abre a página do produto, com os preços de todas as lojas.

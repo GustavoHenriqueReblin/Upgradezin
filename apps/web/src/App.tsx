@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Gauge, RefreshCw, Wrench } from 'lucide-react';
+import { ArrowLeft, Gauge, RefreshCw, Wallet, Wrench } from 'lucide-react';
 import {
   BUILD_SLOTS,
   CATEGORY_DEFS,
@@ -22,6 +22,8 @@ import { loadSharedBuild, sharedIdFromUrl, type SharedBuild } from './share.ts';
 import { loadUi, saveUi } from './uiState.ts';
 import { applyPc, clearPc, fillPc, loadPc, savePc } from './pc.ts';
 import { PcAnalysis } from './components/PcAnalysis.tsx';
+import { BudgetView } from './components/BudgetView.tsx';
+import { BUDGET_VISIBLE, lastBudgetMode, type BudgetMode } from './budget.ts';
 import { CategoryPicker } from './components/CategoryPicker.tsx';
 import { FilterPanel } from './components/FilterPanel.tsx';
 import { LocalSearch } from './components/LocalSearch.tsx';
@@ -90,6 +92,8 @@ export function App() {
   const [pc, setPc] = useState(loadPc);
   const [pcOpen, setPcOpen] = useState(false);
   const [buildOpen, setBuildOpen] = useState(false);
+  /** Montar pelo Orçamento aberto, e em que modo (PC inteiro ou upgrade do PC importado). */
+  const [budgetOpen, setBudgetOpen] = useState<BudgetMode | null>(null);
   const [buildSlot, setBuildSlot] = useState<BuildSlot | null>(null);
   const [onlyCompatible, setOnlyCompatible] = useState(true);
   useEffect(() => saveBuild(build), [build]);
@@ -172,6 +176,7 @@ export function App() {
     }
     setBuildOpen(false);
     setPcOpen(false);
+    setBudgetOpen(null);
   };
 
   const pickCategory = (c: CategoryId) => {
@@ -190,13 +195,30 @@ export function App() {
   const openBuild = () => {
     setBuildSlot(null);
     setPcOpen(false);
+    setBudgetOpen(null);
     setBuildOpen(true);
   };
 
   const openAnalysis = () => {
     setBuildSlot(null);
     setBuildOpen(false);
+    setBudgetOpen(null);
     setPcOpen(true);
+  };
+
+  const openBudget = (mode: BudgetMode) => {
+    setBuildSlot(null);
+    setBuildOpen(false);
+    setPcOpen(false);
+    setBudgetOpen(mode);
+  };
+
+  /** O plano do orçamento vai para a montagem (substitui a atual; pede confirmação se ela tinha peças compradas). */
+  const budgetToBuild = (next: SavedBuild) => {
+    const hasOwn = BUILD_SLOTS.some((s) => build[s] && !build[s]!.current);
+    if (hasOwn && !window.confirm('Trocar a sua montagem atual por esta?')) return;
+    setBuild(next);
+    openBuild();
   };
 
   /**
@@ -225,6 +247,7 @@ export function App() {
     setCategory(null);
     setBuildOpen(false);
     setPcOpen(false);
+    setBudgetOpen(null);
     setBuildSlot(null);
   };
 
@@ -393,7 +416,7 @@ export function App() {
     );
   }
 
-  if (!category && !buildOpen && !pcOpen) {
+  if (!category && !buildOpen && !pcOpen && !budgetOpen) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 px-4 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
         <div className="w-full max-w-3xl">
@@ -402,13 +425,25 @@ export function App() {
           </h1>
           <p className="mb-8 mt-1 text-zinc-500">Qual peça você quer trocar?</p>
           <CategoryPicker variant="grid" value={null} onChange={pickCategory} />
+          {BUDGET_VISIBLE && (
+            <button
+              onClick={() => openBudget(lastBudgetMode(pc))}
+              className="group mt-3 flex w-full items-center gap-4 rounded-2xl border border-accent-500/40 bg-white px-5 py-4 text-left transition hover:border-accent-500 hover:shadow-md dark:bg-zinc-900"
+            >
+              <Wallet className="h-8 w-8 shrink-0 text-accent-500" strokeWidth={1.5} />
+              <span className="flex-1">
+                <span className="block font-medium">Montar pelo Orçamento</span>
+                <span className="block text-sm text-zinc-500">Diga quanto quer gastar: o PC completo ou o upgrade do seu, com as peças que mais rendem e o menor preço.</span>
+              </span>
+            </button>
+          )}
           <button
             onClick={openBuild}
             className="group mt-3 flex w-full items-center gap-4 rounded-2xl border border-zinc-200 bg-white px-5 py-4 text-left transition hover:border-accent-500 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
           >
             <Wrench className="h-8 w-8 shrink-0 text-zinc-500 transition group-hover:text-accent-500" strokeWidth={1.5} />
             <span className="flex-1">
-              <span className="block font-medium">Montar o PC</span>
+              <span className="block font-medium">{BUDGET_VISIBLE ? 'Montar Peça por Peça' : 'Montar o PC'}</span>
               <span className="block text-sm text-zinc-500">Peça por peça, com a compatibilidade conferida a cada escolha.</span>
             </span>
             {buildCount > 0 && (
@@ -441,7 +476,7 @@ export function App() {
           <button onClick={goHome} className="shrink-0 text-lg font-bold tracking-tight" title="Início">
             Upgradezin<span className="text-accent-500">.</span>
           </button>
-          <CategoryPicker variant="bar" value={buildOpen ? null : category} onChange={pickCategory} />
+          <CategoryPicker variant="bar" value={buildOpen || budgetOpen || pcOpen ? null : category} onChange={pickCategory} />
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {buildButton}
           </div>
@@ -458,7 +493,21 @@ export function App() {
         )}
       </header>
 
-      {pcOpen ? (
+      {budgetOpen ? (
+        <main className="px-4 py-8">
+          <BudgetView
+            mode={budgetOpen}
+            onMode={setBudgetOpen}
+            pc={pc}
+            build={build}
+            onImport={(p) => {
+              savePc(p);
+              setPc(p);
+            }}
+            onToBuild={budgetToBuild}
+          />
+        </main>
+      ) : pcOpen ? (
         <main className="px-4 py-8">
           <PcAnalysis
             pc={pc}
@@ -477,6 +526,7 @@ export function App() {
               clearPc();
               setPc(null);
             }}
+            onBudget={BUDGET_VISIBLE ? () => openBudget('upgrade') : undefined}
           />
         </main>
       ) : buildOpen || !category ? (

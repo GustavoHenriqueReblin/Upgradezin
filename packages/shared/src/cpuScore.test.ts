@@ -66,7 +66,7 @@ describe('gargalo e sugestões pela ficha', () => {
       ['5500X3D', true],
       ['5700X3D', true],
       ['5800X3D', true],
-      ['5600', false],
+      // O 5600 (não resolve) seria o 4º: as dicas mostram 3.
     ]);
     expect(picks[0]!.perf).toBe(116);
   });

@@ -38,6 +38,10 @@ describe('análise do PC importado', () => {
     const gpu = a.tips[0]!;
     expect(gpu.text).toContain('RTX 4070');
     expect(gpu.text).toContain('fonte a partir de 500 W');
+    // RX 6600 de 8 GB: ofertas e busca só com 8 GB ou mais.
+    expect(gpu.action?.context?.minVram).toBe(8);
+    expect(gpu.action?.filters.vram).toEqual([8, 10, 12, 16, 20, 24, 32]);
+    expect(gpu.text).toContain('Só versões com 8 GB de memória de vídeo ou mais');
     expect(gpu.action?.slot).toBe('gpu');
     expect(gpu.action?.filters.gpuModels).toEqual(expect.arrayContaining(['RX 7700 XT', 'RX 7800 XT', 'RTX 4070']));
     // B450 é PCIe 3.0: placas de 8 linhas ficam de fora, e o texto explica.

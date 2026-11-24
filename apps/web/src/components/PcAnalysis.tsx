@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Cpu, FileText, Gauge, Trash2, Wrench } from 'lucide-react';
-import { analyzePc, CATEGORY_DEFS, CPU_BOUND, GPU_BOUND, type PcProfile, type Specs, type TipKind, type UpgradeAction, type Verdict } from '@upgradezin/shared';
+import { ArrowRight, Cpu, FileText, Gauge, Trash2, Wallet, Wrench } from 'lucide-react';
+import { analyzePc, CATEGORY_DEFS, CPU_BOUND, GPU_BOUND, type Balance, type PcProfile, type Specs, type TipKind, type UpgradeAction, type Verdict } from '@upgradezin/shared';
 import { PC_SLOTS } from '../pc.ts';
 import { CATEGORY_ICONS } from './CategoryPicker.tsx';
 import { ImportPc } from './ImportPc.tsx';
@@ -15,18 +15,20 @@ interface Props {
   onUpgrade: (action: UpgradeAction) => void;
   onToBuild: () => void;
   onForget: () => void;
+  /** Abre o Montar pelo Orçamento no modo upgrade (sem ela, o card não aparece). */
+  onBudget?: () => void;
 }
 
 const RES_LABEL = { '1080p': 'Full HD', '1440p': 'Quad HD', '4k': '4K' } as const;
 
-const VERDICT: Record<Verdict, string> = {
+export const VERDICT: Record<Verdict, string> = {
   gpu: 'A Placa de Vídeo Segura o PC',
   cpu: 'O Processador Segura o PC',
   balanced: 'Processador e Placa de Vídeo Equilibrados',
   unknown: 'Não Deu para Avaliar o Equilíbrio',
 };
 
-const KIND: Record<TipKind, { label: string; cls: string }> = {
+export const KIND: Record<TipKind, { label: string; cls: string }> = {
   upgrade: { label: 'Upgrade', cls: 'bg-accent-500/15 text-accent-700 dark:text-accent-300' },
   free: { label: 'Grátis', cls: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' },
   attention: { label: 'Atenção', cls: 'bg-amber-500/15 text-amber-700 dark:text-amber-300' },
@@ -41,7 +43,7 @@ const pos = (ratio: number) => Math.min(1, Math.max(0, 0.5 + Math.log(ratio) / (
  * Ficha técnica do processador da pessoa: o mesmo modelo no catálogo (GET /api/sheets/cpu). Sem ela
  * (modelo que o catálogo não tem, ou sem resposta), a análise usa a tabela por linha.
  */
-function useCpuSheet(model: string | undefined): Record<string, number | string | boolean> | undefined {
+export function useCpuSheet(model: string | undefined): Record<string, number | string | boolean> | undefined {
   const [sheet, setSheet] = useState<{ model: string; values: Record<string, number | string | boolean> } | undefined>();
   useEffect(() => {
     if (!model) return;
@@ -57,8 +59,24 @@ function useCpuSheet(model: string | undefined): Record<string, number | string 
   return sheet && sheet.model === model ? sheet.values : undefined;
 }
 
+/** O veredito em uma frase, na tela da pessoa ("Em Full HD, a RTX 3060 fica esperando o Ryzen 5 3600."). */
+export function verdictSummary(pc: PcProfile, balance: Balance): string {
+  const screen = `${RES_LABEL[balance.res]}${balance.hz && balance.hz >= 120 ? ` a ${balance.hz} Hz` : ''}`;
+  const cpuName = pc.cpu?.title ?? 'o processador';
+  const gpuName = pc.gpu?.specs.gpuModel ?? (pc.gpu ? pc.gpu.title : 'o vídeo integrado');
+  return (
+    balance.verdict === 'gpu'
+      ? `Em ${screen}, o ${cpuName} aguenta mais do que ${pc.gpu ? `a ${gpuName}` : gpuName} entrega.`
+      : balance.verdict === 'cpu'
+        ? `Em ${screen}, ${pc.gpu ? `a ${gpuName}` : 'a placa de vídeo'} fica esperando o ${cpuName}.`
+        : balance.verdict === 'balanced'
+          ? `Em ${screen}, processador e placa de vídeo estão equilibrados. Trocar só um deles rende pouco.`
+          : `Não reconheci ${balance.missing} na tabela de desempenho. As outras dicas continuam valendo.`
+  );
+}
+
 /** "Identificar Gargalo": o PC importado do CPU-Z, o que segura o desempenho e o que vale fazer. */
-export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onUpgrade, onToBuild, onForget }: Props) {
+export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onUpgrade, onToBuild, onForget, onBudget }: Props) {
   /** 'file': importar de novo; 'psu': só informar a fonte (abre na prévia). */
   const [importing, setImporting] = useState<false | 'file' | 'psu'>(false);
   const cpuSheet = useCpuSheet(pc?.cpu?.specs.cpuModel);
@@ -102,17 +120,7 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onUpgra
   const PsuIcon = CATEGORY_ICONS.psu;
   // A informada aqui vale mais; sem ela, a "Já Tenho" da montagem.
   const psuTitle = pc.psu?.title ?? buildPsuTitle;
-  const screen = `${RES_LABEL[balance.res]}${balance.hz && balance.hz >= 120 ? ` a ${balance.hz} Hz` : ''}`;
-  const cpuName = pc.cpu?.title ?? 'o processador';
-  const gpuName = pc.gpu?.specs.gpuModel ?? (pc.gpu ? pc.gpu.title : 'o vídeo integrado');
-  const summary =
-    balance.verdict === 'gpu'
-      ? `Em ${screen}, o ${cpuName} aguenta mais do que ${pc.gpu ? `a ${gpuName}` : gpuName} entrega.`
-      : balance.verdict === 'cpu'
-        ? `Em ${screen}, ${pc.gpu ? `a ${gpuName}` : 'a placa de vídeo'} fica esperando o ${cpuName}.`
-        : balance.verdict === 'balanced'
-          ? `Em ${screen}, nenhum dos dois espera muito pelo outro. Trocar só um deles rende pouco.`
-          : `Não reconheci ${balance.missing} na tabela de desempenho. As outras dicas continuam valendo.`;
+  const summary = verdictSummary(pc, balance);
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
@@ -151,6 +159,21 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onUpgra
           </p>
         )}
       </section>
+
+      {/* Upgrade pelo orçamento: o mesmo motor, a partir de um valor */}
+      {onBudget && (
+        <button
+          onClick={onBudget}
+          className="group flex w-full items-center gap-4 rounded-2xl border border-accent-500/40 bg-accent-500/5 px-5 py-4 text-left transition hover:border-accent-500 hover:shadow-md"
+        >
+          <Wallet className="h-7 w-7 shrink-0 text-accent-600 dark:text-accent-400" strokeWidth={1.5} />
+          <span className="flex-1">
+            <span className="block font-medium">Tem um Valor em Mente?</span>
+            <span className="block text-sm text-zinc-500">Diga quanto quer gastar e veja o upgrade que mais rende no seu PC, com as peças e os preços.</span>
+          </span>
+          <ArrowRight className="h-5 w-5 shrink-0 text-zinc-400 transition group-hover:text-accent-500" />
+        </button>
+      )}
 
       {/* Peças lidas */}
       <section className="rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">

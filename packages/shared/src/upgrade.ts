@@ -19,6 +19,8 @@ export interface UpgradeFilters {
   cpuLines?: string[];
   gpuMakers?: GpuMaker[];
   gpuModels?: string[];
+  /** Memória de vídeo (GB): na troca de placa, a atual ou mais. */
+  vram?: number[];
   memory?: MemoryType[];
   ramCapacity?: number[];
   ramModules?: number[];
@@ -76,6 +78,9 @@ export const CPU_BOUND = 0.8;
 const CURRENT_SERIES = new Set(['RTX 50', 'RTX 40', 'RTX 30', 'RX 9000', 'RX 7000', 'RX 6000', 'Arc B', 'Arc A']);
 /** Gerações atuais, citadas no texto da sugestão. */
 const LATEST_SERIES = new Set(['RTX 50', 'RTX 40', 'RX 9000', 'RX 7000', 'Arc B']);
+
+/** Tamanhos de memória de vídeo vendidos (GB). */
+const VRAM_SIZES = [4, 6, 8, 10, 12, 16, 20, 24, 32];
 
 const RES_LABEL: Record<Resolution, string> = { '1080p': 'Full HD', '1440p': 'Quad HD (1440p)', '4k': '4K' };
 
@@ -159,6 +164,8 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
           ? ` Elas pedem fonte a partir de ${psuNeed} W, conforme o modelo: marque a sua como "Já Tenho" na montagem para conferir.`
           : '';
     const vramNote = gpu?.vram && gpu.vram <= 4 ? ` Com ${gpu.vram} GB de memória de vídeo, jogos atuais já ficam limitados.` : '';
+    // As ofertas e a busca só trazem versões com a memória de vídeo atual ou mais (o mesmo chip sai com 8 e 16 GB).
+    const vramFloor = gpu?.vram && gpu.vram > 4 ? ` Só versões com ${gpu.vram} GB de memória de vídeo ou mais, como a sua: com menos seria downgrade.` : '';
     tips.push({
       id: 'gpu-upgrade',
       kind: 'upgrade',
@@ -167,17 +174,20 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
         `O ${cpuName} aguenta uma placa de vídeo bem mais forte que ${pc.gpu ? `a ${gpuName}` : gpuName} em ${screen}.` +
         (named.length ? ` Na faixa certa para ele: ${listNames(named)}.` : models.length ? ` Na faixa certa para ele: ${listNames(models.slice(0, 4))}.` : '') +
         vramNote +
+        vramFloor +
         (leftOut ? ` A ${boardName} é PCIe 3.0, então ficaram de fora as placas que usam só 8 linhas (como a ${leftOut}), que perdem desempenho nela.` : '') +
         psuText,
       ...(models.length && {
         action: {
           slot: 'gpu',
           label: 'Ver Placas de Vídeo',
-          filters: { gpuMakers: makers, gpuModels: models },
+          // Memória de vídeo: a da placa atual ou mais (menos seria downgrade, mesmo com chip melhor).
+          filters: { gpuMakers: makers, gpuModels: models, ...(gpu?.vram && { vram: VRAM_SIZES.filter((v) => v >= gpu.vram!) }) },
           // Com a fonte atual servindo (e não sendo simples), só as placas que cabem nela.
           context: {
             current: gpuP,
             target,
+            ...(gpu?.vram && { minVram: gpu.vram }),
             ...(pcie === 3 && { pcie3: true }),
             ...(ok.length && !basicPsu && psuWatts && cpuW && { maxGpuPower: psuWatts - cpuW - BASE_SYSTEM_POWER }),
           },
