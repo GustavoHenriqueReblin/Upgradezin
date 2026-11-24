@@ -1,3 +1,4 @@
+import { ENABLED_CATEGORIES } from '@upgradezin/shared';
 import type { SheetPageText, SheetProduct, SheetProductFilter, SheetProductPage, SheetStoreStatus, StoreId } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
 import { catalogProducts, pageText, SHEET_SCOPE_DAYS, sheetQueueSizes } from '../prices/sheets.ts';
@@ -29,7 +30,8 @@ export function listSheetProducts(db: Db, f: SheetProductFilter, now = Date.now(
   // "Só a web completa": incompleta com a página de todas as lojas já lida (como na cobertura); "precisa de você": e a web já perguntada.
   const inState = (p: SheetProduct) =>
     !f.state || (f.state === 'exhausted' ? p.state === 'incomplete' && p.listings.every((l) => l.read) : f.state === 'manual' ? p.needsHuman : p.state === f.state);
-  const all = catalogProducts(db, f.category, since(now)).filter(
+  // Sem categoria: todas (as ligadas), uma depois da outra.
+  const all = (f.category ? [f.category] : ENABLED_CATEGORIES).flatMap((c) => catalogProducts(db, c, since(now))).filter(
     (p) => inState(p) && (!q || p.listings.some((l) => l.title.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q))),
   );
   return { items: all.slice(offset, offset + pageSize), total: all.length, page, pageSize };

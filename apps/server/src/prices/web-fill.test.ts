@@ -161,6 +161,7 @@ describe('precisa de você: a web não achou o que falta; preenchido à mão', (
     expect(p).toMatchObject({ state: 'incomplete', missing: ['mbFormats'], needsHuman: true });
     expect(sheetCoverage(db, since).find((r) => r.category === 'case')).toMatchObject({ needsHuman: 1 });
     expect(listSheetProducts(db, { category: 'case', state: 'manual' }).total).toBe(1);
+    expect(listSheetProducts(db, { state: 'manual' })).toMatchObject({ total: 1, items: [{ category: 'case' }] }); // todas as categorias
     expect(webQueue(db)).toEqual([]); // não pergunta de novo sozinho
     // À mão: validado como na web (lista normalizada); valor fora do formato é recusado.
     expect(setManualSheet(db, p!.key, 'case', { mbFormats: 'atx, matx', maxGpuMm: 'grande', dimensions: '460 x 210 x 480' })).toEqual({ errors: ['maxGpuMm'] });

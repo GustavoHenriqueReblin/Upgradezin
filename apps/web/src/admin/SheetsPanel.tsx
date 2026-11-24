@@ -50,7 +50,8 @@ const pct = (x: number, total: number) => (total ? Math.round((x / total) * 100)
  */
 export function SheetsPanel({ onUnauthorized }: Props) {
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const [category, setCategory] = useState<CategoryId>('cpu');
+  // '' = todas as categorias (colunas gerais: categoria e o que falta).
+  const [category, setCategory] = useState<CategoryId | ''>('cpu');
   // A situação filtrada vale para todas as categorias (trocar de categoria não volta a "qualquer situação").
   const [state, setState] = useState<SheetFilterState | ''>('');
   const fail = useCallback(
@@ -231,13 +232,13 @@ function Products({
   onState,
   fail,
   onMessage,
-}: Shared & { category: CategoryId; onCategory: (c: CategoryId) => void; state: SheetFilterState | ''; onState: (s: SheetFilterState | '') => void }) {
+}: Shared & { category: CategoryId | ''; onCategory: (c: CategoryId | '') => void; state: SheetFilterState | ''; onState: (s: SheetFilterState | '') => void }) {
   const [filters, setFilters] = useState<Filters>({ q: '', page: 1 });
   const [text, setText] = useState('');
   const [data, setData] = useState<SheetProductPage | null>(null);
   const [stores, setStores] = useState<Map<string, string>>(new Map());
   const [open, setOpen] = useState<string | null>(null);
-  const fields = sheetFields(category).filter((f) => f.key !== 'brand' && f.key !== 'model');
+  const fields = category ? sheetFields(category).filter((f) => f.key !== 'brand' && f.key !== 'model') : [];
 
   useEffect(() => {
     adminApi<AdminStoreConfig[]>('/stores')
@@ -245,7 +246,8 @@ function Products({
       .catch(fail);
   }, [fail]);
   const load = useCallback(() => {
-    const q = new URLSearchParams({ category, page: String(filters.page) });
+    const q = new URLSearchParams({ page: String(filters.page) });
+    if (category) q.set('category', category);
     if (state) q.set('state', state);
     if (filters.q) q.set('q', filters.q);
     adminApi<SheetProductPage>(`/sheets/products?${q}`).then(setData).catch(fail);
@@ -264,7 +266,8 @@ function Products({
       }
     >
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <select className={select} value={category} onChange={(e) => onCategory(e.target.value as CategoryId)} aria-label="Categoria">
+        <select className={select} value={category} onChange={(e) => onCategory(e.target.value as CategoryId | '')} aria-label="Categoria">
+          <option value="">todas as categorias</option>
           {ENABLED_CATEGORIES.map((c) => (
             <option key={c} value={c}>
               {CATEGORY_DEFS[c].name}
@@ -306,7 +309,7 @@ function Products({
       ) : !data.items.length ? (
         <p className="text-sm text-zinc-500">Nenhum produto com esses filtros.</p>
       ) : (
-        <Table head={['', 'Produto', 'Ficha', ...fields.map((f) => f.label)]}>
+        <Table head={['', 'Produto', ...(category ? [] : ['Categoria']), 'Ficha', ...(category ? fields.map((f) => f.label) : ['Faltando'])]}>
           {data.items.map((p) => {
             const isOpen = open === p.key;
             return (
@@ -319,9 +322,15 @@ function Products({
                     <span className="line-clamp-2">{p.title}</span>
                     <span className="text-xs text-zinc-500">{[...new Set(p.listings.map((l) => stores.get(l.store) ?? l.store))].join(' · ')}</span>
                   </Td>
+                  {!category && <Td className="whitespace-nowrap text-xs">{CATEGORY_DEFS[p.category].name}</Td>}
                   <Td>
                     <span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium ${STATE_TONE[p.state]}`}>{SHEET_STATE_LABEL[p.state]}</span>
                   </Td>
+                  {!category && (
+                    <Td className="text-xs text-amber-600 dark:text-amber-400">
+                      {p.missing.length ? fieldLabels(p.category, p.missing) : <span className="text-zinc-500">—</span>}
+                    </Td>
+                  )}
                   {fields.map((f) => (
                     <Td key={f.key} className={`whitespace-nowrap text-xs ${p.missing.includes(f.key) ? 'text-amber-600 dark:text-amber-400' : ''}`}>
                       {formatSheetValue(f, p.values[f.key]) || (p.missing.includes(f.key) ? 'falta' : '')}
@@ -330,7 +339,7 @@ function Products({
                 </tr>
                 {isOpen && (
                   <tr className="bg-zinc-50 dark:bg-zinc-950/40">
-                    <td colSpan={fields.length + 3} className="px-3 py-3">
+                    <td colSpan={category ? fields.length + 3 : 5} className="px-3 py-3">
                       <ProductDetail p={p} names={stores} fail={fail} onMessage={onMessage} />
                     </td>
                   </tr>

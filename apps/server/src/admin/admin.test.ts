@@ -351,7 +351,9 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     // Só a web completa: a incompleta com todas as páginas lidas (a única loja dela).
     const web = await app.inject({ url: '/api/admin/sheets/products?category=cpu&state=exhausted', headers: { cookie } });
     expect(web.json()).toMatchObject({ total: 1, items: [{ state: 'incomplete', listings: [{ read: true }] }] });
-    for (const q of ['', 'category=nada', 'category=cpu&state=talvez', 'category=cpu&page=0']) {
+    // Sem categoria: todas.
+    expect((await app.inject({ url: '/api/admin/sheets/products?state=incomplete', headers: { cookie } })).json()).toMatchObject({ total: 1, items: [{ category: 'cpu' }] });
+    for (const q of ['category=nada', 'category=cpu&state=talvez', 'category=cpu&page=0']) {
       expect((await app.inject({ url: `/api/admin/sheets/products?${q}`, headers: { cookie } })).statusCode).toBe(400);
     }
     expect((await app.inject({ url: '/api/admin/sheets/page?store=s1&sku=1', headers: { cookie } })).json()).toMatchObject({ store: 's1', sku: '1', text });

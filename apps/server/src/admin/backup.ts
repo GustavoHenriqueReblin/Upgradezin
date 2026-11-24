@@ -21,9 +21,15 @@ export class Backups {
     if (!existsSync(this.dir)) return [];
     return readdirSync(this.dir)
       .filter((n) => NAME.test(n))
-      .map((name) => {
-        const st = statSync(join(this.dir, name));
-        return { name, sizeMb: Math.round((st.size / 1_048_576) * 10) / 10, at: st.mtime.toISOString() };
+      .flatMap((name) => {
+        // Arquivo que não dá para ler fica de fora (o link "latest.db.gz" do backup da madrugada, quando o
+        // backup para o qual ele aponta foi apagado), em vez de derrubar a lista inteira.
+        try {
+          const st = statSync(join(this.dir, name));
+          return [{ name, sizeMb: Math.round((st.size / 1_048_576) * 10) / 10, at: st.mtime.toISOString() }];
+        } catch {
+          return [];
+        }
       })
       .sort((a, b) => b.at.localeCompare(a.at));
   }

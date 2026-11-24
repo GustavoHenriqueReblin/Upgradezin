@@ -425,8 +425,9 @@ export type WebAnswerPage = AdminPage<WebAnswer>;
  */
 export type SheetFilterState = SheetState | 'exhausted' | 'manual';
 
+/** Filtros da lista de fichas (uma categoria, com os campos dela, ou todas: sem category). */
 export interface SheetProductFilter {
-  category: CategoryId;
+  category?: CategoryId;
   state?: SheetFilterState;
   q?: string;
   page?: number;

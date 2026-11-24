@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
@@ -68,6 +68,17 @@ describe('backups', () => {
     const backups = new Backups(tmp());
     for (const name of ['../app.db', '..\\app.db', 'a/b.db', 'x.txt', '.db', 'nao-existe.db']) expect(backups.path(name)).toBeNull();
     expect(backups.remove('../app.db')).toBe(false);
+  });
+
+  it('link quebrado na pasta (o "latest" de um backup apagado): fica de fora, a lista não quebra', () => {
+    const dir = tmp();
+    writeFileSync(join(dir, 'upgradezin-2026-11-22.db.gz'), 'x');
+    try {
+      symlinkSync(join(dir, 'upgradezin-2026-11-23.db.gz'), join(dir, 'latest.db.gz'));
+    } catch {
+      return; // sem permissão para criar link (Windows sem modo desenvolvedor): nada a conferir
+    }
+    expect(new Backups(dir).list().map((b) => b.name)).toEqual(['upgradezin-2026-11-22.db.gz']);
   });
 });
 
