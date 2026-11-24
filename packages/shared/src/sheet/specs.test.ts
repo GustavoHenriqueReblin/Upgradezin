@@ -77,6 +77,14 @@ describe('ficha → specs (busca, filtros, montagem)', () => {
     expect(withSheetSpecs('cpu', { cpuLine: 'Ryzen 5', cpuModel: '5600', socket: 'AM5', cores: 8 }, { socket: 'AM4', cores: 6 })).toEqual({ cpuLine: 'Ryzen 5', cpuModel: '5600', socket: 'AM4', cores: 6 });
     // B650E: a ficha diz o chip (B650), o título a versão (B650E).
     expect(withSheetSpecs('motherboard', { chipset: 'B650E' }, { chipset: 'B650' }).chipset).toBe('B650E');
+    // Placa de vídeo com o chip incompleto na ficha (o nome interno, sem o XT, só a série): vale o modelo do título.
+    const gpu = (title: string, chip: string) => withSheetSpecs('gpu', { gpuModel: title }, { chip }).gpuModel;
+    expect(gpu('GT 210', 'GT 218')).toBe('GT 210');
+    expect(gpu('RX 7800 XT', 'RX 7800')).toBe('RX 7800 XT');
+    expect(gpu('RX 6900 XT', 'RX 6900')).toBe('RX 6900 XT');
+    expect(gpu('RX 9060 XT', 'RX 9000')).toBe('RX 9060 XT');
+    // Chip conhecido na ficha vale mais que o título (o título errou).
+    expect(gpu('RTX 4060', 'RTX 4060 Ti')).toBe('RTX 4060 Ti');
     expect(withSheetSpecs('motherboard', { chipset: 'H510' }, { chipset: 'H470' }).chipset).toBe('H470');
   });
 

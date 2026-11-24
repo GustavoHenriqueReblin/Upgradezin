@@ -1,3 +1,4 @@
+import { GPU_PERF } from '../perf.ts';
 import { SOCKETS, type CategoryId, type Efficiency, type FormFactor, type Socket, type Specs } from '../types.ts';
 import type { SheetValues } from './fields.ts';
 
@@ -165,5 +166,9 @@ export function withSheetSpecs(category: CategoryId, title: Specs, sheet: SheetV
   const fromSheet = sheetSpecs(category, sheet);
   // Placa B650E/X670E: a ficha diz o chip ("Chipset B650"); o título, a versão. Vale a do título.
   if (category === 'motherboard' && title.chipset && fromSheet.chipset && title.chipset === `${fromSheet.chipset}E`) fromSheet.chipset = title.chipset;
+  // Placa de vídeo: a ficha às vezes traz o chip incompleto ("Chipset: GT 218", o nome interno; "Arquitetura Radeon
+  // RX 6900", sem o XT; "RX 9000", a série). Chip que a tabela de desempenho não conhece perde para o modelo do
+  // título, quando o do título ela conhece.
+  if (category === 'gpu' && title.gpuModel && fromSheet.gpuModel && !(fromSheet.gpuModel in GPU_PERF) && title.gpuModel in GPU_PERF) fromSheet.gpuModel = title.gpuModel;
   return { ...out, ...fromSheet };
 }

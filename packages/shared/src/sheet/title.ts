@@ -193,6 +193,18 @@ export function readTitle(category: CategoryId, title: string): SheetValues {
  * certificação (a modular e a certificada sempre dizem), gabinete sem ventoinhas (o que vem com
  * ventoinhas sempre diz).
  */
+/**
+ * Campos que o padrão da categoria não deve preencher para este título: "Com Fans" sem o número diz que o
+ * gabinete tem ventoinha, mas não quantas (o padrão 0 seria "não tem"); fica "não sei".
+ */
+export function titleBlocksDefault(category: CategoryId, title: string): string[] {
+  if (category !== 'case') return [];
+  const t = title.toLowerCase();
+  return /\bcom\s*(?:fans?|ventoinhas?|coolers?)\b|\b(?:fans?|coolers?|ventoinhas?)\s*(?:a?rgb\s*)?inclus/.test(t) && !/sem\s*(?:fans?|ventoinhas?|coolers?)/.test(t)
+    ? ['fansIncluded']
+    : [];
+}
+
 export const SHEET_DEFAULTS: Partial<Record<CategoryId, SheetValues>> = {
   psu: { modular: 'Não', efficiency: 'Sem certificação' },
   case: { fansIncluded: 0 },

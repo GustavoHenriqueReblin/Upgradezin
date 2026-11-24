@@ -110,6 +110,14 @@ describe('produtos, fila e cobertura', () => {
 describe('ficha completada pelo título e pelo padrão da categoria', () => {
   const page = (sku: string, values: Record<string, string | number>, hasSheet = true) => ({ store: 's3' as StoreId, sku, at: NOW, hasSheet, values });
 
+  it('gabinete "Com Fans" sem o número: o padrão (0, "não tem") não vale, fica "não sei"; com o número, o título diz quantas', () => {
+    const box = (sku: string) => ({ store: 's3' as StoreId, sku, at: NOW, hasSheet: true, values: { formFactor: 'Mid Tower', mbFormats: 'ATX' } });
+    const t = (title: string) => [{ store: 's3' as StoreId, sku: '1', title }];
+    expect(mergeSources('case', [box('1')], t('Gabinete Gamer Gamdias, Talos E1, Preto, Com Fans')).values.fansIncluded).toBeUndefined();
+    expect(mergeSources('case', [box('1')], t('Gabinete Gamer Fortrek Cruiser, Com 3 Coolers RGB, Branco')).values.fansIncluded).toBe(3);
+    expect(mergeSources('case', [box('1')], t('Gabinete Gamer Simples, Preto')).values.fansIncluded).toBe(0);
+  });
+
   it('"não tem" da página cede para um valor de verdade do título (a página não fala de Wi-Fi, o título diz "Wifi7")', () => {
     const board = (sku: string, values: Record<string, string | number>) => ({ store: 's3' as StoreId, sku, at: NOW, hasSheet: true, values });
     const titles = [{ store: 's3' as StoreId, sku: '1', title: 'Placa Mãe Gigabyte X870M Aorus Elite Wifi7, DDR5, AM5' }];

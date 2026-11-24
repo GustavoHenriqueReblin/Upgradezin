@@ -30,7 +30,17 @@ export function extractCaseSpecs(title: string): CaseSpecs {
   if (/vidro|glass/.test(t)) specs.caseGlass = true;
   if (/sem\s*(?:fans?|ventoinhas?|cooler)|sem\s*fonte\s*\/\s*fans/.test(t)) specs.caseFans = 0;
   else {
-    const n = t.match(/(\d{1,2})\s*x?\s*(?:fans?|ventoinhas?|cooler\s*fans?)\b/)?.[1] ?? t.match(/com\s*(\d{1,2})\s*x?\s*fans?/)?.[1] ?? t.match(/\b(\d)x\s*(?:fans?|cooler)/)?.[1];
+    // Também "3 Coolers RGB", "Com 3 Coolers", "4 Cooler" (as lojas chamam ventoinha de cooler); não o que o
+    // gabinete suporta ("suporta 6 coolers", "até 9 fans"), nem o cooler do processador.
+    const included = (re: RegExp) => {
+      for (const m of t.matchAll(re)) if (!/(suport\w*|ate|max\w*|compativel com)\s*(?:para\s*)?$/.test(t.slice(Math.max(0, m.index! - 20), m.index!).trim())) return m[1];
+      return undefined;
+    };
+    const n =
+      included(/(\d{1,2})\s*x?\s*(?:fans?|ventoinhas?|cooler\s*fans?)\b/g) ??
+      included(/com\s*(\d{1,2})\s*x?\s*(?:fans?|coolers?|ventoinhas?)\b/g) ??
+      included(/\b(\d)x\s*(?:fans?|cooler)/g) ??
+      included(/\b(\d{1,2})\s*coolers?\b(?!\s*(?:de|do|para)\s*(?:processador|cpu))/g);
     if (n && Number(n) <= 12) specs.caseFans = Number(n);
   }
   return specs;

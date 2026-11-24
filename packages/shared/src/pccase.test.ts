@@ -28,6 +28,16 @@ describe('Gabinete', () => {
     expect(extractCaseSpecs('Gabinete Gamer Rise Mode X5 Glass, RGB, Lateral em Vidro Fumê, Sem FANs, Preto').caseFormFactor).toBeUndefined();
   });
 
+  it('ventoinhas inclusas que as lojas chamam de "cooler" no título; o que o gabinete suporta não conta', () => {
+    const fans = (t: string) => extractCaseSpecs(t).caseFans;
+    expect(fans('Gabinete Gamer Fortrek Cruiser, Lateral Em Acrílico, Com 3 Coolers RGB, Branco - 80257')).toBe(3);
+    expect(fans('Gabinete Gamer Bluecase Bg-052w Soul Pro - Lateral E Frontal Em Vidro - Usb 3.0 - 3 Cooler')).toBe(3);
+    expect(fans('Gabinete Gamer, Evus, Ev-g15, Lateral Em Vidro Temperado, 3 Coolers Rgb Inclusos')).toBe(3);
+    expect(fans('Gabinete Gamer XYZ, Mid Tower, Suporta 6 Coolers, Preto')).toBeUndefined();
+    expect(fans('Gabinete Gamer XYZ, Mid Tower, Suporte para até 9 Fans')).toBeUndefined();
+    expect(fans('Gabinete Gamer XYZ, Sem Fans, Preto')).toBe(0);
+  });
+
   it('a placa cabe no gabinete?', () => {
     expect(caseFits('atx', 'matx')).toBe(true);
     expect(caseFits('matx', 'atx')).toBe(false);

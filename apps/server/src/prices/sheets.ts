@@ -10,6 +10,7 @@ import {
   estimateSheet,
   readTitle,
   SHEET_DEFAULTS,
+  titleBlocksDefault,
   sheetFields,
   SHEET_FIELDS,
   type CategoryId,
@@ -358,9 +359,11 @@ export function mergeSources(category: CategoryId, sources: SheetSource[], title
     }
   }
   const read = sources.find((s) => s.hasSheet);
+  // O título que diz que tem ("Com Fans", sem o número) segura o padrão: o campo fica "não sei".
+  const blocked = new Set(titles.flatMap((t) => titleBlocksDefault(category, t.title)));
   if (read)
     for (const [k, v] of Object.entries(SHEET_DEFAULTS[category] ?? {})) {
-      if (values[k] !== undefined) continue;
+      if (values[k] !== undefined || blocked.has(k)) continue;
       values[k] = v;
       origin[k] = { store: read.store, sku: read.sku, from: 'default' };
     }
