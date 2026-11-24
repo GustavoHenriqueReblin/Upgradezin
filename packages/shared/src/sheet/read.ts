@@ -626,7 +626,11 @@ const caseReader: Reader = (doc) => {
 
 const cooler: Reader = (doc) => {
   // "Bloco" na linha de um air cooler ("Bloco de alumínio com 2 heatpipes") não é o bloco do water cooler.
-  const water = /radiador|\bbomba\b|\bpump\b|water\s*cooler|watercooler|refrigeracao liquida|\btubo\b(?! de calor)|^bloco\b(?![^\n]*(?:heat ?pipe|aleta|dissipador))/m.test(doc.all);
+  // A bomba só no rótulo ("Bomba: 2800 RPM", "Velocidade da bomba"): air cooler com texto copiado de water
+  // cooler ("ARGB: design para bomba e ventilador") não vira water.
+  const water =
+    /radiador|water\s*cooler|watercooler|refrigeracao liquida|\btubo\b(?! de calor)|^bloco\b(?![^\n]*(?:heat ?pipe|aleta|dissipador))/m.test(doc.all) ||
+    doc.pairs.some((p) => /\bbomba\b|\bpump\b/.test(`${p.section} ${p.label}`));
   const type = water ? 'water' : /dissipador|heatpipe|tubo de calor|air ?cooler|ventoinha|\bfan\b/.test(doc.all) ? 'ar' : undefined;
   let heightMm: number | undefined;
   if (!water) {

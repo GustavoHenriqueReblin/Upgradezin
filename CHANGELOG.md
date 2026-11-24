@@ -5,6 +5,7 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 ## [Não lançado]
 
 ### Corrigido
+- Air cooler lido como water cooler por um "bomba" no texto da ficha ("ARGB: design para bomba e ventilador", copiado de water cooler): a bomba agora só conta no rótulo ("Bomba: 2800 RPM"). Nas páginas guardadas, muda só o Aigo Darkflash Ellsworth S31 (preto e branco), que passa a air cooler com altura de 153 mm, e nenhum water cooler deixa de ser water.
 - Water cooler com radiador de 480 mm: o tamanho não era aceito no título ("480mm"), na ficha (4 ventoinhas de 120, "518 x 120 x 27 mm") nem nas opções do JSON da busca na web, e a IA devolvia o radiador em branco mesmo achando. A resposta da web com a unidade ("480 mm") também passa, e o radiador vindo da web entra como número.
 - Admin, Backups: a lista quebrava ("Não foi possível agora") quando o backup para o qual o link "latest.db.gz" da madrugada aponta era apagado; arquivo que não dá para ler agora fica de fora.
 - Cooler: "Bloco de alumínio com 2 heatpipes" (air cooler) era lido como water cooler.

@@ -575,4 +575,10 @@ describe('cooler: bloco do air cooler não é water cooler', () => {
     expect(readSheet('cooler', '- Bloco de alumínio com 2 heatpipes de contato direto de cobre de 6mm, aletas de alumínio').type).toBe('ar');
     expect(readSheet('cooler', 'Bloco: cobre com microcanais\nVentoinha: 120 mm').type).toBe('water');
   });
+
+  it('"bomba" só no texto de um rótulo (air cooler com texto de water cooler) não vira water; no rótulo, vira', () => {
+    const s31 = 'Dimensões da ventoinha:120 x 120 x 25 mm\nARGB:Aplicação de design ARGB para bomba e ventilador de resfriamento.\nDimensões:122 x 92 x 153 mm';
+    expect(readSheet('cooler', s31)).toMatchObject({ type: 'ar', heightMm: 153 });
+    expect(readSheet('cooler', 'Bomba: 2800 RPM\nVentoinha: 120 mm').type).toBe('water');
+  });
 });
