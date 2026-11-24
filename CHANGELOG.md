@@ -5,6 +5,8 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 ## [Não lançado]
 
 ### Corrigido
+- Clock máximo do processador: com vários turbos na ficha (Intel: Thermal Velocity Boost, Turbo Boost Max 3.0, P-core Max Turbo), vale o maior, o que conta em jogos. O i9-13900K era lido com 5,4 GHz em vez de 5,8. No título "3.7ghz Turbo 4.4ghz", o 3,7 era lido como turbo. A base "Frequência de base P-core" também passa a ser lida. Nas páginas guardadas, 14 processadores sobem o clock e nenhum desce; o servidor relê as fichas ao subir.
+- Admin: as lacunas de desempenho e a nota da aba Produtos usam a ficha do processador, como o site. Processador fora da tabela, mas com nota pela ficha, não aparece mais como lacuna.
 - Air cooler lido como water cooler por um "bomba" no texto da ficha ("ARGB: design para bomba e ventilador", copiado de water cooler): a bomba agora só conta no rótulo ("Bomba: 2800 RPM"). Nas páginas guardadas, muda só o Aigo Darkflash Ellsworth S31 (preto e branco), que passa a air cooler com altura de 153 mm, e nenhum water cooler deixa de ser water.
 - Water cooler com radiador de 480 mm: o tamanho não era aceito no título ("480mm"), na ficha (4 ventoinhas de 120, "518 x 120 x 27 mm") nem nas opções do JSON da busca na web, e a IA devolvia o radiador em branco mesmo achando. A resposta da web com a unidade ("480 mm") também passa, e o radiador vindo da web entra como número.
 - Admin, Backups: a lista quebrava ("Não foi possível agora") quando o backup para o qual o link "latest.db.gz" da madrugada aponta era apagado; arquivo que não dá para ler agora fica de fora.
@@ -20,6 +22,7 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 - Lista de categoria que não anda (a loja devolve de novo uma página já lida): a página que só traz produtos que a volta já viu encerra a lista ali, na rotina e na varredura completa, sem marcar nada como esgotado (o resto pode não ter sido lido). Na S3, o "ver mais" devolvia a mesma página da 2ª à 200ª, e a varredura de cada categoria ia até o teto de 200 páginas.
 
 ### Mudado
+- "Gabinete ATX" (e Micro ATX, Mini ITX) na busca passa a mostrar os gabinetes onde a placa cabe, incluindo os que aceitam formatos maiores. Antes eram só os de maior placa exatamente ATX, e mid towers que aceitam E-ATX ficavam de fora. A contagem do formulário segue a mesma regra.
 - "Não achou? Buscar nas lojas", abaixo do filtro de texto do resultado, desligado por enquanto: a varredura completa das lojas já traz praticamente todas as peças. O filtro de texto nos resultados continua.
 - Cooler: altura e ruído ficam opcionais (só tipo, soquetes e, no water cooler, o radiador são principais).
 - Fonte: só potência, eficiência e modular são principais; padrão e conectores ficam opcionais.

@@ -53,8 +53,12 @@ function cpu(title: string, t: string): SheetValues {
   const s = extractCpuSpecs(title);
   const fam = cpuFamily(s);
   // "3.4GHz (4.5GHz Turbo)", "Turbo até 4.6GHz"; a base só quando há as duas (um "4.5GHz" sozinho pode ser qualquer uma).
-  const boostM = t.match(/(\d[.,]\d{1,2})\s*ghz\s*(?:max\.?\s*)?(?:turbo|boost)|(?:turbo|boost)\s*(?:max\.?\s*)?(?:de\s*|ate\s*|up to\s*)?(\d[.,]\d{1,2})\s*ghz/);
-  const boost = num(boostM?.[1] ?? boostM?.[2]);
+  // O maior dos dois jeitos: em "3.7ghz Turbo 4.4ghz" o "3.7ghz Turbo" é a base seguida da palavra turbo.
+  const turbos = [
+    ...[...t.matchAll(/(\d[.,]\d{1,2})\s*ghz\s*(?:max\.?\s*)?(?:turbo|boost)/g)].map((m) => num(m[1])!),
+    ...[...t.matchAll(/(?:turbo|boost)\s*(?:max\.?\s*)?(?:de\s*|ate\s*|up to\s*)?(\d[.,]\d{1,2})\s*ghz/g)].map((m) => num(m[1])!),
+  ];
+  const boost = turbos.length ? Math.max(...turbos) : undefined;
   const all = [...t.matchAll(/(\d[.,]\d{1,2})\s*ghz/g)].map((m) => num(m[1])!);
   const base = boost !== undefined && all.length >= 2 ? all.find((n) => n < boost) : undefined;
   // "Cache 30MB": na Intel é o Smart Cache (L3); na AMD é L2 + L3 somados, então fica de fora.

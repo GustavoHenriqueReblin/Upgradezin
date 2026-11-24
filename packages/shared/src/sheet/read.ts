@@ -11,7 +11,7 @@ import { dec, firstInt, isNo, isYes, numberWith, pick, sheetDoc, thousands, type
  *
  * READER_VERSION: mudou o leitor ou os campos, sobe o número: o servidor relê as fichas guardadas.
  */
-export const READER_VERSION = 11;
+export const READER_VERSION = 12;
 
 type Reader = (doc: SheetDoc) => SheetValues;
 
@@ -81,14 +81,22 @@ const cpu: Reader = (doc) => {
   const ghz = (v: string) => inRange(numberWith(v, /ghz/) ?? (/^\s*(ate|up to)?\s*\d[.,]\d+\s*$/.test(v) ? dec(v.replace(/[^\d.,]/g, '')) : undefined), 0.8, 7);
   const base = pick(
     doc,
-    [/frequencia base do performance|performance-core base|p-core base/, /^frequencia base|^base clock|^clock (base|basico)|frequencia baseada|^frequencia$|^frequencia de operacao|^velocidade (do )?clock|^clock$|^core clock|^velocidade base/, /frequencia base/],
+    [/frequencia base do performance|performance-core base|p-core base|frequencia de base (do )?p-core/, /^frequencia base|^base clock|^clock (base|basico)|frequencia baseada|^frequencia$|^frequencia de operacao|^velocidade (do )?clock|^clock$|^core clock|^velocidade base/, /frequencia base/],
     (v) => ghz(v.split(/\(|\bate\b/)[0]!),
   );
-  const boost = pick(
+  const boostRead = pick(
     doc,
     [/^(frequencia )?(max(imo)?\.? )?turbo max|^max(\.|imo)? boost|boost clock|^clock de max boost|frequencia (max(ima)?\.? )?turbo|^max turbo frequency|turbo max/, /performance-core max turbo|p-core max turbo|turbo max\.? do performance/, /single core turbo|turbo boost|max turbo|core turbo/],
     (v, l) => (/efficient|e-core/.test(l) ? undefined : ghz(v)),
   ) ?? pick(doc, [/^frequencia base|^velocidade clock|^clock/], (v) => ghz(v.match(/(?:ate|turbo|\()\s*([\d.,]+\s*ghz)/)?.[1] ?? ''));
+  // Vários turbos na ficha (Intel: "Thermal Velocity Boost: 5.8", "Turbo Boost Max 3.0: 5.7", "P-core Max Turbo: 5.4"):
+  // vale o maior, o clock que um núcleo alcança (o que conta em jogos). Os dos núcleos eficientes ficam de fora.
+  const turbos = doc.pairs
+    .filter((p) => /turbo|boost|velocity/.test(p.label) && !/efficient|e-core|potencia|power|memoria|tdp/.test(p.label))
+    .map((p) => ghz(p.value))
+    .filter((n): n is number => n !== undefined);
+  const maxTurbo = turbos.length ? Math.max(...turbos, boostRead ?? 0) : boostRead;
+  const boost = maxTurbo;
   const cores = pick(doc, [/^(total )?(numero de |n[o°º]\.? de )?(cpu )?(nucleos|cores)( de cpu)?$|^cpu cores$|^total cores$|^cores$|^numero de nucleos/, /nucleos|cores/], (v, l) =>
     /gpu|grafic|performance|efficient|cuda|p-core|e-core/.test(l) ? undefined : inRange(firstInt(v), 1, 128),
   );

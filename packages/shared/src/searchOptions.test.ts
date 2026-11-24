@@ -34,4 +34,14 @@ describe('opções do formulário da busca', () => {
     expect(termMatches('psu', '1600W', { watts: 1600 })).toBe(true);
     expect(termMatches('ram', 'DDR5 24GB', { memory: 'ddr5', ramCapacity: 24 })).toBe(true);
   });
+
+  it('gabinete: "Gabinete ATX" pega onde uma placa ATX cabe (os de E-ATX também); a contagem segue o mesmo', () => {
+    expect(termMatches('case', 'Gabinete ATX', { caseFormFactor: 'eatx' })).toBe(true);
+    expect(termMatches('case', 'Gabinete ATX', { caseFormFactor: 'atx' })).toBe(true);
+    expect(termMatches('case', 'Gabinete ATX', { caseFormFactor: 'matx' })).toBe(false);
+    expect(termMatches('case', 'Gabinete Mini ITX', { caseFormFactor: 'atx' })).toBe(true);
+    expect(termMatches('case', 'Gabinete ATX', {})).toBe(false);
+    const c = searchOptionCounts('case', [o('s1', '1', { caseFormFactor: 'eatx' }), o('s1', '2', { caseFormFactor: 'matx' })]);
+    expect(c.caseFormFactor).toEqual({ 'mini-itx': 2, matx: 2, atx: 1, eatx: 1 });
+  });
 });

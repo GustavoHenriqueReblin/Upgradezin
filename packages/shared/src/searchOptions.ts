@@ -1,5 +1,5 @@
 import { ssdTier } from './ssd.ts';
-import type { CategoryId, Offer } from './types.ts';
+import { FORM_FACTORS, type CategoryId, type Offer } from './types.ts';
 
 /**
  * Quantos produtos há para cada opção do formulário da busca (GET /api/search/options): por campo
@@ -9,8 +9,11 @@ import type { CategoryId, Offer } from './types.ts';
  */
 export type SearchOptionCounts = Record<string, Record<string, number>>;
 
+/** Valor (ou valores) da oferta no campo. */
+type Pick = (o: Offer) => string | number | (string | number)[] | undefined;
+
 /** Campos de cada categoria e o valor de cada oferta neles. */
-const FACETS: Record<CategoryId, Record<string, (o: Offer) => string | number | undefined>> = {
+const FACETS: Record<CategoryId, Record<string, Pick>> = {
   psu: { watts: (o) => o.specs.watts, efficiency: (o) => o.specs.efficiency, modular: (o) => o.specs.modular },
   motherboard: { socket: (o) => o.specs.socket, chipset: (o) => o.specs.chipset, formFactor: (o) => o.specs.formFactor, memory: (o) => o.specs.memory },
   cpu: { socket: (o) => o.specs.socket, cpuLine: (o) => o.specs.cpuLine },
@@ -23,7 +26,8 @@ const FACETS: Record<CategoryId, Record<string, (o: Offer) => string | number | 
   },
   ssd: { ssdInterface: (o) => o.specs.ssdInterface, ssdTier: (o) => ssdTier(o.specs.ssdCapacity) },
   cooler: { coolerType: (o) => o.specs.coolerType, radiator: (o) => o.specs.radiator },
-  case: { caseFormFactor: (o) => o.specs.caseFormFactor },
+  // Gabinete: conta em cada formato de placa que cabe nele (o ATX conta em ATX, Micro-ATX e Mini-ITX).
+  case: { caseFormFactor: (o) => (o.specs.caseFormFactor ? FORM_FACTORS.slice(0, FORM_FACTORS.indexOf(o.specs.caseFormFactor) + 1) : undefined) },
 };
 
 export function searchOptionCounts(category: CategoryId, offers: Offer[]): SearchOptionCounts {
@@ -37,9 +41,11 @@ export function searchOptionCounts(category: CategoryId, offers: Offer[]): Searc
       const v = pick(o);
       if (v === undefined || v === '') continue;
       const m = seen[name]!;
-      const k = String(v);
-      if (!m.has(k)) m.set(k, new Set());
-      m.get(k)!.add(product);
+      for (const x of Array.isArray(v) ? v : [v]) {
+        const k = String(x);
+        if (!m.has(k)) m.set(k, new Set());
+        m.get(k)!.add(product);
+      }
     }
   }
   return Object.fromEntries(Object.entries(seen).map(([name, m]) => [name, Object.fromEntries([...m].map(([k, s]) => [k, s.size]))]));

@@ -1,4 +1,4 @@
-import { CHIPSETS, CPU_LINES, GPU_MAKER_QUERY, MEMORY_TYPES, RAM_CAPACITIES, SOCKETS, type CategoryId, type Specs } from './types.ts';
+import { CHIPSETS, CPU_LINES, FORM_FACTORS, GPU_MAKER_QUERY, MEMORY_TYPES, RAM_CAPACITIES, SOCKETS, type CategoryId, type FormFactor, type Specs } from './types.ts';
 
 /** Potências de fonte mais comuns no varejo (as do formulário de fonte). */
 export const PSU_POWERS = [450, 500, 550, 600, 650, 700, 750, 800, 850, 1000, 1200];
@@ -92,7 +92,10 @@ export function termMatches(category: CategoryId, term: string, specs: Specs): b
       return Object.entries(COOLER_TERMS).some(([type, q]) => q.toLowerCase() === t && specs.coolerType === type);
     case 'case':
       if (t === CASE_ANY.toLowerCase()) return true;
-      return Object.entries(CASE_TERMS).some(([ff, q]) => q.toLowerCase() === t && specs.caseFormFactor === ff);
+      // "Gabinete ATX" = gabinetes onde uma placa ATX cabe (os que aceitam E-ATX também).
+      return Object.entries(CASE_TERMS).some(
+        ([ff, q]) => q.toLowerCase() === t && !!specs.caseFormFactor && FORM_FACTORS.indexOf(specs.caseFormFactor) >= FORM_FACTORS.indexOf(ff as FormFactor),
+      );
   }
   return false;
 }

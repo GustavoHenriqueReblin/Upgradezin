@@ -629,16 +629,27 @@ Variáveis em `.env.example`.
 
 ### A fazer
 
-Na ordem em que devem entrar; login por último.
+#### Até a versão 1.0, nesta ordem
 
-1. **Cobertura de S2 e S3:** o bloqueio foi resolvido em nov/2026 com o Chrome comum e a extensão ([ADR-004](#adr-004-navegador-padrão-e-pausa-no-bloqueio)); as três lojas estão na rotina por igual ([§4.3](#43-política-de-coleta)). Falta: levar ao servidor (Chromium, que carrega a extensão sozinho), amostras (memória em S2 e S3, placa de vídeo em S2), caminhos de categoria (`STORE_S2_CATEGORIES` só tem fonte, placa-mãe e processador; S3 nenhum), acompanhar nos logs se o modo normal (15 s) segue sem bloqueio, e varredura de categoria nelas (ver [§16](#16-questões-em-aberto)).
-2. **Consumo da RX 9050** na tabela `GPU_POWER` (sem valor oficial conferido; até lá a fonte fica "não deu para estimar" com ela).
-3. **Condições do cupom:** feito para a S1 ([§6.3](#63-cupons)). Falta S2 e S3, que só dão a % no anúncio (a página de cupons da S3 lista código e condições; avaliar ler uma vez por dia).
-4. **Frete:** depois do login, com o CEP que a pessoa informar.
-5. **Variantes do mesmo modelo** separadas por part number (etapa 2).
-6. **Alertas de preço** (etapa 7).
-7. **Gabinete × placa de vídeo e cooler:** feito pela ficha técnica das três lojas ([§17.1.1](#1711-regras-de-compatibilidade)), lida pela rotina para todo o catálogo. Falta: a altura do cooler, que muitas fichas não trazem (só a do fan).
-8. **Usuários e login** (etapa 6): obrigatório antes de abrir o app para outras pessoas; o link público já existe.
+1. **Montar pelo orçamento.** A pessoa diz quanto quer gastar, e o app escolhe a melhor configuração técnica com o melhor preço, dentro do orçamento, só com peças compatíveis pela ficha. Dois casos, no mesmo fluxo:
+   - **PC inteiro:** "tenho R$ 12 mil, me dá todas as peças". Distribui o dinheiro entre as peças pelo peso de cada uma em jogos (placa de vídeo e processador primeiro, sem gargalo entre eles), com memória de 32 GB, fonte com folga e SSD NVMe.
+   - **Upgrade:** depois de ler o PC (Identificar Gargalo), em vez de só listar as placas de vídeo compatíveis, pergunta quanto a pessoa quer gastar e devolve a melhor peça (ou par de peças, se a fonte também precisar sair) dentro do valor.
+
+   **A tela precisa ser um fluxo só e profissional:** um ponto de entrada ("quanto quer gastar?"), sem funções repetidas espalhadas entre montagem, gargalo e busca. A montagem, o gargalo e as sugestões de upgrade (§17.3) passam a usar o mesmo motor de escolha. O resultado vai para a montagem, onde cada peça pode ser trocada.
+2. **Login e contas de usuário.** Entrar com a conta Google (o Google Sign-In é gratuito; só pede o projeto no Google Cloud e a tela de consentimento). Na conta ficam o PC importado, as montagens e os alertas. Obrigatório antes de divulgar o app.
+3. **Alerta de preço.** Acompanhar um produto (ou uma peça da montagem) e avisar quando cair abaixo de um valor ou atingir o menor preço em 30 dias. O histórico já está no banco; falta a conta (item 2) e o canal de aviso (e-mail, para começar).
+
+#### Melhorias
+
+- **Cupons da S2 e S3:** hoje só a % do anúncio. A página de cupons da S3 lista código e condições; ler uma vez por dia, como na S1 ([§6.3](#63-cupons)).
+- **Frete por CEP:** depois do login, com o CEP da conta ([§16](#16-questões-em-aberto)).
+- **Variantes do mesmo modelo** separadas por part number, quando importa (cor, versão OC).
+
+#### Decidido
+
+- **Threadripper, Xeon, EPYC e Opteron ficam fora** (`isCpu`): plataformas de workstation e servidor, com soquetes e placas que o app não conhece, e que em jogos rendem menos que os de desktop.
+- **Altura do cooler:** fica com a ficha e a busca na web. Cooler sem altura em nenhuma das duas é produto de procedência duvidosa, e a montagem só pede para conferir.
+- **"Gabinete ATX"** na busca são os gabinetes onde uma placa ATX cabe, incluindo os que aceitam E-ATX ([§8.2](#82-preços-e-rotina-de-coleta)).
 
 ## 15. Registro de decisões
 
@@ -703,15 +714,11 @@ Na ordem em que devem entrar; login por último.
 
 ## 16. Questões em aberto
 
-- [ ] **Fonte de specs para categorias complexas.** Para fonte, o título basta. Para placa-mãe (nº de M.2, slots, VRM, PCIe), o título não traz tudo. Opções:
-  1. Facetas nativas das lojas (S1 `meta.filters`, S2 `aggregations` e campos como `socket`, `formato_placa`, `tipo_de_memoria`): sempre atualizadas, sem manutenção. **Recomendado como base.**
-  2. Página do produto (ficha técnica) só para os itens que passarem nos filtros principais: mais requisições.
-  3. Base externa de specs: avaliar disponibilidade, atualização e termos de uso. Agregadores sem API pública e com termos que proíbem coleta ficam fora.
+- [x] **Fonte de specs para categorias complexas.** Resolvido em nov/2026 com a ficha técnica por categoria ([§8.3](#83-fichas-técnicas)): página do produto nas três lojas, título, busca na web e preenchimento à mão, juntados campo a campo. Busca, filtros, montagem e gargalo leem a ficha.
 - [x] **Cobertura confiável de S2 e S3.** Resolvido em nov/2026: o bloqueio vinha do navegador controlado (Playwright, porta de depuração). Com o Chrome comum e a extensão, as duas respondem como a S1 ([ADR-004](#adr-004-navegador-padrão-e-pausa-no-bloqueio)). Falta acompanhar por mais tempo, no servidor também.
-- [ ] **Profundidade por termo:** `MAX_PAGES_*` atuais (S1 1×120, S2 3×36, S3 1×300). Na S1 e na S2, a varredura de categoria ([ADR-008](#adr-008-varredura-de-categoria-para-o-histórico)) cobre o que passa das páginas dos termos. Falta a S3 (página de categoria com outro layout); acompanhar se a S2 limita com 3 páginas por termo.
-- [ ] **Amostras que faltam:** memória RAM em S2 e S3 e placa de vídeo em S2 (a loja limitou o acesso na coleta). Sem elas, essas combinações filtram só pelo título (sem caminho de categoria no `.env`) e não têm fixture. Coletar uma página de cada, com calma, quando houver oportunidade.
+- [x] **Profundidade por termo e amostras que faltavam.** Superado: a busca lê do banco, alimentado pela rotina e pela varredura completa das categorias nas três lojas (a da madrugada também), com os caminhos de categoria configurados no admin.
 - [x] **Condições de cupom:** lidas do texto da S1 (limitado, mínimo, validade, PIX) e aplicadas no preço ([§6.3](#63-cupons)). S2 e S3 seguem só com a %.
-- [ ] **Frete:** ignorar (atual) ou estimar por CEP?
+- [x] **Frete:** por CEP, depois do login (o CEP fica na conta). Até lá, o preço é sem frete.
 - [ ] **Ritmo por loja.** Com a extensão (nov/2026), S2 e S3 não bloquearam com um termo a cada 6–8 s. Os modos são por loja e em segundos (normal 15 s, reduzido 20 s, lento 60 s; [§8.2](#82-preços-e-rotina-de-coleta)). Acompanhar no registro de consultas (admin, aba Consultas), também no servidor; se alguma loja voltar a bloquear, baixar o modo dela. Ideia: o modo descer sozinho a cada bloqueio e subir depois de uma sequência de consultas boas.
 - [x] **Licença** do repositório: proprietária, todos os direitos reservados (`LICENSE`, `"license": "UNLICENSED"`). Sem licença o padrão já seria esse, mas o aviso explícito deixa claro; impedir de fato a cópia só com o repositório privado.
 

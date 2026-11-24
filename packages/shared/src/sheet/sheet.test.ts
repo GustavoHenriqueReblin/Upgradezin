@@ -582,3 +582,21 @@ describe('cooler: bloco do air cooler não é water cooler', () => {
     expect(readSheet('cooler', 'Bomba: 2800 RPM\nVentoinha: 120 mm').type).toBe('water');
   });
 });
+
+describe('clock máximo do processador', () => {
+  it('ficha com vários turbos (Intel): vale o maior, sem o dos núcleos eficientes', () => {
+    const t = [
+      'Frequência de base P-core: 3.0 GHz',
+      'Frequência da Intel Thermal Velocity Boost: Até 5.8 Ghz',
+      'Frequência da Tecnologia Intel Turbo Boost Max 3.0: Até 5.7 Ghz',
+      'Frequência P-core Max Turbo: Até 5.4 Ghz',
+      'Frequência E-core Max Turbo: Até 4.3 Ghz',
+    ].join('\n');
+    expect(readSheet('cpu', t)).toMatchObject({ baseGhz: 3, boostGhz: 5.8 });
+  });
+
+  it('título "3.7ghz Turbo 4.4ghz": a base seguida da palavra turbo não é o turbo', () => {
+    expect(readTitle('cpu', 'Processador Intel Core i3-10300 3.7ghz Turbo 4.4ghz 8mbcache 4nucleos 8threads LGA 1200')).toMatchObject({ baseGhz: 3.7, boostGhz: 4.4 });
+    expect(readTitle('cpu', 'Processador AMD Ryzen 5 5600, 3.5GHz (4.4GHz Max Turbo), Cache 35MB, AM4')).toMatchObject({ baseGhz: 3.5, boostGhz: 4.4 });
+  });
+});

@@ -1,5 +1,6 @@
-import { cpuPerf, effectiveCash, gpuPerf, type AdminProduct, type AdminProductFilter, type AdminProductPage, type Offer, type StoreId } from '@upgradezin/shared';
+import { cpuScore, effectiveCash, gpuPerf, type AdminProduct, type AdminProductFilter, type AdminProductPage, type Offer, type StoreId } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
+import { applySheets } from '../prices/offer-sheets.ts';
 import { pageOf } from './paging.ts';
 
 /**
@@ -55,7 +56,9 @@ export function listProducts(db: Db, f: AdminProductFilter = {}): AdminProductPa
   const items = rows.map((r): AdminProduct => {
     const o = JSON.parse(r.offer) as Offer;
     const specs = o.specs ?? {};
-    const perf = r.category === 'gpu' ? gpuPerf(specs) : r.category === 'cpu' ? cpuPerf(specs) : undefined;
+    // Processador: a nota pela ficha (arquitetura, clock máximo, cache, núcleos), como no site.
+    const sheet = r.category === 'cpu' ? applySheets(db, 'cpu', [o])[0]!.sheet : undefined;
+    const perf = r.category === 'gpu' ? gpuPerf(specs) : r.category === 'cpu' ? cpuScore(specs, sheet) : undefined;
     return {
       store: r.store,
       sku: r.store_sku,

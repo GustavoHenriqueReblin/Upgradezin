@@ -4,6 +4,7 @@ import { openDb } from '../db/db.ts';
 import { recordAttempt } from '../prices/attempts.ts';
 import { saveCollection } from '../prices/prices.ts';
 import { recordSweepPage } from '../prices/sweep.ts';
+import { savePage } from '../prices/sheets.ts';
 import { attemptTimeline, coverage, perfGaps } from './data.ts';
 
 const offer = (sku: string, store: Offer['store'] = 's2'): Offer =>
@@ -39,6 +40,21 @@ describe('modelos sem índice de desempenho', () => {
       { category: 'gpu', model: 'RX 9040', listings: 2, example: 'Placa RX 9040', store: 's2' },
       { category: 'gpu', model: '', listings: 1, example: 'Placa genérica', store: 's2' },
     ]);
+  });
+
+  it('processador fora da tabela mas com nota pela ficha (arquitetura e clock máximo): não é lacuna', () => {
+    const db = openDb(':memory:');
+    const now = Date.now();
+    const at = new Date(now - 3_600_000).toISOString();
+    const cpu = (sku: string, title: string) => ({ ...offer(sku, 's1'), title, specs: {} });
+    saveCollection(db, {
+      store: 's1',
+      category: 'cpu',
+      at,
+      offers: [cpu('1', 'Processador AMD Ryzen 7 9850X3D, 4.7GHz (5.6GHz Turbo), Cache 104MB, AM5'), cpu('2', 'Processador Misterioso X1')],
+    });
+    savePage(db, { store: 's1', sku: '1', category: 'cpu', text: ['Arquitetura: Zen 5', 'Frequência Turbo Máxima: 5.6 GHz', 'Cache L3: 96 MB', 'Núcleos: 8'].join('\n'), at });
+    expect(perfGaps(db, now).map((g) => g.example)).toEqual(['Processador Misterioso X1']);
   });
 });
 

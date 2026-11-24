@@ -1,21 +1,29 @@
-import { cpuPerf, ENABLED_CATEGORIES, gpuPerf, STORES, type CategoryId, type CoverageRow, type Offer, type PerfGap, type StoreId, type TimelineBucket } from '@upgradezin/shared';
+import { cpuScore, ENABLED_CATEGORIES, gpuPerf, STORES, type CategoryId, type CoverageRow, type Offer, type PerfGap, type StoreId, type TimelineBucket } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
+import { applySheets } from '../prices/offer-sheets.ts';
 import { sheetCounts } from '../prices/sheets.ts';
 import { inProgress, sweepState } from '../prices/sweep.ts';
 
 /**
- * Processadores e placas de vídeo vistos nas lojas nos últimos `days` dias que a tabela de desempenho
- * não conhece, do mais anunciado para o menos. Conta na hora, do banco: anúncio novo de um modelo
- * novo aparece aqui assim que a rotina ou a varredura o grava.
+ * Processadores e placas de vídeo vistos nas lojas nos últimos `days` dias sem nota de desempenho, do
+ * mais anunciado para o menos: placa de vídeo com chip fora da tabela; processador sem nota pela ficha
+ * (arquitetura e clock máximo) nem pela tabela. Conta na hora, do banco, com a ficha de cada produto.
  */
 export function perfGaps(db: Db, now = Date.now(), days = 14): PerfGap[] {
   const rows = db
     .prepare("SELECT category, store, title, offer FROM listings WHERE category IN ('cpu', 'gpu') AND last_seen_at >= ?")
     .all(new Date(now - days * 86_400_000).toISOString()) as { category: 'cpu' | 'gpu'; store: StoreId; title: string; offer: string }[];
   const gaps = new Map<string, PerfGap>();
-  for (const r of rows) {
-    const s = (JSON.parse(r.offer) as Offer).specs ?? {};
-    if ((r.category === 'gpu' ? gpuPerf(s) : cpuPerf(s)) !== undefined) continue;
+  const withSheets = (category: 'cpu' | 'gpu') =>
+    applySheets(
+      db,
+      category,
+      rows.filter((r) => r.category === category).map((r) => JSON.parse(r.offer) as Offer),
+      now,
+    ).map((o) => ({ category, store: o.store, title: o.title, o }));
+  for (const r of [...withSheets('cpu'), ...withSheets('gpu')]) {
+    const s = r.o.specs ?? {};
+    if ((r.category === 'gpu' ? gpuPerf(s) : cpuScore(s, r.o.sheet)) !== undefined) continue;
     const model = r.category === 'gpu' ? (s.gpuModel ?? '') : [s.cpuLine, s.cpuModel].filter(Boolean).join(' ');
     const key = `${r.category}|${model}`;
     const g = gaps.get(key) ?? { category: r.category, model, listings: 0, example: r.title, store: r.store };
