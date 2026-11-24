@@ -29,6 +29,15 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 - Dois intervalos por loja, no admin, valendo na hora: o de **listagens** (aba Coleta, na linha de cada loja em Rotina de preços: "uma página de lista a cada X a Y s"), entre duas páginas de lista ("/fonte", "/fonte" página 2…) na rotina, na varredura completa, na busca e nos testes; e o de **fichas** (aba Fichas, no card de cada loja: "uma ficha a cada X a Y s"), entre duas páginas de produto, que também é o ritmo da rotina de fichas. De 2 a 600 s cada. Uma ficha nunca sai antes do intervalo de fichas depois de qualquer consulta, e uma página de lista espera o de listagens desde a última página de lista. Saem os modos da rotina (normal, reduzido, lento e os segundos de cada um), o intervalo próprio da varredura completa (ela fica só com as categorias), o "1 ficha a cada N" da rotina de fichas e os intervalos do `.env` (`PAGE_DELAY_MIN_MS`, `PAGE_DELAY_MAX_MS`, `ROUTINE_*_GAP_S`, `ROUTINE_SLOW_STORES`, `SHEET_ROUTINE_SECONDS`). Antes, entre as páginas de uma mesma categoria a rotina usava os 5 a 12 s do `.env`, que não apareciam no admin. O que estava salvo vira os intervalos novos: o da varredura completa, o de listagens; os segundos da rotina de fichas, o de fichas (até +20%). Sem nada salvo: 15 a 30 s nas listagens e 10 a 20 s nas fichas.
 
 ### Adicionado
+- Montagem confere mais coisas com a ficha técnica:
+  - memória além do máximo da placa-mãe (erro);
+  - memória acima dos MHz da placa (roda no máximo dela);
+  - SSD M.2 em placa sem M.2 e SATA sem porta SATA;
+  - placa de vídeo x8 em placa-mãe PCIe 3.0;
+  - consumo da placa de vídeo pela ficha quando o chip não está na tabela;
+  - fonte recomendada pelo fabricante da placa de vídeo como piso da recomendação.
+
+  A geração do M.2 vem da ficha da placa, não mais do chipset (algumas B450 têm M.2 4.0).
 - Card do resultado leva à página do produto: clicar na imagem ou no título abre /produto/<chave>, com a ficha e as ofertas de todas as lojas. Cada oferta que o site recebe passa a trazer a chave do produto.
 - Site de volta para quem usa: sai a tela "Em manutenção", agora que busca, filtros e montagem leem as fichas técnicas.
 - Busca, filtros e montagem pela ficha técnica. Cada oferta que o site recebe leva a ficha juntada do produto (lojas > título > web > à mão), e as specs que a ficha cobre passam a vir só dela, não do título: soquete, chipset, formato, memória, núcleos, VRAM, potência, selo, modular, radiador, soquetes do cooler, medidas. A escolha dos anúncios pelos termos do formulário também é pela ficha. A montagem volta a conferir as medidas (placa de vídeo no gabinete, altura do cooler, radiador), que estavam sem dados desde o refeito das fichas.

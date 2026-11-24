@@ -11,7 +11,7 @@ import {
   roundUp50,
 } from './hardware.ts';
 import { caseFits } from './pccase.ts';
-import { chipsetPcie, ENTRY_CHIPSETS } from './perf.ts';
+import { chipsetPcie, ENTRY_CHIPSETS, GPU_PCIE_X8 } from './perf.ts';
 import { SOCKET_BRAND, SOCKET_MEMORY, type Socket, type Specs } from './types.ts';
 
 /**
@@ -150,6 +150,10 @@ export function checkBuild(build: Build): BuildCheck {
       if (!slots) add('unknown', 'slots-unknown', ['ram', 'motherboard'], `${what}: confira se a placa-mãe tem slots suficientes.`);
       else if (modules > slots) add('error', 'slots-exceeded', ['ram', 'motherboard'], `${what} e a placa-mãe só tem ${slots} slots.`);
     }
+    // Memória máxima da placa (ficha técnica).
+    const total = ram.ramCapacity ? ram.ramCapacity * ramQty : undefined;
+    if (total && mb.memoryMaxGb && total > mb.memoryMaxGb)
+      add('error', 'memory-max-exceeded', ['ram', 'motherboard'], `São ${total} GB de memória e a placa-mãe aceita até ${mb.memoryMaxGb} GB.`);
   }
 
   // Pentes avulsos iguais: em geral funcionam juntos, mas só o kit garante a frequência anunciada com todos.
@@ -171,6 +175,9 @@ export function checkBuild(build: Build): BuildCheck {
       }
     }
   }
+  // A placa diz até quantos MHz a memória roda (ficha técnica); acima disso, roda no máximo dela.
+  if (ram?.ramSpeed && mb?.memoryMaxMhz && ram.ramSpeed > mb.memoryMaxMhz && !issues.some((i) => i.code === 'memory-speed-locked'))
+    add('info', 'memory-speed-board', ['ram', 'motherboard'], `A placa-mãe vai até ${mb.memoryMaxMhz} MHz: a memória de ${ram.ramSpeed} MHz roda a ${mb.memoryMaxMhz} MHz.`);
 
   // ---- Vídeo ----
   if (cpu && !gpu) {
@@ -226,19 +233,36 @@ export function checkBuild(build: Build): BuildCheck {
   }
 
   // ---- SSD ----
-  if (ssd?.ssdInterface === 'nvme' && ssd.ssdPcie && mb?.chipset) {
-    const slot = chipsetPcie(mb.chipset);
+  // Encaixe (ficha técnica): M.2 em placa sem M.2, 2,5" (SATA) em placa sem porta SATA.
+  if (ssd && mb) {
+    if (ssd.ssdForm === 'm2' && mb.m2Slots === 0) add('error', 'ssd-no-m2', ['ssd', 'motherboard'], 'O SSD é M.2 e a placa-mãe não tem slot M.2.');
+    if (ssd.ssdForm === '2.5' && mb.sataPorts === 0) add('error', 'ssd-no-sata', ['ssd', 'motherboard'], 'O SSD é SATA (2,5") e a placa-mãe não tem porta SATA.');
+  }
+  if (ssd?.ssdInterface === 'nvme' && ssd.ssdPcie && mb && (mb.m2Pcie || mb.chipset)) {
+    // Geração do M.2: a da ficha da placa; sem ela, a do chipset.
+    const slot = mb.m2Pcie ?? chipsetPcie(mb.chipset);
     if (slot && ssd.ssdPcie > slot)
-      add('info', 'ssd-pcie', ['ssd', 'motherboard'], `O SSD é PCIe ${ssd.ssdPcie}.0 e a placa-mãe ${mb.chipset} tem M.2 PCIe ${slot}.0: funciona, na velocidade da ${slot}.0.`);
+      add('info', 'ssd-pcie', ['ssd', 'motherboard'], `O SSD é PCIe ${ssd.ssdPcie}.0 e a placa-mãe${mb.chipset ? ` ${mb.chipset}` : ''} tem M.2 PCIe ${slot}.0: funciona, na velocidade da ${slot}.0.`);
+  }
+
+  // ---- Placa de vídeo × placa-mãe ----
+  // Placa de vídeo x8 (RX 6600, RTX 4060…) em slot PCIe 3.0: metade da banda; perde um pouco, mais quando falta VRAM.
+  if (gpu && mb) {
+    const lanes = gpu.gpuPcieLanes ?? (gpu.gpuModel && GPU_PCIE_X8.has(gpu.gpuModel) ? 8 : undefined);
+    const board = mb.pcieGen ?? chipsetPcie(mb.chipset);
+    if (lanes && lanes <= 8 && board === 3 && (gpu.gpuPcieGen ?? 4) > 3)
+      add('info', 'gpu-pcie-lanes', ['gpu', 'motherboard'], `A placa de vídeo usa só ${lanes} linhas PCIe (x${lanes}) e a placa-mãe é PCIe 3.0: funciona, com um pouco menos de desempenho (mais quando falta memória de vídeo).`);
   }
 
   // ---- Fonte ----
   let power: BuildPower | undefined;
   const cpuW = cpu ? cpuPower(cpu) : undefined;
-  const gpuW = gpu?.gpuModel ? GPU_POWER[gpu.gpuModel] : undefined;
+  // Consumo da placa de vídeo: o de referência do chip; sem ele, o da ficha técnica.
+  const gpuW = (gpu?.gpuModel ? GPU_POWER[gpu.gpuModel] : undefined) ?? gpu?.gpuTdp;
   if ((cpu && cpuW !== undefined && (!gpu || gpuW !== undefined)) || (!cpu && gpuW !== undefined)) {
     const estimate = (cpuW ?? 0) + (gpuW ?? 0) + BASE_SYSTEM_POWER;
-    power = { estimate, recommended: roundUp50(estimate * PSU_HEADROOM), partial: !gpu || !cpu };
+    // A fonte que o fabricante da placa de vídeo recomenda (ficha técnica) vale como piso.
+    power = { estimate, recommended: Math.max(roundUp50(estimate * PSU_HEADROOM), gpu?.gpuPsu ?? 0), partial: !gpu || !cpu };
   }
   if (psu) {
     if (cpu || gpu) {

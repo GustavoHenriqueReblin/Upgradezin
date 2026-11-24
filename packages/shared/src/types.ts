@@ -101,6 +101,13 @@ export interface MotherboardSpecs {
   memory?: MemoryType;
   /** Slots de memória ("4xDDR4" no título; Mini-ITX tem sempre 2). */
   memorySlots?: number;
+  /** Ficha técnica: slots M.2, geração do M.2 e do slot da placa de vídeo, portas SATA, memória máxima (GB) e até quantos MHz. */
+  m2Slots?: number;
+  m2Pcie?: 3 | 4 | 5;
+  pcieGen?: 3 | 4 | 5;
+  sataPorts?: number;
+  memoryMaxGb?: number;
+  memoryMaxMhz?: number;
   wifi?: boolean;
   /** Bluetooth no título, ou Wi-Fi (módulos Wi-Fi de placa-mãe são combo Wi-Fi + Bluetooth). */
   bluetooth?: boolean;
@@ -204,6 +211,11 @@ export interface GpuSpecs {
   gpuLength?: number;
   /** Usa o conector 12V-2x6/12VHPWR (ficha técnica). */
   gpu16Pin?: boolean;
+  /** Ficha técnica: consumo (W), fonte recomendada pelo fabricante (W), geração PCIe e linhas (x16, x8). */
+  gpuTdp?: number;
+  gpuPsu?: number;
+  gpuPcieGen?: 3 | 4 | 5;
+  gpuPcieLanes?: number;
 }
 
 // ---------- Memória RAM ----------

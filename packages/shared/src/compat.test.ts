@@ -3,6 +3,7 @@ import { normalizeListing } from './categorize.ts';
 import { checkBuild, type Build, type BuildSlot } from './compat.ts';
 import { chipsetSupport, cpuFamily, cpuMemorySpeed, cpuPower, cpuTdp, GPU_POWER } from './hardware.ts';
 import { extractCpuSpecs } from './cpu.ts';
+import { withSheetSpecs } from './sheet/specs.ts';
 
 /** Peça a partir do título do anúncio, como chega das lojas. */
 const part = (category: BuildSlot, title: string) => ({ specs: normalizeListing(category, title).specs });
@@ -345,5 +346,52 @@ describe('checagem física (medidas da ficha técnica)', () => {
     expect(codes({ cpu: CPU_5600, gpu: GPU(300, true), psu: PSU_650 })).toContain('gpu-connector');
     expect(codes({ cpu: CPU_14600K, gpu: { specs: { ...GPU_4090.specs, gpu16Pin: false } }, psu: PSU_1000_ATX3 })).not.toContain('gpu-connector');
     expect(codes({ cpu: CPU_14600K, gpu: GPU_4090, psu: part('psu', 'Fonte Corsair RM1000e, 1000W, 80 Plus Gold') })).toContain('gpu-connector');
+  });
+});
+
+describe('compatibilidade com a ficha técnica', () => {
+  /** Peça pelo título com a ficha por cima, como chega do servidor. */
+  const sheet = (category: BuildSlot, title: string, values: Record<string, string | number | boolean>) => ({
+    specs: withSheetSpecs(category, normalizeListing(category, title).specs, values),
+  });
+  const codes = (b: Build) => checkBuild(b).issues.map((i) => i.code);
+  const board = (values: Record<string, string | number>) => sheet('motherboard', 'Placa Mãe ASUS Prime B450M, AMD AM4, mATX, DDR4', { socket: 'AM4', chipset: 'B450', formFactor: 'Micro-ATX', ramType: 'DDR4', ...values });
+
+  it('memória além do máximo da placa: erro; acima dos MHz da placa: observação', () => {
+    const ram = sheet('ram', 'Memória Kingston Fury, 32GB (2x16GB), 3600MHz, DDR4', { type: 'DDR4', capacityGb: 32, modules: 2, mhz: 3600 });
+    expect(codes({ motherboard: board({ ramMaxGb: 64, ramMaxMhz: 4000 }), ram })).not.toContain('memory-max-exceeded');
+    expect(codes({ motherboard: board({ ramMaxGb: 16 }), ram })).toContain('memory-max-exceeded');
+    expect(codes({ motherboard: { ...board({ ramMaxGb: 64 }) }, ram: { ...ram, qty: 3 } })).toContain('memory-max-exceeded'); // 3 kits de 32 = 96 GB
+    const slow = checkBuild({ motherboard: board({ ramMaxMhz: 3200 }), ram }).issues.find((i) => i.code === 'memory-speed-board');
+    expect(slow?.message).toBe('A placa-mãe vai até 3200 MHz: a memória de 3600 MHz roda a 3200 MHz.');
+  });
+
+  it('SSD: M.2 em placa sem M.2 e SATA sem porta SATA; geração do M.2 pela ficha da placa', () => {
+    const m2 = sheet('ssd', 'SSD Kingston NV3 1TB, M.2 2280, NVMe PCIe 4.0', { interface: 'NVMe PCIe 4.0', formFactor: 'M.2 2280', capacityGb: 1000 });
+    const sata = sheet('ssd', 'SSD Kingston A400 480GB, 2,5", SATA', { interface: 'SATA', formFactor: '2,5"', capacityGb: 480 });
+    expect(codes({ motherboard: board({ m2Slots: 0 }), ssd: m2 })).toContain('ssd-no-m2');
+    expect(codes({ motherboard: board({ m2Slots: 1 }), ssd: m2 })).not.toContain('ssd-no-m2');
+    expect(codes({ motherboard: board({ sataPorts: 0 }), ssd: sata })).toContain('ssd-no-sata');
+    // B450 pelo chipset seria PCIe 3.0; a ficha desta placa diz M.2 4.0: sem observação.
+    expect(codes({ motherboard: board({ m2Pcie: '4.0' }), ssd: m2 })).not.toContain('ssd-pcie');
+    expect(codes({ motherboard: board({}), ssd: m2 })).toContain('ssd-pcie');
+  });
+
+  it('placa de vídeo x8 em placa-mãe PCIe 3.0: observação (pela ficha ou pela lista de chips x8)', () => {
+    const x8 = sheet('gpu', 'Placa de Vídeo RX 7600 8GB', { chip: 'RX 7600', pcie: '4.0 x8' });
+    const x16 = sheet('gpu', 'Placa de Vídeo RTX 4070 12GB', { chip: 'RTX 4070', pcie: '4.0 x16' });
+    expect(codes({ motherboard: board({ pcieX16: '3.0' }), gpu: x8 })).toContain('gpu-pcie-lanes');
+    expect(codes({ motherboard: board({ pcieX16: '4.0' }), gpu: x8 })).not.toContain('gpu-pcie-lanes');
+    expect(codes({ motherboard: board({ pcieX16: '3.0' }), gpu: x16 })).not.toContain('gpu-pcie-lanes');
+    // Sem PCIe na ficha: a lista de chips x8 decide (RTX 4060 é x8); B450 é PCIe 3.0 pelo chipset.
+    expect(codes({ motherboard: board({}), gpu: sheet('gpu', 'Placa de Vídeo RTX 4060 8GB', { chip: 'RTX 4060' }) })).toContain('gpu-pcie-lanes');
+  });
+
+  it('fonte: consumo da placa de vídeo pela ficha quando o chip não está na tabela; a recomendada pelo fabricante é o piso', () => {
+    const cpu = part('cpu', 'Processador AMD Ryzen 5 5600, 3.5GHz, AM4');
+    const unknown = sheet('gpu', 'Placa de Vídeo Radeon Pro W7000 16GB', { chip: 'Radeon Pro W7000', tdpW: 300 });
+    expect(checkBuild({ cpu, gpu: unknown }).power).toBeDefined();
+    const withPsu = sheet('gpu', 'Placa de Vídeo RTX 4060 8GB', { chip: 'RTX 4060', psuW: 650 });
+    expect(checkBuild({ cpu, gpu: withPsu }).power!.recommended).toBeGreaterThanOrEqual(650);
   });
 });

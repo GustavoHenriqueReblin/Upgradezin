@@ -10,9 +10,9 @@ import type { SheetValues } from './fields.ts';
 
 /** Campos de Specs que vêm da ficha, por categoria. */
 export const SHEET_SPEC_KEYS: Record<CategoryId, (keyof Specs)[]> = {
-  motherboard: ['socket', 'chipset', 'formFactor', 'memory', 'memorySlots', 'wifi', 'bluetooth'],
+  motherboard: ['socket', 'chipset', 'formFactor', 'memory', 'memorySlots', 'wifi', 'bluetooth', 'm2Slots', 'm2Pcie', 'pcieGen', 'sataPorts', 'memoryMaxGb', 'memoryMaxMhz'],
   cpu: ['socket', 'cores', 'threads', 'tdp', 'igpu'],
-  gpu: ['gpuModel', 'vram', 'vramType', 'gpuLength', 'gpu16Pin'],
+  gpu: ['gpuModel', 'vram', 'vramType', 'gpuLength', 'gpu16Pin', 'gpuTdp', 'gpuPsu', 'gpuPcieGen', 'gpuPcieLanes'],
   ram: ['memory', 'ramCapacity', 'ramModules', 'ramSpeed', 'ramLatency'],
   ssd: ['ssdInterface', 'ssdForm', 'ssdCapacity', 'ssdPcie', 'ssdRead'],
   psu: ['watts', 'efficiency', 'efficiencyCert', 'modular', 'atx', 'pcie5', 'sfx'],
@@ -39,6 +39,12 @@ function formFactorOf(v: unknown): FormFactor | undefined {
 
 const FORM_RANK: FormFactor[] = ['mini-itx', 'matx', 'atx', 'eatx'];
 
+/** "4.0", "PCIe 5.0 x16" → 4, 5. */
+const pcieGenOf = (v: unknown): 3 | 4 | 5 | undefined => {
+  const g = Number(str(v)?.match(/([345])(?:\.0)?/)?.[1]);
+  return g === 3 || g === 4 || g === 5 ? g : undefined;
+};
+
 const memoryOf = (v: unknown) => (/ddr5/i.test(str(v) ?? '') ? 'ddr5' : /ddr4/i.test(str(v) ?? '') ? 'ddr4' : undefined);
 
 /** Soquetes do cooler como a compatibilidade conhece: os 115x viram um só (LGA115X). */
@@ -59,6 +65,12 @@ export function sheetSpecs(category: CategoryId, v: SheetValues): Specs {
         formFactor: formFactorOf(v.formFactor),
         memory: memoryOf(v.ramType),
         memorySlots: num(v.ramSlots),
+        m2Slots: num(v.m2Slots),
+        m2Pcie: pcieGenOf(v.m2Pcie),
+        pcieGen: pcieGenOf(v.pcieX16),
+        sataPorts: num(v.sataPorts),
+        memoryMaxGb: num(v.ramMaxGb),
+        memoryMaxMhz: num(v.ramMaxMhz),
         ...(str(v.wifi) && { wifi: true }),
         // Wi-Fi de placa-mãe vem em combo com Bluetooth.
         ...((str(v.bluetooth) || str(v.wifi)) && { bluetooth: true }),
@@ -80,6 +92,10 @@ export function sheetSpecs(category: CategoryId, v: SheetValues): Specs {
         vramType: str(v.memType),
         gpuLength: num(v.lengthMm),
         gpu16Pin: v.power16Pin === undefined ? undefined : v.power16Pin === true || v.power16Pin === 1 || v.power16Pin === '1',
+        gpuTdp: num(v.tdpW),
+        gpuPsu: num(v.psuW),
+        gpuPcieGen: pcieGenOf(v.pcie),
+        gpuPcieLanes: num(str(v.pcie)?.match(/x(\d{1,2})\b/i)?.[1]),
       });
     case 'ram':
       return clean({ memory: memoryOf(v.type), ramCapacity: num(v.capacityGb), ramModules: num(v.modules), ramSpeed: num(v.mhz), ramLatency: num(v.cl) });
