@@ -156,6 +156,11 @@ export function checkBuild(build: Build): BuildCheck {
       add('error', 'memory-max-exceeded', ['ram', 'motherboard'], `São ${total} GB de memória e a placa-mãe aceita até ${mb.memoryMaxGb} GB.`);
   }
 
+  // Abaixo de 32 GB: só observação (não muda o selo). Jogos atuais em Full HD já passam de 16 GB.
+  const ramTotal = ram?.ramCapacity ? ram.ramCapacity * ramQty : undefined;
+  if (ramTotal && ramTotal < 32)
+    add('info', 'memory-capacity', ['ram'], `${ramTotal} GB funciona, mas já fica justo: jogos atuais em Full HD passam de 16 GB com navegador e Discord abertos. O recomendado é 32 GB.`);
+
   // Pentes avulsos iguais: em geral funcionam juntos, mas só o kit garante a frequência anunciada com todos.
   if (ram && ramQty > 1)
     add('info', 'memory-separate-modules', ['ram'], 'Pentes comprados separados costumam funcionar juntos, mas só um kit com todos os pentes garante a frequência anunciada.');

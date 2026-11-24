@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Cpu, FileText, Gauge, Trash2, Wrench } from 'lucide-react';
 import { analyzePc, CATEGORY_DEFS, CPU_BOUND, GPU_BOUND, type PcProfile, type Specs, type TipKind, type UpgradeAction, type Verdict } from '@upgradezin/shared';
 import { PC_SLOTS } from '../pc.ts';
@@ -37,11 +37,32 @@ const KIND: Record<TipKind, { label: string; cls: string }> = {
 const SPAN = Math.log(1.7);
 const pos = (ratio: number) => Math.min(1, Math.max(0, 0.5 + Math.log(ratio) / (2 * SPAN)));
 
+/**
+ * Ficha técnica do processador da pessoa: o mesmo modelo no catálogo (GET /api/sheets/cpu). Sem ela
+ * (modelo que o catálogo não tem, ou sem resposta), a análise usa a tabela por linha.
+ */
+function useCpuSheet(model: string | undefined): Record<string, number | string | boolean> | undefined {
+  const [sheet, setSheet] = useState<{ model: string; values: Record<string, number | string | boolean> } | undefined>();
+  useEffect(() => {
+    if (!model) return;
+    let alive = true;
+    fetch(`/api/sheets/cpu?model=${encodeURIComponent(model)}`)
+      .then((r) => (r.ok ? (r.json() as Promise<Record<string, number | string | boolean>>) : undefined))
+      .then((values) => alive && values && setSheet({ model, values }))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [model]);
+  return sheet && sheet.model === model ? sheet.values : undefined;
+}
+
 /** "Identificar Gargalo": o PC importado do CPU-Z, o que segura o desempenho e o que vale fazer. */
 export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onUpgrade, onToBuild, onForget }: Props) {
   /** 'file': importar de novo; 'psu': só informar a fonte (abre na prévia). */
   const [importing, setImporting] = useState<false | 'file' | 'psu'>(false);
-  const analysis = useMemo(() => (pc ? analyzePc(pc, { psu }) : null), [pc, psu]);
+  const cpuSheet = useCpuSheet(pc?.cpu?.specs.cpuModel);
+  const analysis = useMemo(() => (pc ? analyzePc(pc, { psu, ...(cpuSheet && { cpuSheet }) }) : null), [pc, psu, cpuSheet]);
 
   const importModal = importing && (
     <ImportPc
@@ -121,6 +142,14 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onUpgra
         <h3 className="text-lg font-semibold">{VERDICT[balance.verdict]}</h3>
         <p className="mt-1 text-sm text-zinc-500">{summary}</p>
         {balance.ratio !== undefined && <Meter ratio={balance.ratio} />}
+        {balance.cpuFrom && balance.ratio !== undefined && (
+          <p className="mt-3 text-xs text-zinc-500">
+            {balance.cpuFrom === 'sheet'
+              ? 'Processador avaliado pela ficha técnica (arquitetura, clock máximo, cache e núcleos); '
+              : 'Processador avaliado pela linha e geração (o catálogo ainda não tem a ficha deste modelo); '}
+            placa de vídeo pela média de análises de jogos do chip.
+          </p>
+        )}
       </section>
 
       {/* Peças lidas */}

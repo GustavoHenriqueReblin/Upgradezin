@@ -1,4 +1,5 @@
-import { cpuFamily, type CpuFamily } from './hardware.ts';
+import { cpuSheetOf, cpuSheetScore } from './cpuScore.ts';
+import { cpuFamily, GPU_POWER, type CpuFamily } from './hardware.ts';
 import type { CpuSpecs, GpuSpecs, Socket } from './types.ts';
 
 /**
@@ -80,6 +81,24 @@ export function cpuPerf(c: Pick<CpuSpecs, 'cpuBrand' | 'cpuLine' | 'cpuModel' | 
   // Intel K (desbloqueado) a partir da 12ª: mais núcleos e clock que o mesmo i5/i7 sem K.
   if (c.cpuBrand === 'intel' && /K/.test(c.cpuModel) && ['i12', 'i13', 'i14'].includes(family!)) return Math.round(base * (c.cpuLine === 'Core i5' ? 1.2 : 1.07));
   return base;
+}
+
+/**
+ * Desempenho do processador: pela ficha técnica (arquitetura, clock boost, cache, núcleos; ver
+ * cpuScore.ts) quando ela tem esses campos; senão, pela tabela por modelo e linha.
+ */
+export function cpuScore(specs: Parameters<typeof cpuPerf>[0], sheet?: Record<string, unknown>): number | undefined {
+  return cpuSheetScore(cpuSheetOf(sheet)) ?? cpuPerf(specs);
+}
+
+/** Consumo da placa de vídeo (W): o de referência do chip; sem ele, o da ficha. */
+export const gpuPower = (model: string | undefined, sheet?: Record<string, unknown>): number | undefined =>
+  (model ? GPU_POWER[model] : undefined) ?? (typeof sheet?.tdpW === 'number' ? sheet.tdpW : undefined);
+
+/** Placa de vídeo de 8 linhas PCIe ou menos: pela ficha ("4.0 x8"); sem ela, pela lista de chips. */
+export function gpuX8(model: string | undefined, sheet?: Record<string, unknown>): boolean {
+  const lanes = Number(String(sheet?.pcie ?? '').match(/x(\d{1,2})\b/i)?.[1]);
+  return lanes ? lanes <= 8 : !!model && GPU_PCIE_X8.has(model);
 }
 
 /** Linhas de processador que existem para cada encaixe (melhor de cada uma), para saber se ainda dá para subir sem trocar a placa. */

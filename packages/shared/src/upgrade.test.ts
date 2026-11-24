@@ -92,7 +92,10 @@ describe('análise do PC importado', () => {
     );
     expect(a.balance.verdict).toBe('cpu');
     expect(a.tips[0]).toMatchObject({ id: 'cpu-upgrade', action: { slot: 'cpu', filters: { sockets: ['AM4'] } } });
-    expect(a.tips[0]!.action!.filters.cpuLines).toEqual(expect.arrayContaining(['Ryzen 5', 'Ryzen 7']));
+    // Só o encaixe: quem decide o que sobe é a nota de cada processador (pela ficha). Vai a meta de equilíbrio.
+    expect(a.tips[0]!.action!.filters.cpuLines).toBeUndefined();
+    expect(a.tips[0]!.action!.context).toMatchObject({ current: 68, chipset: 'B450' });
+    expect(a.tips[0]!.action!.context!.target).toBeGreaterThan(100);
     expect(a.tips[0]!.text).toContain('5800X3D');
   });
 
@@ -117,8 +120,16 @@ describe('análise do PC importado', () => {
     );
     const ram = a.tips.find((t) => t.id === 'ram-upgrade')!;
     expect(ram.text).toMatch(/pouco.*single channel.*lento para Ryzen/);
-    expect(ram.action!.filters).toEqual({ memory: ['ddr4'], ramModules: [2], ramCapacity: [16, 32], ramSpeed: [3200, 3600] });
+    expect(ram.action!.filters).toEqual({ memory: ['ddr4'], ramModules: [2], ramCapacity: [32], ramSpeed: [3200, 3600] });
+    expect(ram.text).toContain('32 GB (2x 16 GB)');
     expect(a.tips.map((t) => t.id)).not.toContain('ram-xmp');
+  });
+
+  it('16 GB em 2 pentes: só a recomendação de 32 GB (observação, não upgrade); 32 GB: nada', () => {
+    const ramOf = (cap: number) => ({ title: `${cap} GB`, specs: { memory: 'ddr5' as const, ramCapacity: cap, ramModules: 2, ramSpeed: 6000 }, modules: [{ sizeGb: cap / 2 }, { sizeGb: cap / 2 }], ratedSpeed: 6000, runningSpeed: 6000 });
+    const tip = analyzePc(pcOf({ cpu: part('cpu', 'Processador AMD Ryzen 5 7600, AM5'), ram: ramOf(16) })).tips.find((t) => t.id.startsWith('ram'));
+    expect(tip).toMatchObject({ id: 'ram-32', kind: 'info', action: { slot: 'ram', filters: { memory: ['ddr5'], ramModules: [2], ramCapacity: [32] } } });
+    expect(analyzePc(pcOf({ cpu: part('cpu', 'Processador AMD Ryzen 5 7600, AM5'), ram: ramOf(32) })).tips.some((t) => t.id.startsWith('ram'))).toBe(false);
   });
 
   it('Windows num HD, com e sem SSD sobrando', () => {

@@ -820,6 +820,12 @@ A pessoa gera o relatório no CPU-Z (aba **About** → **Save Report (.TXT)**) e
 
 > **Implementado** (`packages/shared/src/perf.ts`, `packages/shared/src/upgrade.ts`, `PcAnalysis`). Entrada "Identificar Gargalo" na tela inicial.
 
+**Pela ficha técnica:**
+- **Processador:** a nota sai da ficha (`cpuScore.ts`): IPC da arquitetura em jogos × clock máximo ÷ 4,4 GHz × cache L3 (X3D ×1,28; APU AMD com 16 MB ou menos ×0,9) × núcleos. Ryzen 5 5600 = 100, a escala de `perf.ts`. A tabela por linha fica de reserva, para quando a ficha não tem arquitetura ou boost.
+- **Processador da pessoa:** vem da ficha do mesmo modelo no catálogo (GET /api/sheets/cpu), porque o CPU-Z não traz o boost.
+- **Placa de vídeo:** pela tabela do chip, que é a média de análises de jogos; consumo e linhas PCIe vêm da ficha.
+- **Sugestões (`picks.ts`):** uma por modelo, só as compatíveis pela ficha. Primeiro as que resolvem o gargalo, com nota de pelo menos 90% da meta de equilíbrio (`cpuNeeded` ou `gpuMatching` na tela da pessoa), da mais barata; depois mais desempenho por real.
+
 Com o PC importado (17.2), o app diz o que segura o desempenho e o que vale fazer. Cada sugestão de peça abre a busca já filtrada e roda; as peças do PC entram na montagem onde ela estiver vazia, para a compatibilidade conferir contra o que a pessoa tem, e escolher um produto troca a peça na montagem.
 
 **Equilíbrio processador × placa de vídeo (`perf.ts`):**

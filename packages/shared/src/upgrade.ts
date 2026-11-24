@@ -1,15 +1,16 @@
 import type { BuildSlot } from './compat.ts';
 import type { PcProfile } from './cpuz.ts';
 import { BASE_SYSTEM_POWER, chipsetSupport, cpuPower, cpuTdp, GPU_POWER, PSU_HEADROOM, roundUp50 } from './hardware.ts';
-import { chipsetPcie, cpuLinesAbove, cpuNeeded, cpuPerf, ENTRY_CHIPSETS, GPU_PCIE_X8, GPU_PERF, gpuMatching, gpuPerf, IGPU_PERF, resolutionOf, SOCKET_TOP, type Resolution } from './perf.ts';
+import { chipsetPcie, cpuLinesAbove, cpuNeeded, cpuScore, ENTRY_CHIPSETS, GPU_PCIE_X8, GPU_PERF, gpuMatching, gpuPerf, IGPU_PERF, resolutionOf, SOCKET_TOP, type Resolution } from './perf.ts';
 import { GPU_MAKERS, type GpuMaker, type MemoryType, type Socket, type Specs } from './types.ts';
 import { gpuSeriesOf } from './gpu.ts';
 import type { PickContext } from './picks.ts';
 
 /**
  * Gargalo e sugestões de upgrade a partir do PC importado (docs/ARCHITECTURE.md §17.3).
- * Regras simples e explicáveis, sem base externa: tabela de desempenho aproximado (perf.ts),
- * fatos de plataforma (hardware.ts) e o que o relatório do CPU-Z mostra.
+ * Processador pela ficha técnica do modelo no catálogo (arquitetura, clock boost, cache, núcleos:
+ * cpuScore.ts), com a tabela por linha só quando não há ficha; placa de vídeo pela tabela do chip,
+ * medida em análises (perf.ts); fatos de plataforma (hardware.ts) e o que o relatório do CPU-Z mostra.
  */
 
 /** Campos com o mesmo nome dos filtros da busca: a sugestão abre a busca já filtrada. */
@@ -58,6 +59,8 @@ export interface Balance {
   hz?: number;
   /** O que não deu para avaliar (modelo fora da tabela). */
   missing?: string;
+  /** De onde veio a nota do processador: a ficha técnica do modelo ou a tabela por linha. */
+  cpuFrom?: 'sheet' | 'table';
 }
 
 export interface PcAnalysis {
@@ -78,7 +81,11 @@ const RES_LABEL: Record<Resolution, string> = { '1080p': 'Full HD', '1440p': 'Qu
 
 const listNames = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} e ${xs.at(-1)}`);
 
-export function analyzePc(pc: PcProfile, opts: { psu?: Specs } = {}): PcAnalysis {
+/**
+ * `cpuSheet`: a ficha técnica do processador da pessoa (o mesmo modelo no catálogo, GET
+ * /api/sheets/cpu); núcleos e threads do CPU-Z valem por cima.
+ */
+export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<string, unknown> } = {}): PcAnalysis {
   const tips: UpgradeTip[] = [];
   const cpu = pc.cpu?.specs;
   const gpu = pc.gpu?.specs;
@@ -96,9 +103,11 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs } = {}): PcAnalysis
   const cpuW = cpu ? cpuPower(cpu) : undefined;
 
   // ---------- Equilíbrio processador × placa de vídeo ----------
-  const cpuP = cpuPerf(cpu);
+  const sheet = opts.cpuSheet && { ...opts.cpuSheet, ...(cpu?.cores && { cores: cpu.cores }), ...(cpu?.threads && { threads: cpu.threads }) };
+  const cpuP = cpuScore(cpu, sheet);
+  const cpuFrom = cpuP === undefined ? undefined : cpuScore(undefined, sheet) !== undefined ? 'sheet' : 'table';
   const gpuP = gpu ? gpuPerf(gpu) : cpu?.igpu ? IGPU_PERF : undefined;
-  const balance: Balance = { verdict: 'unknown', res, ...(hz && { hz }) };
+  const balance: Balance = { verdict: 'unknown', res, ...(hz && { hz }), ...(cpuFrom && { cpuFrom }) };
   if (cpuP === undefined) balance.missing = pc.cpu ? `o processador ${pc.cpu.title}` : 'o processador';
   else if (gpuP === undefined) balance.missing = pc.gpu ? `a placa de vídeo ${pc.gpu.title}` : 'a placa de vídeo';
   else {
@@ -166,7 +175,12 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs } = {}): PcAnalysis
           label: 'Ver Placas de Vídeo',
           filters: { gpuMakers: makers, gpuModels: models },
           // Com a fonte atual servindo (e não sendo simples), só as placas que cabem nela.
-          context: { current: gpuP, ...(ok.length && !basicPsu && psuWatts && cpuW && { maxGpuPower: psuWatts - cpuW - BASE_SYSTEM_POWER }) },
+          context: {
+            current: gpuP,
+            target,
+            ...(pcie === 3 && { pcie3: true }),
+            ...(ok.length && !basicPsu && psuWatts && cpuW && { maxGpuPower: psuWatts - cpuW - BASE_SYSTEM_POWER }),
+          },
         },
       }),
     });
@@ -184,8 +198,9 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs } = {}): PcAnalysis
         action: {
           slot: 'cpu',
           label: 'Ver Processadores',
-          filters: { sockets: [cpu.socket], cpuLines: [...new Set(lines.map((l) => l.line))] },
-          context: { current: cpuP, ...(mb?.chipset && { chipset: mb.chipset }) },
+          // Só o encaixe: quem decide o que sobe é a nota de cada processador pela ficha, não a linha.
+          filters: { sockets: [cpu.socket] },
+          context: { current: cpuP, target: cpuNeeded(gpuP, res, hz), ...(mb?.chipset && { chipset: mb.chipset }) },
         },
       });
     } else {
@@ -199,7 +214,7 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs } = {}): PcAnalysis
           slot: 'cpu',
           label: 'Ver Processadores Novos',
           filters: { sockets: next, ...(cpu.cpuBrand !== 'amd' && { cpuLines: ['Core i5', 'Core i7', 'Core Ultra 5', 'Core Ultra 7'] }) },
-          context: { current: cpuP },
+          context: { current: cpuP, target: cpuNeeded(gpuP, res, hz) },
         },
       });
     }
@@ -245,23 +260,33 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs } = {}): PcAnalysis
     if (cap && cap < 16) reasons.push(`${cap} GB já é pouco para jogos e navegador abertos juntos`);
     if (modules === 1) reasons.push('com um pente só a memória trabalha com metade da velocidade (single channel)');
     if (memory === 'ddr4' && ram.ratedSpeed && ram.ratedSpeed <= 2666 && cpu?.cpuBrand === 'amd') reasons.push(`${ram.ratedSpeed} MHz é lento para Ryzen, que rende mais com 3200 MHz ou mais`);
+    // 32 GB é o alvo: jogos atuais em Full HD já passam de 16 GB com navegador e Discord abertos.
+    const ramCapacity = cap >= 32 ? [cap, cap * 2] : [32];
     if (reasons.length && memory) {
-      const want = Math.max(16, cap >= 16 ? cap : 16);
       tips.push({
         id: 'ram-upgrade',
         kind: 'upgrade',
         title: 'Melhorar a Memória',
-        text: `${reasons.map((r, i) => (i ? r : r[0]!.toUpperCase() + r.slice(1))).join('; ')}. Um kit com 2 pentes resolve.`,
+        text: `${reasons.map((r, i) => (i ? r : r[0]!.toUpperCase() + r.slice(1))).join('; ')}. Um kit com 2 pentes resolve${cap < 32 ? ', de preferência 32 GB (2x 16 GB)' : ''}.`,
         action: {
           slot: 'ram',
           label: 'Ver Memórias',
           filters: {
             memory: [memory],
             ramModules: [2],
-            ramCapacity: want >= 32 ? [32, 64] : [16, 32],
+            ramCapacity,
             ...(memory === 'ddr4' && cpu?.cpuBrand === 'amd' && { ramSpeed: [3200, 3600] }),
           },
         },
+      });
+    } else if (memory && cap >= 16 && cap < 32) {
+      // 16 GB ainda funciona: recomendação, não pendência.
+      tips.push({
+        id: 'ram-32',
+        kind: 'info',
+        title: '32 GB de Memória É o Recomendado',
+        text: `${cap} GB ainda roda, mas já fica justo: jogos atuais em Full HD passam de 16 GB com navegador e Discord abertos. Quando for mexer na memória, vá de 32 GB (2x 16 GB).`,
+        action: { slot: 'ram', label: 'Ver Memórias de 32 GB', filters: { memory: [memory], ramModules: [2], ramCapacity: [32] } },
       });
     }
   }

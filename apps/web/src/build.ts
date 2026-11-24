@@ -142,7 +142,12 @@ const ORDER: Record<BuildIssue['level'], number> = { error: 0, warn: 1, unknown:
  * "Confira a medida" num card de resultado é ruído (a medida vem da ficha, que nem sempre a tem).
  * Na montagem a observação aparece. Medida que a ficha tem e não cabe aparece no card como erro.
  */
-const NOT_MEASURED_YET = new Set(['case-gpu-unknown', 'case-cooler-unknown']);
+const NOT_MEASURED_YET = new Set([
+  'case-gpu-unknown',
+  'case-cooler-unknown',
+  // "32 GB é o recomendado" em cada card de 16 GB seria repetição: fica só na montagem.
+  'memory-capacity',
+]);
 
 export function checkCandidate(b: SavedBuild, slot: BuildSlot, specs: Specs): CandidateCheck {
   const r = checkBuild({ ...toBuild(b), [slot]: { specs } });

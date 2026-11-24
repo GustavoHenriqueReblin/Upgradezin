@@ -140,4 +140,8 @@ describe('card de resultado sem medida ainda', () => {
     // Com a medida (peça já medida), a checagem vale no card também.
     expect(checkCandidate(b, 'gpu', { gpuModel: 'RTX 4060', gpuLength: 420 }).status).toBe('error');
   });
+
+  it('memória de 16 GB no resultado: sem "32 GB é o recomendado" em cada card (fica na montagem)', () => {
+    expect(checkCandidate({}, 'ram', { memory: 'ddr4', ramCapacity: 16, ramModules: 2 }).issues.map((i) => i.code)).not.toContain('memory-capacity');
+  });
 });

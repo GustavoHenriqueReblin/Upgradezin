@@ -102,6 +102,13 @@ describe('checkBuild: incompatibilidades (vermelho)', () => {
     expect(codes({ ram: { ...avulso, qty: 2 } })).toContain('memory-separate-modules');
     expect(codes({ ram: avulso })).not.toContain('memory-separate-modules');
   });
+  it('memória abaixo de 32 GB: observação que não muda o selo', () => {
+    const kit16 = part('ram', 'Memória RAM Kingston Fury Beast, 16GB (2x8GB), 3200MHz, DDR4, CL16');
+    const r = checkBuild({ ram: kit16 });
+    expect(r.issues.find((i) => i.code === 'memory-capacity')).toMatchObject({ level: 'info' });
+    expect(r.status.ram).toBe('ok');
+    expect(codes({ ram: { ...kit16, qty: 2 } })).not.toContain('memory-capacity'); // 2 kits = 32 GB
+  });
   it('fonte abaixo do consumo máximo', () => {
     const r = checkBuild({ cpu: CPU_14600K, gpu: GPU_4090, psu: PSU_550 });
     expect(r.issues.find((i) => i.code === 'psu-too-weak')?.level).toBe('error');

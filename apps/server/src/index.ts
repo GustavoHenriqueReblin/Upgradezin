@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { z } from 'zod';
-import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, pickUpgrades, searchOptionCounts, STORES, type CategoryId, type Offer, type SearchOptionCounts, type SheetRoutineStatus, type StoreId } from '@upgradezin/shared';
+import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, cpuSheetFor, pickUpgrades, searchOptionCounts, STORES, type CategoryId, type Offer, type SearchOptionCounts, type SheetRoutineStatus, type StoreId } from '@upgradezin/shared';
 import { fullSweep, fullSweepAll, probePage, readSheetNow, resumeRoutines, saveFullSweepSettings, useStoreIntervals, stopAdminJobs, stopFullSweep, storesState } from './admin/actions.ts';
 import { clearFullSweeps } from './prices/sweep.ts';
 import { nightlySchedule, startNightlySweep, stopNightlySweep } from './admin/nightly.ts';
@@ -251,6 +251,19 @@ app.post('/api/upgrade/picks', { bodyLimit: 16 * 1024 }, async (req, reply) => {
   const parsed = PicksBody.safeParse(req.body);
   if (!parsed.success) return reply.code(400).send({ error: z.prettifyError(parsed.error) });
   return pickUpgrades(parsed.data as Parameters<typeof pickUpgrades>[0], categoryOffers(parsed.data.slot).value);
+});
+
+/**
+ * Ficha técnica de um processador pelo modelo ("5800X3D", "12400F"): a do mesmo modelo no catálogo, com
+ * mais campos. A análise do PC importado usa para a nota do processador (o CPU-Z não traz o clock boost).
+ */
+app.get('/api/sheets/cpu', async (req, reply) => {
+  const parsed = z.object({ model: z.string().trim().min(3).max(20).regex(/^[\w-]+$/) }).safeParse(req.query);
+  if (!parsed.success) return reply.code(400).send({ error: 'invalid' });
+  const sheet = cpuSheetFor(categoryOffers('cpu').value, parsed.data.model);
+  if (!sheet) return reply.code(404).send({ error: 'not-found' });
+  reply.header('Cache-Control', 'public, max-age=300');
+  return sheet;
 });
 
 /** Opções do formulário da busca: quantos produtos em estoque há para cada uma (pela ficha). */
