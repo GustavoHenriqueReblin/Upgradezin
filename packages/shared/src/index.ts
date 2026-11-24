@@ -20,3 +20,4 @@ export * from './product.ts';
 export * from './admin.ts';
 export * from './picks.ts';
 export * from './identity.ts';
+export * from './searchOptions.ts';

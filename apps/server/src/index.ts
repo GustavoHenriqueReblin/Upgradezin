@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { z } from 'zod';
-import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, pickUpgrades, STORES, type CategoryId, type Offer, type SheetRoutineStatus, type StoreId } from '@upgradezin/shared';
+import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, pickUpgrades, searchOptionCounts, STORES, type CategoryId, type Offer, type SearchOptionCounts, type SheetRoutineStatus, type StoreId } from '@upgradezin/shared';
 import { fullSweep, fullSweepAll, probePage, readSheetNow, resumeRoutines, saveFullSweepSettings, useStoreIntervals, stopAdminJobs, stopFullSweep, storesState } from './admin/actions.ts';
 import { clearFullSweeps } from './prices/sweep.ts';
 import { nightlySchedule, startNightlySweep, stopNightlySweep } from './admin/nightly.ts';
@@ -236,18 +236,31 @@ const PicksBody = z.object({
     .strict()
     .optional(),
 });
-const offersCache = new Map<CategoryId, { at: number; value: Offer[] }>();
+/** Ofertas da categoria nas lojas ligadas, com a ficha, guardadas por 1 min (upgrades e opções do formulário). */
+const offersCache = new Map<CategoryId, { at: number; value: Offer[]; options?: SearchOptionCounts }>();
+function categoryOffers(category: CategoryId) {
+  let hit = offersCache.get(category);
+  if (!hit || Date.now() - hit.at > 60_000) {
+    const since = new Date(Date.now() - config.SEARCH_DB_MAX_AGE_H * 3_600_000).toISOString();
+    hit = { at: Date.now(), value: recentOffers(getDb(), category, since).filter((o) => ACTIVE_STORES.includes(o.store)) };
+    offersCache.set(category, hit);
+  }
+  return hit;
+}
 app.post('/api/upgrade/picks', { bodyLimit: 16 * 1024 }, async (req, reply) => {
   const parsed = PicksBody.safeParse(req.body);
   if (!parsed.success) return reply.code(400).send({ error: z.prettifyError(parsed.error) });
-  const { slot } = parsed.data;
-  let hit = offersCache.get(slot);
-  if (!hit || Date.now() - hit.at > 60_000) {
-    const since = new Date(Date.now() - config.SEARCH_DB_MAX_AGE_H * 3_600_000).toISOString();
-    hit = { at: Date.now(), value: recentOffers(getDb(), slot, since).filter((o) => ACTIVE_STORES.includes(o.store)) };
-    offersCache.set(slot, hit);
-  }
-  return pickUpgrades(parsed.data as Parameters<typeof pickUpgrades>[0], hit.value);
+  return pickUpgrades(parsed.data as Parameters<typeof pickUpgrades>[0], categoryOffers(parsed.data.slot).value);
+});
+
+/** Opções do formulário da busca: quantos produtos em estoque há para cada uma (pela ficha). */
+app.get('/api/search/options', async (req, reply) => {
+  const parsed = z.object({ category: z.enum(ENABLED_CATEGORIES as [CategoryId, ...CategoryId[]]) }).safeParse(req.query);
+  if (!parsed.success) return reply.code(400).send({ error: 'invalid' });
+  const hit = categoryOffers(parsed.data.category);
+  hit.options ??= searchOptionCounts(parsed.data.category, hit.value);
+  reply.header('Cache-Control', 'public, max-age=60');
+  return hit.options;
 });
 
 /** Compartilhar a montagem: grava uma cópia e devolve o código do link (/m/<id>). */

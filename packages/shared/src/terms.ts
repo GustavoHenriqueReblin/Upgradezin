@@ -54,7 +54,11 @@ export function isFormTerm(category: CategoryId, term: string): boolean {
       formTerms.get(t.category)!.add(t.term.toLowerCase());
     }
   }
-  return !!formTerms.get(category)?.has(term.trim().toLowerCase());
+  const t = term.trim().toLowerCase();
+  // Potência e capacidade que o banco tiver (o formulário mostra as que existem, não só as da lista).
+  if (category === 'psu' && /^\d{3,4}w$/.test(t)) return Number(t.slice(0, -1)) >= 200 && Number(t.slice(0, -1)) <= 3000;
+  if (category === 'ram' && /^ddr[45] \d{1,3}gb$/.test(t)) return true;
+  return !!formTerms.get(category)?.has(t);
 }
 
 /**

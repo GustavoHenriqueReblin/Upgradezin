@@ -20,10 +20,11 @@ import {
   SSD_TIERS,
   type CategoryId,
   type CpuBrand,
+  type SearchOptionCounts,
   type FormFactor,
   type Socket,
 } from '@upgradezin/shared';
-import type { ComponentType } from 'react';
+import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { Search } from 'lucide-react';
 import { PSU_POWERS } from '../build.ts';
 import { MODULAR_OPTS, type Filters } from '../filters.ts';
@@ -39,6 +40,7 @@ import {
   SSD_INTERFACE_LABEL,
 } from '../format.ts';
 import { planSearch } from '../searchPlan.ts';
+import { countOf, numbersOf } from '../searchOptions.ts';
 import { CATEGORY_ICONS } from './CategoryPicker.tsx';
 import { Check, Pill, PriceInput, Section, toggle } from './ui.tsx';
 
@@ -55,6 +57,52 @@ interface Props {
 interface BodyProps {
   f: Filters;
   set: (patch: Partial<Filters>) => void;
+  /** Produtos em estoque por opção (do servidor); null enquanto carrega ou se falhou: listas fixas, sem contagem. */
+  c: SearchOptionCounts | null;
+}
+
+// ---------- Contagem das opções ----------
+
+const optionsCache = new Map<CategoryId, SearchOptionCounts>();
+
+/** Contagem das opções da categoria (GET /api/search/options), guardada enquanto a página está aberta. */
+function useOptionCounts(category: CategoryId): SearchOptionCounts | null {
+  const [counts, setCounts] = useState<SearchOptionCounts | null>(() => optionsCache.get(category) ?? null);
+  useEffect(() => {
+    const hit = optionsCache.get(category);
+    setCounts(hit ?? null);
+    if (hit) return;
+    let alive = true;
+    fetch(`/api/search/options?category=${category}`)
+      .then((r) => (r.ok ? (r.json() as Promise<SearchOptionCounts>) : null))
+      .then((c) => {
+        if (!c) return;
+        optionsCache.set(category, c);
+        if (alive) setCounts(c);
+      })
+      .catch(() => {}); // sem contagem: o formulário fica com as listas fixas
+    return () => {
+      alive = false;
+    };
+  }, [category]);
+  return counts;
+}
+
+/** Opção em botão com a contagem; sem produto (e não escolhida), não aparece. */
+function Opt({ n, active, onClick, children }: { n: number | undefined; active: boolean; onClick: () => void; children: ReactNode }) {
+  if (n === 0 && !active) return null;
+  return (
+    <Pill size="md" active={active} onClick={onClick}>
+      {children}
+      {n !== undefined && <span className="ml-1.5 text-xs opacity-60">{n}</span>}
+    </Pill>
+  );
+}
+
+/** Opção em caixa com a contagem; sem produto (e não marcada), não aparece. */
+function OptCheck({ n, label, checked, onChange }: { n: number | undefined; label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  if (n === 0 && !checked) return null;
+  return <Check label={label} count={n} checked={checked} onChange={onChange} />;
 }
 
 /**
@@ -67,6 +115,7 @@ export function SearchSetup({ category, filters: f, onChange, onSearch, onBack }
   const def = CATEGORY_DEFS[category];
   const plan = planSearch(category, f);
   const Body = BODIES[category] ?? PsuBody;
+  const counts = useOptionCounts(category);
 
   return (
     <div className="mx-auto w-full max-w-2xl">
@@ -86,7 +135,7 @@ export function SearchSetup({ category, filters: f, onChange, onSearch, onBack }
       </div>
 
       <div className="space-y-6 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-        <Body f={f} set={set} />
+        <Body f={f} set={set} c={counts} />
 
         <Section title="Preço à Vista">
           <div className="flex max-w-sm items-center gap-2">
@@ -109,15 +158,18 @@ export function SearchSetup({ category, filters: f, onChange, onSearch, onBack }
   );
 }
 
-function PsuBody({ f, set }: BodyProps) {
+function PsuBody({ f, set, c }: BodyProps) {
+  // "A partir de": a contagem de cada nível soma os níveis acima.
+  const effFrom = (e: (typeof EFFICIENCY_LEVELS)[number]) =>
+    c ? EFFICIENCY_LEVELS.slice(EFFICIENCY_LEVELS.indexOf(e)).reduce((sum, x) => sum + (countOf(c, 'efficiency', x) ?? 0), 0) : undefined;
   return (
     <>
       <Section title="Potência" hint="Escolha uma ou mais. Cada potência é buscada nas três lojas.">
         <div className="flex flex-wrap gap-2">
-          {PSU_POWERS.map((w) => (
-            <Pill key={w} size="md" active={f.watts.includes(w)} onClick={() => set({ watts: toggle(f.watts, w) })}>
+          {numbersOf(c, 'watts', PSU_POWERS, f.watts).map((w) => (
+            <Opt key={w} n={countOf(c, 'watts', w)} active={f.watts.includes(w)} onClick={() => set({ watts: toggle(f.watts, w) })}>
               {w} W
-            </Pill>
+            </Opt>
           ))}
         </div>
       </Section>
@@ -128,9 +180,9 @@ function PsuBody({ f, set }: BodyProps) {
             Qualquer
           </Pill>
           {EFFICIENCY_LEVELS.map((e) => (
-            <Pill key={e} size="md" active={f.effMin === e} onClick={() => set({ effMin: e })}>
+            <Opt key={e} n={effFrom(e)} active={f.effMin === e} onClick={() => set({ effMin: e })}>
               {EFF_LABEL[e]}
-            </Pill>
+            </Opt>
           ))}
         </div>
       </Section>
@@ -138,7 +190,7 @@ function PsuBody({ f, set }: BodyProps) {
       <Section title="Cabeamento">
         <div className="flex flex-wrap gap-x-5">
           {MODULAR_OPTS.map((m) => (
-            <Check key={m} label={MODULAR_LABEL[m]} checked={f.modular.includes(m)} onChange={() => set({ modular: toggle(f.modular, m) })} />
+            <OptCheck key={m} n={m === 'unknown' ? undefined : countOf(c, 'modular', m)} label={MODULAR_LABEL[m]} checked={f.modular.includes(m)} onChange={() => set({ modular: toggle(f.modular, m) })} />
           ))}
         </div>
       </Section>
@@ -146,7 +198,7 @@ function PsuBody({ f, set }: BodyProps) {
   );
 }
 
-function MotherboardBody({ f, set }: BodyProps) {
+function MotherboardBody({ f, set, c }: BodyProps) {
   const sockets = SOCKETS.filter((s) => f.sockets.includes(s));
   // Só os tipos de memória que as plataformas escolhidas aceitam (sem plataforma: todos).
   const memoryOpts = sockets.length ? MEMORY_TYPES.filter((m) => sockets.some((s) => SOCKET_MEMORY[s].includes(m))) : [...MEMORY_TYPES];
@@ -165,9 +217,9 @@ function MotherboardBody({ f, set }: BodyProps) {
       <Section title="Plataforma" hint="A mesma do seu processador. Pode escolher mais de uma, ou nenhuma e buscar só pela memória.">
         <div className="flex flex-wrap gap-2">
           {SOCKETS.map((s) => (
-            <Pill key={s} size="md" active={f.sockets.includes(s)} onClick={() => toggleSocket(s)}>
+            <Opt key={s} n={countOf(c, 'socket', s)} active={f.sockets.includes(s)} onClick={() => toggleSocket(s)}>
               {SOCKET_LABEL[s]}
-            </Pill>
+            </Opt>
           ))}
         </div>
       </Section>
@@ -178,10 +230,10 @@ function MotherboardBody({ f, set }: BodyProps) {
             {sockets.map((s) => (
               <div key={s} className="flex flex-wrap items-center gap-2">
                 {sockets.length > 1 && <span className="w-20 shrink-0 text-xs font-semibold text-zinc-500">{SOCKET_LABEL[s]}</span>}
-                {CHIPSETS[s].map((c) => (
-                  <Pill key={c} size="md" active={f.chipsets.includes(c)} onClick={() => set({ chipsets: toggle(f.chipsets, c) })}>
-                    {c}
-                  </Pill>
+                {CHIPSETS[s].map((x) => (
+                  <Opt key={x} n={countOf(c, 'chipset', x)} active={f.chipsets.includes(x)} onClick={() => set({ chipsets: toggle(f.chipsets, x) })}>
+                    {x}
+                  </Opt>
                 ))}
               </div>
             ))}
@@ -192,7 +244,7 @@ function MotherboardBody({ f, set }: BodyProps) {
       <div className="grid gap-6 sm:grid-cols-3">
         <Section title="Formato">
           {(['mini-itx', 'matx', 'atx'] as FormFactor[]).map((ff) => (
-            <Check key={ff} label={FORM_FACTOR_LABEL[ff]} checked={f.formFactors.includes(ff)} onChange={() => set({ formFactors: toggle(f.formFactors, ff) })} />
+            <OptCheck key={ff} n={countOf(c, 'formFactor', ff)} label={FORM_FACTOR_LABEL[ff]} checked={f.formFactors.includes(ff)} onChange={() => set({ formFactors: toggle(f.formFactors, ff) })} />
           ))}
         </Section>
         <Section title="Memória">
@@ -200,7 +252,7 @@ function MotherboardBody({ f, set }: BodyProps) {
             <div className="py-0.5 text-zinc-500">{MEMORY_LABEL[memoryOpts[0]!]} (única {sockets.length > 1 ? 'destas plataformas' : 'desta plataforma'})</div>
           ) : (
             memoryOpts.map((m) => (
-              <Check key={m} label={MEMORY_LABEL[m]} checked={f.memory.includes(m)} onChange={() => set({ memory: toggle(f.memory, m) })} />
+              <OptCheck key={m} n={countOf(c, 'memory', m)} label={MEMORY_LABEL[m]} checked={f.memory.includes(m)} onChange={() => set({ memory: toggle(f.memory, m) })} />
             ))
           )}
         </Section>
@@ -212,7 +264,7 @@ function MotherboardBody({ f, set }: BodyProps) {
   );
 }
 
-function CpuBody({ f, set }: BodyProps) {
+function CpuBody({ f, set, c }: BodyProps) {
   const socket = f.sockets[0];
   const brands: CpuBrand[] = socket ? [SOCKET_BRAND[socket]] : ['amd', 'intel'];
   return (
@@ -220,9 +272,9 @@ function CpuBody({ f, set }: BodyProps) {
       <Section title="Plataforma" hint="A mesma da sua placa-mãe. Opcional se escolher a linha.">
         <div className="flex flex-wrap gap-2">
           {SOCKETS.map((s) => (
-            <Pill
+            <Opt
               key={s}
-              size="md"
+              n={countOf(c, 'socket', s)}
               active={socket === s}
               onClick={() => {
                 const next = socket === s ? undefined : s;
@@ -232,7 +284,7 @@ function CpuBody({ f, set }: BodyProps) {
               }}
             >
               {SOCKET_LABEL[s]}
-            </Pill>
+            </Opt>
           ))}
         </div>
       </Section>
@@ -243,9 +295,9 @@ function CpuBody({ f, set }: BodyProps) {
             <div key={b} className="flex flex-wrap items-center gap-2">
               <span className="w-12 text-xs text-zinc-500">{CPU_BRAND_LABEL[b]}</span>
               {CPU_LINES[b].map((l) => (
-                <Pill key={l} size="md" active={f.cpuLines.includes(l)} onClick={() => set({ cpuLines: toggle(f.cpuLines, l) })}>
+                <Opt key={l} n={countOf(c, 'cpuLine', l)} active={f.cpuLines.includes(l)} onClick={() => set({ cpuLines: toggle(f.cpuLines, l) })}>
                   {l}
-                </Pill>
+                </Opt>
               ))}
             </div>
           ))}
@@ -263,16 +315,16 @@ function CpuBody({ f, set }: BodyProps) {
   );
 }
 
-function GpuBody({ f, set }: BodyProps) {
+function GpuBody({ f, set, c }: BodyProps) {
   const series = GPU_SERIES.filter((s) => f.gpuMakers.includes(s.maker));
   return (
     <>
       <Section title="Fabricante do Chip" hint="Escolha um ou mais. Cada fabricante é buscado nas três lojas.">
         <div className="flex flex-wrap gap-2">
           {GPU_MAKERS.map((m) => (
-            <Pill
+            <Opt
               key={m}
-              size="md"
+              n={countOf(c, 'gpuMaker', m)}
               active={f.gpuMakers.includes(m)}
               onClick={() => {
                 const makers = toggle(f.gpuMakers, m);
@@ -282,7 +334,7 @@ function GpuBody({ f, set }: BodyProps) {
               }}
             >
               {GPU_MAKER_LABEL[m]}
-            </Pill>
+            </Opt>
           ))}
         </div>
       </Section>
@@ -291,9 +343,9 @@ function GpuBody({ f, set }: BodyProps) {
         <Section title="Série" hint="Opcional. Sem série, aparecem todas do fabricante.">
           <div className="flex flex-wrap gap-2">
             {series.map((s) => (
-              <Pill key={s.series} size="md" active={f.gpuSeries.includes(s.series)} onClick={() => set({ gpuSeries: toggle(f.gpuSeries, s.series) })}>
+              <Opt key={s.series} n={countOf(c, 'gpuSeries', s.series)} active={f.gpuSeries.includes(s.series)} onClick={() => set({ gpuSeries: toggle(f.gpuSeries, s.series) })}>
                 {s.label}
-              </Pill>
+              </Opt>
             ))}
           </div>
         </Section>
@@ -301,20 +353,20 @@ function GpuBody({ f, set }: BodyProps) {
 
       <Section title="Memória de Vídeo" hint="Opcional.">
         <div className="flex flex-wrap gap-2">
-          {GPU_VRAM.map((v) => (
-            <Pill key={v} size="md" active={f.vram.includes(v)} onClick={() => set({ vram: toggle(f.vram, v) })}>
+          {numbersOf(c, 'vram', GPU_VRAM, f.vram).map((v) => (
+            <Opt key={v} n={countOf(c, 'vram', v)} active={f.vram.includes(v)} onClick={() => set({ vram: toggle(f.vram, v) })}>
               {v} GB
-            </Pill>
+            </Opt>
           ))}
         </div>
       </Section>
 
       <Section title="Marca" hint="Opcional. O resultado mostra todas as marcas encontradas.">
         <div className="flex flex-wrap gap-2">
-          {GPU_BRANDS.map((b) => (
-            <Pill key={b} size="md" active={f.brands.includes(b)} onClick={() => set({ brands: toggle(f.brands, b) })}>
+          {gpuBrands(c, f.brands).map((b) => (
+            <Opt key={b} n={countOf(c, 'brand', b)} active={f.brands.includes(b)} onClick={() => set({ brands: toggle(f.brands, b) })}>
               {b}
-            </Pill>
+            </Opt>
           ))}
         </div>
       </Section>
@@ -326,26 +378,36 @@ function GpuBody({ f, set }: BodyProps) {
   );
 }
 
-function RamBody({ f, set }: BodyProps) {
+/** Marcas de placa de vídeo: com contagem, as que mais têm produto (até 14); sem, a lista das mais vendidas. */
+function gpuBrands(c: SearchOptionCounts | null, selected: string[]): string[] {
+  if (!c?.brand) return GPU_BRANDS;
+  const top = Object.entries(c.brand)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 14)
+    .map(([b]) => b);
+  return [...new Set([...top, ...selected])];
+}
+
+function RamBody({ f, set, c }: BodyProps) {
   const type = f.memory.length === 1 ? f.memory[0] : undefined;
   return (
     <>
       <Section title="Tipo" hint="O mesmo que a sua placa-mãe aceita.">
         <div className="flex flex-wrap gap-2">
           {MEMORY_TYPES.map((m) => (
-            <Pill key={m} size="md" active={type === m} onClick={() => set({ memory: type === m ? [] : [m], ramSpeed: [] })}>
+            <Opt key={m} n={countOf(c, 'memory', m)} active={type === m} onClick={() => set({ memory: type === m ? [] : [m], ramSpeed: [] })}>
               {MEMORY_LABEL[m]}
-            </Pill>
+            </Opt>
           ))}
         </div>
       </Section>
 
       <Section title="Capacidade Total" hint="Escolha uma ou mais. Em kit, é a soma dos pentes (2x 8 GB = 16 GB).">
         <div className="flex flex-wrap gap-2">
-          {RAM_CAPACITIES.map((c) => (
-            <Pill key={c} size="md" active={f.ramCapacity.includes(c)} onClick={() => set({ ramCapacity: toggle(f.ramCapacity, c) })}>
-              {c} GB
-            </Pill>
+          {(type ? numbersOf(c, 'capacity', RAM_CAPACITIES, f.ramCapacity, `${type}:`) : RAM_CAPACITIES).map((cap) => (
+            <Opt key={cap} n={type ? countOf(c, 'capacity', `${type}:${cap}`) : undefined} active={f.ramCapacity.includes(cap)} onClick={() => set({ ramCapacity: toggle(f.ramCapacity, cap) })}>
+              {cap} GB
+            </Opt>
           ))}
         </div>
       </Section>
@@ -353,10 +415,10 @@ function RamBody({ f, set }: BodyProps) {
       {type && (
         <Section title="Frequência" hint="Opcional. Confira a máxima que a sua placa-mãe aceita.">
           <div className="flex flex-wrap gap-2">
-            {RAM_SPEEDS[type].map((v) => (
-              <Pill key={v} size="md" active={f.ramSpeed.includes(v)} onClick={() => set({ ramSpeed: toggle(f.ramSpeed, v) })}>
+            {numbersOf(c, 'speed', RAM_SPEEDS[type], f.ramSpeed, `${type}:`).map((v) => (
+              <Opt key={v} n={countOf(c, 'speed', `${type}:${v}`)} active={f.ramSpeed.includes(v)} onClick={() => set({ ramSpeed: toggle(f.ramSpeed, v) })}>
                 {v} MHz
-              </Pill>
+              </Opt>
             ))}
           </div>
         </Section>
@@ -364,23 +426,23 @@ function RamBody({ f, set }: BodyProps) {
 
       <Section title="Pentes">
         <div className="flex flex-wrap gap-x-5">
-          <Check label="1 Pente" checked={f.ramModules.includes(1)} onChange={() => set({ ramModules: toggle(f.ramModules, 1) })} />
-          <Check label="Kit com 2 (Dual Channel)" checked={f.ramModules.includes(2)} onChange={() => set({ ramModules: toggle(f.ramModules, 2) })} />
+          <OptCheck n={countOf(c, 'modules', 1)} label="1 Pente" checked={f.ramModules.includes(1)} onChange={() => set({ ramModules: toggle(f.ramModules, 1) })} />
+          <OptCheck n={countOf(c, 'modules', 2)} label="Kit com 2 (Dual Channel)" checked={f.ramModules.includes(2)} onChange={() => set({ ramModules: toggle(f.ramModules, 2) })} />
         </div>
       </Section>
     </>
   );
 }
 
-function SsdBody({ f, set }: BodyProps) {
+function SsdBody({ f, set, c }: BodyProps) {
   return (
     <>
       <Section title="Interface" hint="NVMe (plaquinha M.2) é bem mais rápido; SATA usa cabo e serve em qualquer PC. Escolha uma ou as duas.">
         <div className="flex flex-wrap gap-2">
           {SSD_INTERFACES.map((i) => (
-            <Pill key={i} size="md" active={f.ssdInterfaces.includes(i)} onClick={() => set({ ssdInterfaces: toggle(f.ssdInterfaces, i) })}>
+            <Opt key={i} n={countOf(c, 'ssdInterface', i)} active={f.ssdInterfaces.includes(i)} onClick={() => set({ ssdInterfaces: toggle(f.ssdInterfaces, i) })}>
               {SSD_INTERFACE_LABEL[i]}
-            </Pill>
+            </Opt>
           ))}
         </div>
       </Section>
@@ -388,9 +450,9 @@ function SsdBody({ f, set }: BodyProps) {
       <Section title="Capacidade" hint="Opcional.">
         <div className="flex flex-wrap gap-2">
           {SSD_TIERS.map((t) => (
-            <Pill key={t.value} size="md" active={f.ssdCapacity.includes(t.value)} onClick={() => set({ ssdCapacity: toggle(f.ssdCapacity, t.value) })}>
+            <Opt key={t.value} n={countOf(c, 'ssdTier', t.value)} active={f.ssdCapacity.includes(t.value)} onClick={() => set({ ssdCapacity: toggle(f.ssdCapacity, t.value) })}>
               {t.label}
-            </Pill>
+            </Opt>
           ))}
         </div>
       </Section>
@@ -398,15 +460,20 @@ function SsdBody({ f, set }: BodyProps) {
   );
 }
 
-function CoolerBody({ f, set }: BodyProps) {
+function CoolerBody({ f, set, c }: BodyProps) {
   return (
     <>
       <Section title="Tipo" hint="Air cooler é mais simples e barato; water cooler resfria mais e ocupa espaço no gabinete. Escolha um ou os dois.">
         <div className="flex flex-wrap gap-2">
           {COOLER_TYPES.map((t) => (
-            <Pill key={t} size="md" active={f.coolerTypes.includes(t)} onClick={() => set({ coolerTypes: toggle(f.coolerTypes, t), ...(t === 'water' && f.coolerTypes.includes('water') && { radiators: [] }) })}>
+            <Opt
+              key={t}
+              n={countOf(c, 'coolerType', t)}
+              active={f.coolerTypes.includes(t)}
+              onClick={() => set({ coolerTypes: toggle(f.coolerTypes, t), ...(t === 'water' && f.coolerTypes.includes('water') && { radiators: [] }) })}
+            >
               {COOLER_TYPE_LABEL[t]}
-            </Pill>
+            </Opt>
           ))}
         </div>
       </Section>
@@ -414,10 +481,10 @@ function CoolerBody({ f, set }: BodyProps) {
       {f.coolerTypes.includes('water') && (
         <Section title="Radiador do Water Cooler" hint="Opcional. Confira o que cabe no seu gabinete.">
           <div className="flex flex-wrap gap-2">
-            {RADIATORS.map((r) => (
-              <Pill key={r} size="md" active={f.radiators.includes(r)} onClick={() => set({ radiators: toggle(f.radiators, r) })}>
+            {numbersOf(c, 'radiator', RADIATORS, f.radiators).map((r) => (
+              <Opt key={r} n={countOf(c, 'radiator', r)} active={f.radiators.includes(r)} onClick={() => set({ radiators: toggle(f.radiators, r) })}>
                 {r} mm
-              </Pill>
+              </Opt>
             ))}
           </div>
         </Section>
@@ -426,15 +493,15 @@ function CoolerBody({ f, set }: BodyProps) {
   );
 }
 
-function CaseBody({ f, set }: BodyProps) {
+function CaseBody({ f, set, c }: BodyProps) {
   return (
     <>
       <Section title="Placa-Mãe" hint="O formato da sua placa-mãe: aparecem os gabinetes onde ela cabe. Opcional.">
         <div className="flex flex-wrap gap-2">
           {FORM_FACTORS.map((ff) => (
-            <Pill key={ff} size="md" active={f.caseFormFactors.includes(ff)} onClick={() => set({ caseFormFactors: toggle(f.caseFormFactors, ff) })}>
+            <Opt key={ff} n={countOf(c, 'caseFormFactor', ff)} active={f.caseFormFactors.includes(ff)} onClick={() => set({ caseFormFactors: toggle(f.caseFormFactors, ff) })}>
               {FORM_FACTOR_LABEL[ff]}
-            </Pill>
+            </Opt>
           ))}
         </div>
       </Section>
