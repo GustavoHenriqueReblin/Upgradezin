@@ -15,6 +15,8 @@ import {
   type WebAnswerPage,
   type WebFillStatus,
   type WebQueuePriority,
+  type WebSheetState,
+  type SheetProduct,
 } from '@upgradezin/shared';
 import { pageOf } from '../admin/paging.ts';
 import { loadPage, saveDebugHtml } from '../browser.ts';
@@ -109,6 +111,9 @@ export function stopWebFill(): void {
 
 // ---------- fila ----------
 
+const webSince = (now: number) => new Date(now - SHEET_SCOPE_DAYS * 86_400_000).toISOString();
+const sheetState = (p: SheetProduct): WebSheetState => p.needsHuman ? 'manual' : p.state;
+
 /** Uma pergunta a fazer: o JSON da categoria para um produto só a web completa (fields: as chaves dele). */
 export interface WebQuestion {
   key: string;
@@ -125,7 +130,7 @@ export interface WebQuestion {
  * Dentro de cada prioridade, campo principal primeiro, depois estoque e descoberta mais recente.
  */
 export function webQueue(db: Db, now = Date.now(), retryKey?: string): (WebQuestion & { priority: WebQueuePriority })[] {
-  const since = new Date(now - SHEET_SCOPE_DAYS * 86_400_000).toISOString();
+  const since = webSince(now);
   const out: (WebQuestion & { priority: WebQueuePriority; main: boolean; inStock: boolean; first: string })[] = [];
   const asked = new Set((ready(db).prepare("SELECT product_key || '|' || field AS k FROM sheet_web").all() as { k: string }[]).map((r) => r.k));
   for (const category of ENABLED_CATEGORIES) {
@@ -243,26 +248,42 @@ export async function askWeb(db: Db, q: WebQuestion, signal: AbortSignal, now = 
     `INSERT OR REPLACE INTO sheet_web (product_key, field, category, title, question, answer, value, status, store, asked_at, confidence, sources)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
-  for (const f of fields)
-    insert.run(
-      q.key,
-      f.field,
-      q.category,
-      q.title,
-      q.question,
-      answer,
-      f.value === undefined ? null : JSON.stringify(f.value),
-      f.value === undefined ? 'none' : 'ok',
-      store,
-      at,
-      reply?.confidence ?? null,
-      null,
-    );
+  const since = webSince(Date.parse(at));
+  const currentState = () => catalogProducts(db, q.category, since, [q.key]).map(sheetState)[0];
+  let sheetBefore: WebSheetState | undefined;
+  let sheetAfter: WebSheetState | undefined;
+  db.exec('BEGIN');
+  try {
+    sheetBefore = currentState();
+    for (const f of fields) insert.run(
+        q.key,
+        f.field,
+        q.category,
+        q.title,
+        q.question,
+        answer,
+        f.value === undefined ? null : JSON.stringify(f.value),
+        f.value === undefined ? 'none' : 'ok',
+        store,
+        at,
+        reply?.confidence ?? null,
+        null,
+      );
+    sheetAfter = currentState();
+    if (sheetBefore && sheetAfter) {
+      db.prepare('INSERT OR REPLACE INTO sheet_web_transition VALUES (?, ?, ?, ?)').run(q.key, at, sheetBefore, sheetAfter);
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
   emitChange('admin');
   return {
     ...base,
     answer,
     fields,
+    ...(sheetBefore && sheetAfter && { sheetBefore, sheetAfter }),
     ...(reply?.confidence && { confidence: reply.confidence }),
     status: fields.some((f) => f.value !== undefined) ? 'ok' : 'none',
   };
@@ -327,6 +348,8 @@ type WebRow = {
   store: StoreId;
   asked_at: string;
   confidence: string | null;
+  before_state: WebSheetState | null;
+  after_state: WebSheetState | null;
 };
 
 /** Situação para o admin: configuração, fila, totais e pausa. */
@@ -361,8 +384,9 @@ export function webAnswers(db: Db, f: WebAnswerFilter): WebAnswerPage {
   const total = (ready(db).prepare(`SELECT count(*) AS n FROM (${groups})`).get(...args) as { n: number }).n;
   const rows = db
     .prepare(
-      `SELECT w.product_key, w.category, w.field, w.title, w.question, w.answer, w.value, w.store, w.asked_at, w.confidence FROM sheet_web w
+      `SELECT w.product_key, w.category, w.field, w.title, w.question, w.answer, w.value, w.store, w.asked_at, w.confidence, t.before_state, t.after_state FROM sheet_web w
        JOIN (${groups} ORDER BY asked_at DESC LIMIT ? OFFSET ?) r ON r.product_key = w.product_key AND r.asked_at = w.asked_at
+       LEFT JOIN sheet_web_transition t ON t.product_key = w.product_key AND t.asked_at = w.asked_at
        ORDER BY w.asked_at DESC`,
     )
     .all(...args, pageSize, offset) as WebRow[];
@@ -373,10 +397,18 @@ export function webAnswers(db: Db, f: WebAnswerFilter): WebAnswerPage {
     if (!a) {
       const conf = r.confidence === 'high' || r.confidence === 'medium' || r.confidence === 'low' ? r.confidence : undefined;
       a = { key: r.product_key, category: r.category, title: r.title, question: r.question, answer: r.answer, fields: [], ...(conf && { confidence: conf }), status: 'none', store: r.store, at: r.asked_at };
+      if (r.before_state && r.after_state) Object.assign(a, { sheetBefore: r.before_state, sheetAfter: r.after_state });
       items.set(k, a);
     }
     a.fields.push({ field: r.field, ...(r.value !== null && { value: JSON.parse(r.value) as SheetValue }) });
     if (r.value !== null) a.status = 'ok';
+  }
+  // Respostas antigas só conseguem mostrar o estado atual, sem inferir o estado da época.
+  const historical = [...items.values()].filter((item) => !item.sheetAfter);
+  for (const category of new Set(historical.map((item) => item.category))) {
+    const subset = historical.filter((item) => item.category === category);
+    const current = new Map(catalogProducts(db, category, '', [...new Set(subset.map((item) => item.key))]).map((p) => [p.key, sheetState(p)]));
+    for (const item of subset) item.sheetCurrent = current.get(item.key);
   }
   // Os campos na ordem da ficha.
   for (const a of items.values()) {

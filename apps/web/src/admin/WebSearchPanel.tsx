@@ -12,7 +12,7 @@ import {
 } from '@upgradezin/shared';
 import { AdminError, adminApi } from './api.ts';
 import { Box, Table, Td } from './DataPanels.tsx';
-import { countdown, fieldLabels, formatWhen, intervalLabel } from './format.ts';
+import { countdown, fieldLabels, formatWhen, intervalLabel, SHEET_FILTER_LABEL } from './format.ts';
 import { IntervalInputs } from './IntervalInputs.tsx';
 import { useLiveReload } from './live.ts';
 import { Pager } from './Pager.tsx';
@@ -240,7 +240,7 @@ function Answers({ busy, ask, fail }: { busy: boolean; ask: (key?: string) => vo
       ) : !data.items.length ? (
         <p className="text-sm text-zinc-500">Nenhum produto perguntado com esses filtros.</p>
       ) : (
-        <Table head={['Quando', 'Produto', 'Campos', 'Resposta']}>
+        <Table head={['Quando', 'Produto', 'Situação da Ficha', 'Campos', 'Resposta']}>
           {data.items.map((a) => (
             <tr key={`${a.key}|${a.at}`} className="border-t border-zinc-100 align-top dark:border-zinc-800">
               <Td className="whitespace-nowrap text-xs text-zinc-500">{formatWhen(a.at)}</Td>
@@ -259,11 +259,21 @@ function Answers({ busy, ask, fail }: { busy: boolean; ask: (key?: string) => vo
                   type="button"
                   disabled={busy}
                   onClick={() => ask(a.key)}
-                  title="Apaga as respostas deste produto e pergunta de novo, no formato atual."
+                  title="Pesquisa de novo os campos em aberto, preservando os valores encontrados."
                   className="mt-1 rounded border border-zinc-300 px-1.5 py-0.5 text-[11px] hover:border-accent-500 disabled:opacity-50 dark:border-zinc-700"
                 >
                   Refazer
                 </button>
+              </Td>
+              <Td className="min-w-36 text-xs">
+                {a.sheetBefore && a.sheetAfter ? (
+                  <span className="capitalize">{SHEET_FILTER_LABEL[a.sheetBefore]} → <strong>{SHEET_FILTER_LABEL[a.sheetAfter]}</strong></span>
+                ) : (
+                  <>
+                    {a.sheetCurrent && <span className="block">Atual · <strong>{SHEET_FILTER_LABEL[a.sheetCurrent]}</strong></span>}
+                    <span className="text-zinc-500">Histórico indisponível</span>
+                  </>
+                )}
               </Td>
               <Td className="whitespace-nowrap text-xs">
                 {a.fields.map((f) => {

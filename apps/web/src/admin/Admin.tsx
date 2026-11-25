@@ -58,13 +58,13 @@ export function Admin() {
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <header className="border-b border-zinc-200 dark:border-zinc-800">
-        <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3">
+        <div className="mx-auto flex w-full flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
           <a href="/" className="shrink-0 whitespace-nowrap text-lg font-bold tracking-tight">
             Upgradezin<span className="text-accent-500">.</span> <span className="font-medium text-zinc-500">admin</span>
           </a>
           {session.state === 'in' && (
             <>
-              <nav className="flex flex-wrap gap-1">
+              <nav className="order-last flex w-full flex-wrap gap-1 md:order-none md:w-auto md:flex-1">
                 {TABS.map((t) => (
                   <button
                     key={t.id}
@@ -86,7 +86,7 @@ export function Admin() {
           )}
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      <main className="mx-auto w-full px-4 py-6">
         {session.state === 'loading' && <p className="text-zinc-500">Carregando…</p>}
         {session.state === 'disabled' && (
           <p className="text-zinc-500">

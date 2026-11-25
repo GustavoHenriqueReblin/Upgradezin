@@ -100,6 +100,7 @@ Migrações por `PRAGMA user_version` em `apps/server/src/db/db.ts`: só acresce
 | `sheet_pages` | texto da ficha de cada página de produto lida (null: a página não tinha ficha) |
 | `sheet_<categoria>` | os campos lidos de cada página, uma coluna por campo de `SHEET_FIELDS`; as colunas seguem a lista (o servidor cria e apaga ao subir) |
 | `sheet_web` | perguntas e respostas da busca na web, por produto e campo |
+| `sheet_web_transition` | situação da ficha antes e depois de cada consulta registrada (migração 16) |
 | `sheet_manual` | campos preenchidos à mão no admin (têm prioridade) |
 | `sheet_completion` | fichas concluídas manualmente por categoria e produto (migração 15) |
 | `page_errors` | páginas de produto que deram erro (fora da fila de fichas por 6 h; com 2 falhas seguidas, a oferta sai do app) |

@@ -431,7 +431,9 @@ export function productSheet(db: Db, store: StoreId, sku: string): (ProductSheet
  * Produtos de uma categoria vistos desde `since`, com a ficha juntada. Um produto = os anúncios com o
  * mesmo product_key (ou um anúncio sozinho, sem chave).
  */
-export function catalogProducts(db: Db, category: CategoryId, since: string): SheetProduct[] {
+export function catalogProducts(db: Db, category: CategoryId, since: string, keys?: string[]): SheetProduct[] {
+  if (keys?.length === 0) return [];
+  const keyFilter = keys ? `AND COALESCE(l.product_key, 'id:' || l.id) IN (${keys.map(() => '?').join(', ')})` : '';
   const rows = ready(db)
     .prepare(
       `SELECT s.*, l.id, l.store, l.store_sku, l.title, l.url, l.product_key, l.first_seen_at, json_extract(l.offer, '$.inStock') AS in_stock,
@@ -440,10 +442,10 @@ export function catalogProducts(db: Db, category: CategoryId, since: string): Sh
        FROM listings l
        LEFT JOIN sheet_pages p ON p.store = l.store AND p.store_sku = l.store_sku
        LEFT JOIN ${table(category)} s ON s.store = l.store AND s.store_sku = l.store_sku
-       WHERE l.category = ? AND l.last_seen_at >= ?
+       WHERE l.category = ? AND l.last_seen_at >= ? ${keyFilter}
        ORDER BY l.last_seen_at DESC`,
     )
-    .all(category, since) as (Record<string, unknown> & {
+    .all(category, since, ...(keys ?? [])) as (Record<string, unknown> & {
     id: number;
     store: StoreId;
     store_sku: string;
@@ -458,8 +460,8 @@ export function catalogProducts(db: Db, category: CategoryId, since: string): Sh
     has_sheet: number | null;
     page: string | null;
   })[];
-  const web = webSheets(db, category);
-  const manual = manualSheets(db, category);
+  const web = webSheets(db, category, keys);
+  const manual = manualSheets(db, category, keys);
   const completed = new Set((db.prepare('SELECT product_key FROM sheet_completion WHERE category = ?').all(category) as { product_key: string }[]).map((r) => r.product_key));
   const groups = new Map<string, typeof rows>();
   for (const r of rows) {

@@ -106,7 +106,7 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
       { html: aiPage(q!.question, { produto: 'Pichau XYZ', tamanho: 'Mid Tower', placa_de_video_max_mm: 380, confianca: 'alta' }), url, title: '' }
     ));
     const r = await askWeb(db, q!, signal());
-    expect(r).toMatchObject({ status: 'ok', confidence: 'high', store: 's1' });
+    expect(r).toMatchObject({ status: 'ok', confidence: 'high', store: 's1', sheetBefore: 'incomplete', sheetAfter: 'manual' });
     expect(r!.fields.filter((f) => f.value !== undefined)).toEqual([
       { field: 'formFactor', value: 'Mid Tower' },
       { field: 'maxGpuMm', value: 380 },
@@ -123,12 +123,27 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
     expect(webFillStatus(db)).toMatchObject({ answered: 2, queue: 0 });
     // Lista paginada dos já perguntados, com filtros.
     const list = webAnswers(db, { page: 1 });
-    expect(list).toMatchObject({ total: 1, items: [{ key: q!.key, confidence: 'high', status: 'ok' }] });
+    expect(list).toMatchObject({ total: 1, items: [{ key: q!.key, confidence: 'high', status: 'ok', sheetBefore: 'incomplete', sheetAfter: 'manual' }] });
     expect(list.items[0]!.answer).toContain('"tamanho":"Mid Tower"');
     expect(list.items[0]!.fields[0]).toEqual({ field: 'formFactor', value: 'Mid Tower' }); // na ordem da ficha
     expect(webAnswers(db, { status: 'none' }).total).toBe(0);
     expect(webAnswers(db, { category: 'cooler' }).total).toBe(0);
     expect(webAnswers(db, { q: 'pichau' }).total).toBe(1);
+  });
+
+  it('registra a ficha que ficou completa e dá o estado atual às respostas antigas', async () => {
+    const db = caseDb();
+    const [q] = webQueue(db);
+    usePageLoader(async (_s, url) => ({ html: aiPage(q!.question, { produto: 'XYZ', tamanho: 'Mid Tower', placa_de_video_max_mm: 380,
+      cooler_max_mm: 160, frente: 'Mesh', ventoinhas_max: 6, radiadores_mm: [120, 240], confianca: 'alta' }), url, title: '' }));
+    expect(await askWeb(db, q!, signal())).toMatchObject({ sheetBefore: 'incomplete', sheetAfter: 'complete' });
+    expect(webAnswers(db, {}).items[0]).toMatchObject({ sheetBefore: 'incomplete', sheetAfter: 'complete' });
+    db.prepare('DELETE FROM sheet_web_transition').run();
+    const old = webAnswers(db, {}).items[0];
+    expect(old?.sheetBefore).toBeUndefined();
+    expect(old?.sheetAfter).toBeUndefined();
+    expect(old?.sheetCurrent).toBe('complete');
+    db.close();
   });
 
   it('confiança baixa ou sem o JSON: guarda sem valor (não pergunta de novo) e o tamanho entra estimado', async () => {

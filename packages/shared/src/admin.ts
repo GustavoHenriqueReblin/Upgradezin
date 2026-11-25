@@ -394,6 +394,8 @@ export interface WebFillSettings {
 export type WebFillInput = Partial<WebFillSettings>;
 
 /** Uma pergunta feita na busca na web (o JSON da categoria para um produto) e o que voltou. */
+export type WebSheetState = SheetState | 'manual';
+
 export interface WebAnswer {
   key: string;
   category: CategoryId;
@@ -407,6 +409,9 @@ export interface WebAnswer {
   confidence?: 'high' | 'medium' | 'low';
   /** ok: algum valor lido; none: nenhum; blocked: o buscador pediu verificação ou confirmação (nada guardado). */
   status: 'ok' | 'none' | 'blocked';
+  sheetBefore?: WebSheetState;
+  sheetAfter?: WebSheetState;
+  sheetCurrent?: WebSheetState;
   /** Loja cujo navegador fez a pergunta. */
   store: StoreId;
   at: string;

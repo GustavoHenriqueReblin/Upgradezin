@@ -260,6 +260,16 @@ const MIGRATIONS: (string | Rebuild)[] = [
     PRIMARY KEY (category, product_key)
   );
   `,
+  // 16: estado da ficha no momento de cada resposta da web.
+  `
+  CREATE TABLE sheet_web_transition (
+    product_key TEXT NOT NULL,
+    asked_at TEXT NOT NULL,
+    before_state TEXT NOT NULL,
+    after_state TEXT NOT NULL,
+    PRIMARY KEY (product_key, asked_at)
+  );
+  `,
 ];
 
 export type Db = DatabaseSync;

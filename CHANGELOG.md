@@ -4,6 +4,10 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+- O admin aproveita toda a largura disponível em desktop, tablet e celular, com as abas abaixo do cabeçalho em telas estreitas.
+
+- A lista de respostas da busca na web mostra a situação da ficha antes e depois da consulta. Respostas antigas exibem a situação atual quando disponível.
+
 - A fila da busca na web prioriza produtos novos vendidos pela própria loja, primeiro os que têm estoque e depois os esgotados. O admin mostra a quantidade de produtos em cada prioridade.
 
 - A busca na web envia só os campos em aberto e usa a identificação disponível para confirmar a variante em manuais e datasheets. Refazer uma consulta preserva os valores encontrados.

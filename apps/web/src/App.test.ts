@@ -47,6 +47,19 @@ it('aplica a altura compartilhada às ações, inclusive aos links com estilo de
   expect(styles).toMatch(/:is\(button,[^\n]+\.button-link\):not\(\[data-button-layout\]\)\s*\{\s*min-block-size: var\(--button-height\)/);
 });
 
+it('reserva a largura total para os contêineres principais do admin', () => {
+  const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
+  const admin = readFileSync(new URL('./admin/Admin.tsx', import.meta.url), 'utf8');
+  const main = admin.match(/<main[^>]+className="([^"]+)"/)?.[1];
+  const header = admin.match(/<header[^>]*>\s*<div[^>]+className="([^"]+)"/)?.[1];
+  for (const classes of [main, header]) {
+    expect(classes?.split(' ')).toContain('w-full');
+    expect(classes).not.toMatch(/max-w-/);
+  }
+  expect(app).toMatch(/<main[^>]+className="[^"]*\bmax-w-7xl\b/);
+  expect(renderToStaticMarkup(createElement(BuildView, { build: {} }))).toMatch(/^<div class="[^"]*\bmax-w-4xl\b/);
+});
+
 it('mostra o orçamento em largura total e começa com as sugestões recolhidas', () => {
   const noop = () => {};
   const html = renderToStaticMarkup(createElement(PcAnalysis, {
