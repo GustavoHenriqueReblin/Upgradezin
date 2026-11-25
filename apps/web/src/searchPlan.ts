@@ -37,8 +37,8 @@ function plan(category: CategoryId, f: Filters): SearchPlan {
   switch (category) {
     case 'psu': {
       const watts = [...f.watts].sort((a, b) => a - b);
-      if (!watts.length) return notReady('Escolha ao Menos uma Potência');
-      return { ready: true, terms: watts.map((w) => `${w}W`), label: `Buscar Fontes de ${watts.map((w) => `${w}W`).join(', ')}` };
+      if (!watts.length) return notReady('Escolha ao menos uma potência');
+      return { ready: true, terms: watts.map((w) => `${w}W`), label: `Buscar fontes de ${watts.map((w) => `${w}W`).join(', ')}` };
     }
     case 'motherboard': {
       // Uma ou mais plataformas (AMD e Intel juntas): cada uma busca pelos chipsets escolhidos
@@ -48,56 +48,56 @@ function plan(category: CategoryId, f: Filters): SearchPlan {
           const mine = CHIPSETS[s].filter((c) => f.chipsets.includes(c));
           return mine.length ? mine : [s];
         });
-        return { ready: true, terms, label: `Buscar Placas-Mãe ${terms.join(', ')}` };
+        return { ready: true, terms, label: `Buscar placas-mãe ${terms.join(', ')}` };
       }
       if (f.memory.length) {
         const terms = MEMORY_TYPES.filter((m) => f.memory.includes(m)).map((m) => m.toUpperCase());
-        return { ready: true, terms, label: `Buscar Placas-Mãe ${terms.join(', ')}` };
+        return { ready: true, terms, label: `Buscar placas-mãe ${terms.join(', ')}` };
       }
-      return notReady('Escolha a Plataforma ou a Memória');
+      return notReady('Escolha a plataforma ou a memória');
     }
     case 'cpu': {
       // Linhas viram termos ("Ryzen 5"); a plataforma filtra o resultado. Sem linha, busca pela plataforma.
       const socket = f.sockets[0];
       if (f.cpuLines.length) return { ready: true, terms: [...f.cpuLines], label: `Buscar ${f.cpuLines.join(', ')}${socket ? ` ${socket}` : ''}` };
-      if (socket) return { ready: true, terms: [socket], label: `Buscar Processadores ${socket}` };
-      return notReady('Escolha a Plataforma ou a Linha');
+      if (socket) return { ready: true, terms: [socket], label: `Buscar processadores ${socket}` };
+      return notReady('Escolha a plataforma ou a linha');
     }
     case 'gpu': {
       // A busca das lojas não entende série ("RTX 50"): busca pelo fabricante; série, memória e marca filtram.
       const makers = GPU_MAKERS.filter((m) => f.gpuMakers.includes(m));
-      if (!makers.length) return notReady('Escolha o Fabricante do Chip');
+      if (!makers.length) return notReady('Escolha o fabricante do chip');
       const series = f.gpuSeries.length ? ` (${f.gpuSeries.join(', ')})` : '';
       // Mais de um fabricante: uma busca só pela categoria (metade das requisições em cada loja;
       // o fabricante filtra o resultado). Um fabricante: busca direcionada a ele.
       const terms = makers.length > 1 ? [GPU_ANY_QUERY] : [GPU_MAKER_QUERY[makers[0]!]];
-      return { ready: true, terms, label: `Buscar Placas ${makers.map((m) => GPU_MAKER_LABEL[m]).join(', ')}${series}` };
+      return { ready: true, terms, label: `Buscar placas ${makers.map((m) => GPU_MAKER_LABEL[m]).join(', ')}${series}` };
     }
     case 'ram': {
       const type = f.memory.length === 1 ? f.memory[0]!.toUpperCase() : undefined;
-      if (!type) return notReady('Escolha o Tipo de Memória');
+      if (!type) return notReady('Escolha o tipo de memória');
       const caps = [...f.ramCapacity].sort((a, b) => a - b);
-      if (!caps.length) return notReady('Escolha ao Menos uma Capacidade');
-      return { ready: true, terms: caps.map((c) => `${type} ${c}GB`), label: `Buscar Memória ${type} ${caps.map((c) => `${c} GB`).join(', ')}` };
+      if (!caps.length) return notReady('Escolha ao menos uma capacidade');
+      return { ready: true, terms: caps.map((c) => `${type} ${c}GB`), label: `Buscar memória ${type} ${caps.map((c) => `${c} GB`).join(', ')}` };
     }
     case 'ssd': {
       const ifaces = SSD_INTERFACES.filter((i) => f.ssdInterfaces.includes(i));
-      if (!ifaces.length) return notReady('Escolha a Interface');
+      if (!ifaces.length) return notReady('Escolha a interface');
       return { ready: true, terms: ifaces.map((i) => SSD_TERMS[i]), label: `Buscar ${ifaces.map((i) => SSD_TERMS[i]).join(', ')}` };
     }
     case 'cooler': {
       const types = COOLER_TYPES.filter((t) => f.coolerTypes.includes(t));
-      if (!types.length) return notReady('Escolha o Tipo');
+      if (!types.length) return notReady('Escolha o tipo');
       return { ready: true, terms: types.map((t) => COOLER_TERMS[t]), label: `Buscar ${types.map((t) => COOLER_TERMS[t]).join(', ')}` };
     }
     case 'case': {
       // Sem formato: gabinetes em geral. Com formato: um termo por formato, e o resultado mostra onde a placa cabe.
       const ffs = FORM_FACTORS.filter((ff) => f.caseFormFactors.includes(ff));
       const terms = ffs.length ? ffs.map((ff) => CASE_TERMS[ff]) : [CASE_ANY];
-      return { ready: true, terms, label: ffs.length ? `Buscar ${terms.join(', ')}` : 'Buscar Gabinetes' };
+      return { ready: true, terms, label: ffs.length ? `Buscar ${terms.join(', ')}` : 'Buscar gabinetes' };
     }
     default:
-      return notReady('Em Breve');
+      return notReady('Em breve');
   }
 }
 

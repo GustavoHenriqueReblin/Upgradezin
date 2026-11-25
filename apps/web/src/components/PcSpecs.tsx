@@ -4,15 +4,17 @@ import { CATEGORY_DEFS, type PcDrive, type PcPart, type PcProfile } from '@upgra
 import { EFF_LABEL, MEMORY_LABEL, SOCKET_LABEL } from '../format.ts';
 import { PC_SLOTS } from '../pc.ts';
 import { CATEGORY_ICONS } from './CategoryPicker.tsx';
+import { useGpuSheet } from '../pcAnalysis.ts';
 
 /**
  * As peças do PC importado, uma por linha com os detalhes lidos do CPU-Z: processador, placa-mãe,
  * memória, placa de vídeo, fonte (informada pela pessoa), discos e monitores. Usado na prévia da
  * importação e no upgrade pelo orçamento.
  */
-export function PcSpecs({ pc, psu, showPsu = false }: { pc: PcProfile; /** Fonte de fora do relatório (a "Já Tenho" da montagem). */ psu?: PcPart; showPsu?: boolean }) {
+export function PcSpecs({ pc, psu, showPsu = false }: { pc: PcProfile; /** Fonte de fora do relatório (a "Já tenho" da montagem). */ psu?: PcPart; showPsu?: boolean }) {
   const PsuIcon = CATEGORY_ICONS.psu;
   const power = pc.psu ?? psu;
+  const gpuSheet = useGpuSheet(pc.gpu?.specs.gpuModel, pc.gpu?.specs.vram);
   return (
     <ul className="divide-y divide-zinc-200 rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
       {PC_SLOTS.map((slot) => {
@@ -23,7 +25,7 @@ export function PcSpecs({ pc, psu, showPsu = false }: { pc: PcProfile; /** Fonte
             {part ? (
               <>
                 <div className="font-medium">{part.title}</div>
-                <Detail text={detailOf(pc, slot)} />
+                <Detail text={detailOf(pc, slot, slot === 'gpu' ? gpuSheet : undefined)} />
               </>
             ) : slot === 'gpu' && pc.cpu?.specs.igpu ? (
               <div className="text-zinc-500">Vídeo integrado do processador.</div>
@@ -72,7 +74,7 @@ function Row({ icon, label, children }: { icon: ReactNode; label: string; childr
     <li className="flex gap-3 px-3 py-2.5 text-sm">
       <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent-600/10 text-accent-600 dark:text-accent-400">{icon}</div>
       <div className="min-w-0 flex-1">
-        <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{label}</div>
+        <div className="text-xs font-semibold text-zinc-400">{label}</div>
         {children}
       </div>
     </li>
@@ -81,8 +83,11 @@ function Row({ icon, label, children }: { icon: ReactNode; label: string; childr
 
 const Detail = ({ text }: { text: string }) => (text ? <div className="text-xs text-zinc-500">{text}</div> : null);
 
-/** Os detalhes de cada peça, numa linha ("6 núcleos · 12 threads · AM4"). */
-export function detailOf(pc: PcProfile, slot: (typeof PC_SLOTS)[number]): string {
+/**
+ * Os detalhes de cada peça, numa linha ("6 núcleos · 12 threads · AM4"). Na placa de vídeo, `sheet` (a ficha do chip
+ * no catálogo) completa o pouco que o CPU-Z traz; o que ele mediu vem primeiro.
+ */
+export function detailOf(pc: PcProfile, slot: (typeof PC_SLOTS)[number], sheet?: Record<string, number | string | boolean>): string {
   const s = pc[slot]!.specs;
   let parts: (string | number | false | undefined)[] = [];
   if (slot === 'cpu') parts = [s.cores && `${s.cores} núcleos`, s.threads && `${s.threads} threads`, s.socket && SOCKET_LABEL[s.socket], s.tdp && `TDP ${s.tdp} W`, s.igpu === true && 'vídeo integrado'];
@@ -100,7 +105,13 @@ export function detailOf(pc: PcProfile, slot: (typeof PC_SLOTS)[number]): string
       r.runningSpeed && `rodando a ${r.runningSpeed} MHz`,
     ];
   }
-  if (slot === 'gpu') parts = [s.vram && `${s.vram} GB`, s.vramType, pc.gpu!.pcieWidth && `PCIe x${pc.gpu!.pcieWidth}`];
+  if (slot === 'gpu') {
+    const value = (field: string) => (typeof sheet?.[field] === 'number' || typeof sheet?.[field] === 'string' ? sheet[field] : undefined);
+    parts = [
+      s.vram && `${s.vram} GB`, s.vramType ?? value('memType'), value('busBits') && `${value('busBits')} bits`, pc.gpu!.pcieWidth && `PCIe x${pc.gpu!.pcieWidth}`,
+      value('architecture'), value('shaders') && `${value('shaders')} unidades de processamento`, value('tdpW') && `consumo de ${value('tdpW')} W`,
+    ];
+  }
   return parts.filter(Boolean).join(' · ');
 }
 

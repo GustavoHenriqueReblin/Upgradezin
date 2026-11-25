@@ -157,7 +157,7 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
           ? ` Todas cabem na sua fonte de ${psuWatts} W.`
           : ` Sua fonte de ${psuWatts} W não aguenta essas placas: a troca inclui uma fonte a partir de ${psuNeed} W.`
         : psuNeed
-          ? ` Elas pedem fonte a partir de ${psuNeed} W, conforme o modelo: marque a sua como "Já Tenho" na montagem para conferir.`
+          ? ` Elas pedem fonte a partir de ${psuNeed} W, conforme o modelo: marque a sua como "Já tenho" na montagem para conferir.`
           : '';
     const vramNote = gpu?.vram && gpu.vram <= 4 ? ` Com ${gpu.vram} GB de memória de vídeo, jogos atuais já ficam limitados.` : '';
     // As ofertas e a busca só trazem versões com a memória de vídeo atual ou mais (o mesmo chip sai com 8 e 16 GB).
@@ -165,7 +165,7 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
     tips.push({
       id: 'gpu-upgrade',
       kind: 'upgrade',
-      title: pc.gpu ? 'Trocar a Placa de Vídeo' : 'Colocar uma Placa de Vídeo',
+      title: pc.gpu ? 'Trocar a placa de vídeo' : 'Colocar uma placa de vídeo',
       text:
         `O ${cpuName} aguenta uma placa de vídeo bem mais forte que ${pc.gpu ? `a ${gpuName}` : gpuName} em ${screen}.` +
         (named.length ? ` Na faixa certa para ele: ${listNames(named)}.` : models.length ? ` Na faixa certa para ele: ${listNames(models.slice(0, 4))}.` : '') +
@@ -178,7 +178,7 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
       ...(models.length && {
         action: {
           slot: 'gpu',
-          label: 'Ver Placas de Vídeo',
+          label: 'Ver placas de vídeo',
           // Memória de vídeo: a da placa atual ou mais (menos seria downgrade, mesmo com chip melhor).
           filters: { gpuMakers: makers, gpuModels: models, ...(gpu?.vram && { vram: VRAM_SIZES.filter((v) => v >= gpu.vram!) }) },
           // Com a fonte atual servindo (e não sendo simples), só as placas que cabem nela.
@@ -200,11 +200,11 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
       tips.push({
         id: 'cpu-upgrade',
         kind: 'upgrade',
-        title: 'Trocar o Processador',
+        title: 'Trocar o processador',
         text: `A ${gpuName} fica esperando o ${cpuName} em ${screen}. Dá para subir sem trocar a placa-mãe: o melhor para jogos nesse encaixe é o ${top.name}.`,
         action: {
           slot: 'cpu',
-          label: 'Ver Processadores',
+          label: 'Ver processadores',
           // Só o encaixe: quem decide o que sobe é a nota de cada processador pela ficha, não a linha.
           filters: { sockets: [cpu.socket] },
           context: { current: cpuP, target: cpuNeeded(gpuP, res, hz), ...(mb?.chipset && { chipset: mb.chipset }) },
@@ -215,11 +215,11 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
       tips.push({
         id: 'platform-upgrade',
         kind: 'upgrade',
-        title: 'Trocar a Plataforma',
+        title: 'Trocar a plataforma',
         text: `A ${gpuName} fica esperando o ${cpuName} em ${screen}, e esse encaixe não tem processador muito melhor. O próximo passo é trocar processador, placa-mãe e memória juntos.`,
         action: {
           slot: 'cpu',
-          label: 'Ver Processadores Novos',
+          label: 'Ver processadores novos',
           filters: { sockets: next, ...(cpu.cpuBrand !== 'amd' && { cpuLines: ['Core i5', 'Core i7', 'Core Ultra 5', 'Core Ultra 7'] }) },
           context: { current: cpuP, target: cpuNeeded(gpuP, res, hz) },
         },
@@ -242,7 +242,7 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
     tips.push({
       id: 'motherboard',
       kind: 'info',
-      title: ENTRY_CHIPSETS.has(mb.chipset) ? 'Placa-Mãe de Entrada' : 'Limites da Placa-Mãe',
+      title: ENTRY_CHIPSETS.has(mb.chipset) ? 'Placa-mãe de entrada' : 'Limites da placa-mãe',
       text:
         `A ${boardName} (chipset ${mb.chipset}) é uma placa ${ENTRY_CHIPSETS.has(mb.chipset) ? 'de entrada' : 'de geração anterior'}.${parts.length ? ` ${parts.join(' ')}` : ''}` +
         (atTop ? ` Com o ${cpuName} você já está no melhor processador para jogos desse encaixe, então trocar só a placa-mãe rende pouco: ela sai junto no próximo upgrade de plataforma.` : ' Trocar só a placa-mãe raramente vale: ela costuma sair junto com o processador no próximo upgrade.'),
@@ -273,11 +273,11 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
       tips.push({
         id: 'ram-upgrade',
         kind: 'upgrade',
-        title: 'Melhorar a Memória',
+        title: 'Melhorar a memória',
         text: `${reasons.map((r, i) => (i ? r : r[0]!.toUpperCase() + r.slice(1))).join('; ')}. Um kit com 2 pentes resolve${cap < 32 ? ', de preferência 32 GB (2x 16 GB)' : ''}.`,
         action: {
           slot: 'ram',
-          label: 'Ver Memórias',
+          label: 'Ver memórias',
           filters: {
             memory: [memory],
             ramModules: [2],
@@ -291,9 +291,9 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
       tips.push({
         id: 'ram-32',
         kind: 'info',
-        title: '32 GB de Memória É o Recomendado',
+        title: '32 GB de memória é o recomendado',
         text: `${cap} GB ainda roda, mas já fica justo: jogos atuais em Full HD passam de 16 GB com navegador e Discord abertos. Quando for mexer na memória, vá de 32 GB (2x 16 GB).`,
-        action: { slot: 'ram', label: 'Ver Memórias de 32 GB', filters: { memory: [memory], ramModules: [2], ramCapacity: [32] } },
+        action: { slot: 'ram', label: 'Ver memórias de 32 GB', filters: { memory: [memory], ramModules: [2], ramCapacity: [32] } },
       });
     }
   }
@@ -324,7 +324,7 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
         tips.push({
           id: 'system-full',
           kind: 'attention',
-          title: 'Disco do Sistema Quase Cheio',
+          title: 'Disco do sistema quase cheio',
           text: `O disco do Windows está com só ${Math.round(system.freePercent)}% livre. Abaixo de 10–15% o sistema fica lento e as atualizações falham: libere espaço ou mova jogos para outro disco.`,
         });
       }
@@ -336,7 +336,7 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
     tips.push({
       id: 'monitor-hz',
       kind: 'free',
-      title: `Conferir os ${hz} Hz do Monitor`,
+      title: `Conferir os ${hz} Hz do monitor`,
       text: `Seu monitor aceita até ${hz} Hz, mas o Windows às vezes deixa em 60. Confira em Configurações → Sistema → Tela → Tela avançada, e use o cabo DisplayPort ou um HDMI que suporte a taxa.`,
     });
   }
@@ -346,7 +346,7 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
     tips.push({
       id: 'whea',
       kind: 'attention',
-      title: 'Erros de Hardware Registrados',
+      title: 'Erros de hardware registrados',
       text: `O Windows registrou ${pc.wheaErrors} ${pc.wheaErrors === 1 ? 'erro corrigido' : 'erros corrigidos'} de hardware. Costuma vir de memória ou processador no limite (perfil de memória, overclock, undervolt). Se o PC trava ou reinicia, comece por aí.`,
     });
   }
@@ -357,9 +357,9 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
     tips.push({
       id: 'psu-basic',
       kind: 'attention',
-      title: 'Fonte Simples',
+      title: 'Fonte simples',
       text: `Fonte sem PFC ativo e sem certificação 80 Plus de bronze para cima costuma entregar menos do que a potência do rótulo e protege pouco as peças. Antes de uma placa de vídeo mais forte, troque a fonte.`,
-      action: { slot: 'psu', label: 'Ver Fontes', filters: {}, context: { certified: true, ...(psuWatts && { minWatts: psuWatts }) } },
+      action: { slot: 'psu', label: 'Ver fontes', filters: {}, context: { certified: true, ...(psuWatts && { minWatts: psuWatts }) } },
     });
   }
   if (psuWatts && cpuW) {
@@ -368,9 +368,9 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
       tips.push({
         id: 'psu-weak',
         kind: 'attention',
-        title: 'Fonte Abaixo do Consumo',
+        title: 'Fonte abaixo do consumo',
         text: `Sua fonte de ${psuWatts} W fica abaixo do consumo máximo estimado do PC (${estimate} W). Pode desligar em jogos pesados: o recomendado é ${roundUp50(estimate * PSU_HEADROOM)} W.`,
-        action: { slot: 'psu', label: 'Ver Fontes', filters: {}, context: { certified: true, minWatts: roundUp50(estimate * PSU_HEADROOM) } },
+        action: { slot: 'psu', label: 'Ver fontes', filters: {}, context: { certified: true, minWatts: roundUp50(estimate * PSU_HEADROOM) } },
       });
     }
   }

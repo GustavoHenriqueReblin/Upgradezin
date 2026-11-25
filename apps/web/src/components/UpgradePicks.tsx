@@ -43,12 +43,12 @@ export function UpgradePicks({ action }: { action: UpgradeAction }) {
   return (
     <div className="mt-3">
       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        <p className="text-xs font-semibold text-zinc-400">
           {resolving ? 'Resolvem o gargalo, da mais barata' : ranked ? 'Mais desempenho por real, agora' : 'Mais baratas que servem, agora'}
         </p>
         {alternativeKeys.length > 1 && (
           <a href={compareUrl(alternativeKeys)} className="button-link inline-flex items-center gap-2 rounded-lg border border-zinc-300 px-3 text-sm font-medium hover:border-accent-500 dark:border-zinc-700">
-            <ChartColumn aria-hidden="true" className="h-4 w-4" /> Comparar Alternativas
+            <ChartColumn aria-hidden="true" className="h-4 w-4" /> Comparar alternativas
           </a>
         )}
       </div>

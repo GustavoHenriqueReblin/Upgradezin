@@ -1,56 +1,35 @@
-import { accountStorage } from '../account.ts';
 import { useSyncExternalStore } from 'react';
 import { ChartColumn } from 'lucide-react';
-import { CATEGORIES, type CategoryId } from '@upgradezin/shared';
-import { compareKeys, compareUrl, comparisonSelectionKey } from '../compare.ts';
+import type { CategoryId } from '@upgradezin/shared';
+import { compareUrl } from '../compare.ts';
+import { COMPARE_LIMIT, compareSelection, countIn, emptySelection, subscribeCompare, toggleCompare } from '../compareSelection.ts';
+import { actionLabel, CountBadge, headerAction } from './HeaderActions.tsx';
 
-const listeners = new Set<() => void>();
-const memory: Partial<Record<CategoryId, string>> = {};
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  window.addEventListener('storage', listener);
-  return () => {
-    listeners.delete(listener);
-    window.removeEventListener('storage', listener);
-  };
-}
-
-function selection(category: CategoryId): string {
-  try { return accountStorage.getItem(comparisonSelectionKey(category)) ?? memory[category] ?? ''; }
-  catch { return memory[category] ?? ''; }
-}
+export const useCompareSelection = () => useSyncExternalStore(subscribeCompare, compareSelection, emptySelection);
 
 const control = 'button-link inline-flex items-center justify-center gap-2 rounded-lg border border-zinc-300 px-3 text-sm font-medium hover:border-accent-500 dark:border-zinc-700';
 
 export function CompareButton({ category, productKey, iconOnly = false }: { category: CategoryId; productKey: string; iconOnly?: boolean }) {
-  const raw = useSyncExternalStore(subscribe, () => selection(category), () => '');
-  const selected = compareKeys(new URLSearchParams(raw));
-  const active = selected.includes(productKey);
-  const toggle = () => {
-    const next = active ? selected.filter((key) => key !== productKey) : [...selected, productKey];
-    const raw = compareUrl(next).split('?')[1] ?? '';
-    memory[category] = raw;
-    try { accountStorage.setItem(comparisonSelectionKey(category), raw); } catch { /* A seleção continua válida na aba. */ }
-    for (const listener of listeners) listener();
-  };
+  const selection = useCompareSelection();
+  const active = selection.some((entry) => entry.key === productKey);
+  const full = !active && countIn(selection, category) >= COMPARE_LIMIT;
+  const label = active ? 'Remover da comparação' : full ? `Limite de ${COMPARE_LIMIT} por categoria` : 'Comparar';
   return (
-    <button type="button" aria-pressed={active} onClick={toggle}
-      aria-label={active ? 'Remover da Comparação' : 'Comparar'} title={active ? 'Remover da Comparação' : 'Comparar'}
-      className={`${control} shrink-0 aria-pressed:border-accent-500 aria-pressed:bg-accent-500/10 aria-pressed:text-accent-600`}>
-      <ChartColumn aria-hidden="true" className="h-4 w-4" /> {!iconOnly && (active ? 'Remover da Comparação' : 'Comparar')}
+    <button type="button" aria-pressed={active} disabled={full} onClick={() => toggleCompare(category, productKey)} aria-label={label} title={label}
+      className={`${control} shrink-0 disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:border-accent-500 aria-pressed:bg-accent-500/10 aria-pressed:text-accent-600`}>
+      <ChartColumn aria-hidden="true" className="h-4 w-4" /> {!iconOnly && label}
     </button>
   );
 }
 
-const selectedUrl = () => compareUrl(CATEGORIES.flatMap((category) => compareKeys(new URLSearchParams(selection(category)))));
-
-export function CompareLink({ showLabel = false }: { showLabel?: boolean }) {
-  const href = useSyncExternalStore(subscribe, selectedUrl, () => '/comparar');
-  const count = compareKeys(new URLSearchParams(href.split('?')[1])).length;
+/** Atalho do cabeçalho; `active` na página de comparação (em laranja, como a Montagem aberta). */
+export function CompareLink({ showLabel = false, active = false }: { showLabel?: boolean; active?: boolean }) {
+  const selection = useCompareSelection();
+  const count = selection.length;
   return (
-    <a className={`${control} shrink-0`} href={href} aria-label={`Comparar Peças (${count})`} title="Comparar Peças">
-      <ChartColumn aria-hidden="true" className="h-4 w-4" /> {showLabel && <span>Comparar</span>} <span className="tabular-nums">{count}</span>
+    <a className={`${headerAction} ${active ? 'accent-control' : ''}`} aria-current={active ? 'page' : undefined} href={compareUrl(selection.map((entry) => entry.key))} aria-label={count ? `Comparar peças (${count})` : 'Comparar peças'} title="Comparar peças">
+      <ChartColumn aria-hidden="true" className="h-4 w-4" /> <span className={actionLabel(showLabel)}>Comparar</span>
+      <CountBadge count={count} />
     </a>
   );
 }

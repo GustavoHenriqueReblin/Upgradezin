@@ -297,14 +297,14 @@ function Products({
           ))}
         </select>
         <select className={select} value={filters.inStock} onChange={(e) => set({ inStock: e.target.value as OfferFilter })} aria-label="Disponibilidade">
-          <option value="">Com e Sem Estoque</option>
-          <option value="1">Com Estoque</option>
-          <option value="0">Sem Estoque</option>
+          <option value="">Com e sem estoque</option>
+          <option value="1">Com estoque</option>
+          <option value="0">Sem estoque</option>
         </select>
         <select className={select} value={filters.ownRetail} onChange={(e) => set({ ownRetail: e.target.value as OfferFilter })} aria-label="Vendedor">
-          <option value="">Qualquer Vendedor</option>
-          <option value="1">Vendido pela Própria Loja</option>
-          <option value="0">Não Vendido pela Própria Loja</option>
+          <option value="">Qualquer vendedor</option>
+          <option value="1">Vendido pela própria loja</option>
+          <option value="0">Não vendido pela própria loja</option>
         </select>
         <form
           className="flex min-w-0 flex-[1_1_12rem] gap-1"
@@ -399,7 +399,7 @@ function ManualFill({ p, fail, onMessage, edit, onDone }: Shared & { p: SheetPro
   };
   return (
     <div className={`mb-3 rounded-lg border p-2 ${p.needsHuman && !edit ? 'border-amber-500/40 bg-amber-500/5' : 'border-zinc-200 dark:border-zinc-800'}`}>
-      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+      <p className="mb-1 text-xs font-semibold text-zinc-400">
         {edit ? 'Editar à mão (vazio: volta para o valor das lojas, do título ou da web)' : p.needsHuman ? 'Precisa de você: a busca na web não achou' : 'Preencher à mão'}
       </p>
       <div className="grid grid-cols-[auto,1fr] items-center gap-x-3 gap-y-1 text-xs">
@@ -487,12 +487,12 @@ function ProductDetail({ p, names, fail, onMessage, onCompletion }: Shared & { p
           {p.completedManually && <p className="mb-1 text-xs text-zinc-500">Concluída manualmente. Os campos ausentes continuam vazios.</p>}
           <button type="button" disabled={completing} onClick={complete}
             className="rounded-lg border border-zinc-300 px-2.5 py-1 text-xs hover:border-accent-500 disabled:opacity-50 dark:border-zinc-700">
-            {p.completedManually ? 'Reabrir Revisão' : 'Marcar como Concluída'}
+            {p.completedManually ? 'Reabrir revisão' : 'Marcar como concluída'}
           </button>
         </div>
       )}
       <div>
-        <p className="mb-1 flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        <p className="mb-1 flex items-center gap-3 text-xs font-semibold text-zinc-400">
           Anúncios
           <a href={productPath(p.key)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 normal-case tracking-normal text-accent-600 hover:underline dark:text-accent-400">
             Ver página do produto <ExternalLink className="h-3 w-3" />
@@ -540,7 +540,7 @@ function ProductDetail({ p, names, fail, onMessage, onCompletion }: Shared & { p
         ) : (
           (p.missing.length > 0 || p.needsHuman) && <ManualFill p={p} fail={fail} onMessage={onMessage} />
         )}
-        <p className="mb-1 flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        <p className="mb-1 flex items-center gap-3 text-xs font-semibold text-zinc-400">
           Campos
           {!editing && (
             <button type="button" onClick={() => setEditing(true)} className="inline-flex items-center gap-1 normal-case tracking-normal text-accent-600 hover:underline dark:text-accent-400">

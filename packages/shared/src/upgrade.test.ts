@@ -57,7 +57,7 @@ describe('análise do PC importado', () => {
 
   it('placa-mãe de entrada: PCIe 3.0, energia para processador de 105 W, já no topo do encaixe', () => {
     const mb = analyzePc(parseCpuzReport(amd)!).tips.find((t) => t.id === 'motherboard')!;
-    expect(mb).toMatchObject({ kind: 'info', title: 'Placa-Mãe de Entrada' });
+    expect(mb).toMatchObject({ kind: 'info', title: 'Placa-mãe de entrada' });
     expect(mb.text).toMatch(/B450M-DA.*PCIe 3\.0.*VRM.*105 W.*melhor processador para jogos desse encaixe/s);
   });
 
@@ -94,8 +94,8 @@ describe('análise do PC importado', () => {
     const a = analyzePc(
       pcOf({
         cpu: part('cpu', 'Processador AMD Ryzen 5 2600, AM4'),
-        motherboard: part('motherboard', 'Placa-Mãe ASUS B450M, AM4, DDR4'),
-        gpu: part('gpu', 'Placa de Vídeo RTX 4070 12GB'),
+        motherboard: part('motherboard', 'Placa-mãe ASUS B450M, AM4, DDR4'),
+        gpu: part('gpu', 'Placa de vídeo RTX 4070 12GB'),
       }),
     );
     expect(a.balance.verdict).toBe('cpu');
@@ -108,7 +108,7 @@ describe('análise do PC importado', () => {
   });
 
   it('já no topo do encaixe: o próximo passo é trocar a plataforma', () => {
-    const a = analyzePc(pcOf({ cpu: part('cpu', 'Processador AMD Ryzen 7 5800X3D, AM4'), gpu: part('gpu', 'Placa de Vídeo RTX 4090 24GB') }));
+    const a = analyzePc(pcOf({ cpu: part('cpu', 'Processador AMD Ryzen 7 5800X3D, AM4'), gpu: part('gpu', 'Placa de vídeo RTX 4090 24GB') }));
     expect(a.balance.verdict).toBe('cpu');
     expect(a.tips[0]).toMatchObject({ id: 'platform-upgrade', action: { filters: { sockets: ['AM5'] } } });
   });
@@ -116,7 +116,7 @@ describe('análise do PC importado', () => {
   it('só com vídeo integrado: sugere colocar uma placa de vídeo', () => {
     const a = analyzePc(pcOf({ cpu: part('cpu', 'Processador AMD Ryzen 5 5600G, AM4') }));
     expect(a.balance.verdict).toBe('gpu');
-    expect(a.tips[0]).toMatchObject({ id: 'gpu-upgrade', title: 'Colocar uma Placa de Vídeo' });
+    expect(a.tips[0]).toMatchObject({ id: 'gpu-upgrade', title: 'Colocar uma placa de vídeo' });
   });
 
   it('memória pouca, num pente só e lenta para Ryzen: um kit de 2 pentes', () => {
@@ -148,7 +148,7 @@ describe('análise do PC importado', () => {
   });
 
   it('modelo fora da tabela: não chuta o gargalo', () => {
-    const a = analyzePc(pcOf({ cpu: { title: 'Processador Misterioso', specs: {} }, gpu: part('gpu', 'Placa de Vídeo RTX 4060 8GB') }));
+    const a = analyzePc(pcOf({ cpu: { title: 'Processador Misterioso', specs: {} }, gpu: part('gpu', 'Placa de vídeo RTX 4060 8GB') }));
     expect(a.balance).toMatchObject({ verdict: 'unknown', missing: 'o processador Processador Misterioso' });
     expect(a.tips).toEqual([]);
   });

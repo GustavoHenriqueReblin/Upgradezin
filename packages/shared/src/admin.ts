@@ -240,7 +240,7 @@ export interface CoverageRow {
 
 /**
  * Modelo de processador ou placa de vídeo à venda (visto nas lojas nos últimos dias) que a tabela de
- * desempenho (perf.ts) não conhece: fica fora do "Identificar Gargalo" e do ranking de upgrade.
+ * desempenho (perf.ts) não conhece: fica fora do "Identificar gargalo" e do ranking de upgrade.
  */
 export interface PerfGap {
   category: 'cpu' | 'gpu';

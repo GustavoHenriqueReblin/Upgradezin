@@ -13,12 +13,12 @@ const item = (slot: BuildSlot, title: string, offers: Offer[] = [offer('s1', 100
   offers,
 });
 
-const MB_AM4 = item('motherboard', 'Placa-Mãe MSI B550 Gaming Plus, AMD AM4, ATX, DDR4');
+const MB_AM4 = item('motherboard', 'Placa-mãe MSI B550 Gaming Plus, AMD AM4, ATX, DDR4');
 const MB_AM5 = item('motherboard', 'Placa Mãe Gigabyte B850 Eagle WiFi6E, AMD AM5, ATX, DDR5');
 const MB_LGA1700 = item('motherboard', 'Placa Mãe Gigabyte B760M DS3H, Intel LGA 1700, mATX');
 const CPU_5600 = item('cpu', 'Processador AMD Ryzen 5 5600, AM4');
-const CPU_7600 = item('cpu', 'Processador AMD Ryzen 5 7600, AM5, Com Cooler');
-const GPU_4060 = item('gpu', 'Placa de Vídeo Gigabyte RTX 4060 Eagle OC 8GB GDDR6');
+const CPU_7600 = item('cpu', 'Processador AMD Ryzen 5 7600, AM5, com cooler');
+const GPU_4060 = item('gpu', 'Placa de vídeo Gigabyte RTX 4060 Eagle OC 8GB GDDR6');
 
 it('adiciona, valida e remove discos por posição, incluindo apenas compras no total', () => {
   const motherboard = { ...MB_AM4, specs: { m2Slots: 1, sataPorts: 2 } };
@@ -69,7 +69,7 @@ describe('checkCandidate: cada produto do resultado contra o resto da montagem',
     expect(checkCandidate({ motherboard: MB_AM5, cpu: CPU_5600 }, 'motherboard', MB_AM4.specs).status).toBe('ok');
   });
   it('só mostra o que envolve a candidata', () => {
-    const b: SavedBuild = { cpu: item('cpu', 'Processador AMD Ryzen 5 9600X, AM5, Sem Cooler') };
+    const b: SavedBuild = { cpu: item('cpu', 'Processador AMD Ryzen 5 9600X, AM5, sem cooler') };
     const r = checkCandidate(b, 'motherboard', MB_AM5.specs);
     expect(r.issues.map((i) => i.code)).not.toContain('needs-cooler');
   });
@@ -108,7 +108,7 @@ describe('totais', () => {
   });
   it('peça atual (do CPU-Z) fica fora do total e da soma por loja', () => {
     const cpu: BuildItem = { ...CPU_5600, offers: [], current: true };
-    const t = buildTotals({ cpu, gpu: item('gpu', 'Placa de Vídeo Gigabyte RTX 4060 Eagle OC 8GB GDDR6', [offer('s1', 2000)]) });
+    const t = buildTotals({ cpu, gpu: item('gpu', 'Placa de vídeo Gigabyte RTX 4060 Eagle OC 8GB GDDR6', [offer('s1', 2000)]) });
     expect(t).toEqual({ best: 2000, perStore: [{ store: 's1', total: 2000, missing: 0 }], parts: 1, current: 1 });
   });
 });
@@ -148,7 +148,7 @@ describe('guardar no navegador', () => {
 describe('card de resultado sem medida ainda', () => {
   it('placa de vídeo no resultado, com gabinete na montagem: sem "confira o comprimento" (a ficha vem ao escolher)', () => {
     const b = { case: { key: 'c', title: 'Gabinete', specs: { caseFormFactor: 'atx' as const, caseMaxGpu: 400 }, offers: [] } };
-    const r = checkCandidate(b, 'gpu', normalizeListing('gpu', 'Placa de Vídeo Gigabyte RTX 4060 Eagle OC 8GB GDDR6').specs);
+    const r = checkCandidate(b, 'gpu', normalizeListing('gpu', 'Placa de vídeo Gigabyte RTX 4060 Eagle OC 8GB GDDR6').specs);
     expect(r.issues.map((i) => i.code)).not.toContain('case-gpu-unknown');
     // Com a medida (peça já medida), a checagem vale no card também.
     expect(checkCandidate(b, 'gpu', { gpuModel: 'RTX 4060', gpuLength: 420 }).status).toBe('error');

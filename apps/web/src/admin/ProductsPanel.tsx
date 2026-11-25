@@ -163,7 +163,7 @@ function ProductDetail({ p, names }: { p: AdminProduct; names: Map<string, strin
   return (
     <div className="grid gap-4 text-sm md:grid-cols-3">
       <div>
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">Specs do título</p>
+        <p className="mb-1 text-xs font-semibold text-zinc-400">Specs do título</p>
         {pairs.length ? (
           <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5 text-xs">
             {pairs.map(([k, v]) => (
@@ -180,13 +180,13 @@ function ProductDetail({ p, names }: { p: AdminProduct; names: Map<string, strin
       <div>
         {(p.category === 'gpu' || p.category === 'cpu') && (
           <>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">Índice de desempenho</p>
+            <p className="mb-1 text-xs font-semibold text-zinc-400">Índice de desempenho</p>
             <p className="text-xs">{p.perf !== undefined ? `${p.perf} (${p.category === 'gpu' ? 'RTX 3060' : 'Ryzen 5 5600'} = 100)` : 'fora da tabela (aparece em Cobertura → modelos sem índice)'}</p>
           </>
         )}
       </div>
       <div>
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">Anúncio</p>
+        <p className="mb-1 text-xs font-semibold text-zinc-400">Anúncio</p>
         <dl className="space-y-0.5 text-xs">
           <div>Visto pela primeira vez {formatWhen(p.firstSeenAt)}</div>
           <div>Última coleta {formatWhen(p.lastSeenAt)}</div>
@@ -194,7 +194,7 @@ function ProductDetail({ p, names }: { p: AdminProduct; names: Map<string, strin
         <a href={p.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent-600 hover:underline dark:text-accent-400">
           Abrir na loja <ExternalLink className="h-3 w-3" />
         </a>
-        <p className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">Mesmo produto</p>
+        <p className="mb-1 mt-3 text-xs font-semibold text-zinc-400">Mesmo produto</p>
         {p.siblings?.length ? (
           <ul className="space-y-0.5 text-xs">
             {p.siblings.map((x) => (

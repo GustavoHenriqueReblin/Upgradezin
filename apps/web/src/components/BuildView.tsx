@@ -22,7 +22,7 @@ interface Props {
     onClear: () => void;
     /** Peças atuais lidas do relatório do CPU-Z. */
     onImport: (pc: PcProfile) => void;
-    /** "Já Tenho": a peça sai do total e conta como parte do PC atual. */
+    /** "Já tenho": a peça sai do total e conta como parte do PC atual. */
     onOwned: (slot: BuildSlot, owned: boolean, driveIndex?: number) => void;
   };
   /** Título e texto do topo (só leitura: de onde veio a montagem e as ações). */
@@ -58,28 +58,28 @@ export function BuildView({ build, edit, header }: Props) {
       {header ?? (
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Montar Peça por Peça</h2>
+            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Montar peça por peça</h2>
             <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">Escolha as peças e acompanhe a compatibilidade da montagem.</p>
           </div>
           {edit && (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               {hasItems && (
                 <button onClick={edit.onClear} className="text-sm text-zinc-500 hover:text-red-600 hover:underline">
-                  Limpar Montagem
+                  Limpar montagem
                 </button>
               )}
               <button
                 onClick={() => setImporting(true)}
                 className="inline-flex items-center gap-2 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-medium transition hover:border-accent-500 focus-visible:outline-2 focus-visible:outline-accent-500 dark:border-zinc-700 dark:bg-zinc-900"
               >
-                <Cpu className="h-4 w-4" /> Importar Meu PC
+                <Cpu className="h-4 w-4" /> Importar meu PC
               </button>
               {hasItems && <ShareButton build={build} />}
             </div>
           )}
           {edit && importing && (
             <ImportPc
-              // PC já importado (no Identificar Gargalo ou antes): abre direto na prévia, com "Escolher Outro Arquivo".
+              // PC já importado (no Identificar gargalo ou antes): abre direto na prévia, com "Escolher outro arquivo".
               initial={loadPc()}
               onClose={() => setImporting(false)}
               replacing={PC_SLOTS.filter((s) => build[s] && !build[s]!.current).map((s) => `a ${CATEGORY_DEFS[s].name.toLowerCase()}`)}
@@ -225,7 +225,7 @@ export function BuildView({ build, edit, header }: Props) {
               {slot === 'ssd' && item && edit && driveIndex === drives.length - 1 && drives.length < MAX_BUILD_DRIVES && (
                 <button type="button" onClick={() => edit.onOpen('ssd', driveIndex + 1)}
                   className="mt-3 inline-flex items-center gap-2 rounded-lg border border-zinc-300 px-3 text-sm hover:border-accent-500 dark:border-zinc-700">
-                  <Plus className="h-4 w-4" /> Adicionar Disco
+                  <Plus className="h-4 w-4" /> Adicionar disco
                 </button>
               )}
 
@@ -247,7 +247,7 @@ export function BuildView({ build, edit, header }: Props) {
           <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
             <div>
               <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                {totals.parts ? `Total à Vista · ${totals.parts} ${totals.parts === 1 ? 'Peça Nova' : 'Peças Novas'}` : 'Nenhuma Peça Nova Ainda'}
+                {totals.parts ? `Total à vista · ${totals.parts} ${totals.parts === 1 ? 'peça nova' : 'peças novas'}` : 'Nenhuma peça nova ainda'}
               </div>
               <div className="text-2xl font-bold tabular-nums">{brl(totals.best)}</div>
             </div>
@@ -279,7 +279,7 @@ export function BuildView({ build, edit, header }: Props) {
   );
 }
 
-/** "Já Tenho": a peça escolhida numa loja é uma que a pessoa já tem (sai do total). */
+/** "Já tenho": a peça escolhida numa loja é uma que a pessoa já tem (sai do total). */
 function OwnedSwitch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
   return (
     <button
@@ -289,7 +289,7 @@ function OwnedSwitch({ on, onChange }: { on: boolean; onChange: (on: boolean) =>
       title={on ? 'Contar no total de novo' : 'Já tenho esta peça: tirar do total'}
       className="flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
     >
-      Já Tenho
+      Já tenho
       <span className={`relative h-5 w-9 rounded-full transition-colors ${on ? 'bg-accent-500' : 'bg-zinc-300 dark:bg-zinc-700'}`}>
         <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${on ? 'left-[18px]' : 'left-0.5'}`} />
       </span>
@@ -329,7 +329,7 @@ function ShareButton({ build }: { build: SavedBuild }) {
       }`}
     >
       {copied ? <Check className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
-      {state === 'saving' ? 'Gerando Link…' : copied ? 'Link Copiado' : state === 'error' ? 'Não Deu, Tentar de Novo' : 'Compartilhar'}
+      {state === 'saving' ? 'Gerando link…' : copied ? 'Link copiado' : state === 'error' ? 'Não deu, tentar de novo' : 'Compartilhar'}
     </button>
   );
 }

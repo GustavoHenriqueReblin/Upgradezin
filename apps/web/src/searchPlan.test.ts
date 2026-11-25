@@ -28,7 +28,7 @@ describe('planSearch', () => {
   it('processador: linhas viram termos; sem linha, a plataforma', () => {
     expect(planSearch('cpu', f({ cpuLines: ['Ryzen 5', 'Ryzen 7'], sockets: ['AM4'] }))).toMatchObject({ ready: true, terms: ['Ryzen 5', 'Ryzen 7'] });
     expect(planSearch('cpu', f({ sockets: ['LGA1700'] }))).toMatchObject({ ready: true, terms: ['LGA1700'] });
-    expect(planSearch('cpu', f({}))).toMatchObject({ ready: false, label: 'Escolha a Plataforma ou a Linha' });
+    expect(planSearch('cpu', f({}))).toMatchObject({ ready: false, label: 'Escolha a plataforma ou a linha' });
   });
 
   it('placa de vídeo: busca pelo fabricante do chip (a loja não entende série); série filtra', () => {
@@ -37,15 +37,15 @@ describe('planSearch', () => {
     expect(planSearch('gpu', f({ gpuMakers: ['amd', 'nvidia'], gpuSeries: ['RTX 50'] }))).toMatchObject({
       ready: true,
       terms: ['placa de video'],
-      label: 'Buscar Placas NVIDIA, AMD (RTX 50)',
+      label: 'Buscar placas NVIDIA, AMD (RTX 50)',
     });
-    expect(planSearch('gpu', f({ gpuSeries: ['RTX 50'] }))).toMatchObject({ ready: false, label: 'Escolha o Fabricante do Chip' });
+    expect(planSearch('gpu', f({ gpuSeries: ['RTX 50'] }))).toMatchObject({ ready: false, label: 'Escolha o fabricante do chip' });
   });
 
   it('memória: tipo obrigatório e capacidades viram termos', () => {
     expect(planSearch('ram', f({ memory: ['ddr4'], ramCapacity: [32, 16] }))).toMatchObject({ ready: true, terms: ['DDR4 16GB', 'DDR4 32GB'] });
-    expect(planSearch('ram', f({ ramCapacity: [16] }))).toMatchObject({ ready: false, label: 'Escolha o Tipo de Memória' });
-    expect(planSearch('ram', f({ memory: ['ddr5'] }))).toMatchObject({ ready: false, label: 'Escolha ao Menos uma Capacidade' });
+    expect(planSearch('ram', f({ ramCapacity: [16] }))).toMatchObject({ ready: false, label: 'Escolha o tipo de memória' });
+    expect(planSearch('ram', f({ memory: ['ddr5'] }))).toMatchObject({ ready: false, label: 'Escolha ao menos uma capacidade' });
   });
 
   it(`não passa de ${MAX_TERMS} termos (limite da API)`, () => {
@@ -86,7 +86,7 @@ describe('filtros', () => {
     expect(planSearch('motherboard', f({ sockets: ['AM5', 'LGA1700'] }))).toMatchObject({ ready: true, terms: ['AM5', 'LGA1700'] });
     // Chipsets escolhidos só de uma plataforma: a outra busca inteira.
     expect(planSearch('motherboard', f({ sockets: ['AM5', 'LGA1700'], chipsets: ['B650', 'B850'] }))).toMatchObject({ terms: ['B650', 'B850', 'LGA1700'] });
-    expect(planSearch('motherboard', f({ memory: ['ddr5'] }))).toMatchObject({ ready: true, terms: ['DDR5'], label: 'Buscar Placas-Mãe DDR5' });
+    expect(planSearch('motherboard', f({ memory: ['ddr5'] }))).toMatchObject({ ready: true, terms: ['DDR5'], label: 'Buscar placas-mãe DDR5' });
     expect(planSearch('motherboard', f({ memory: ['ddr5', 'ddr4'] }))).toMatchObject({ terms: ['DDR4', 'DDR5'] });
   });
 });
@@ -98,7 +98,7 @@ describe('busca local nos resultados', () => {
   });
 
   it('todas as palavras precisam aparecer, sem diferenciar acento e maiúscula', () => {
-    const offer = o('Placa de Vídeo Gigabyte RTX 5060 WINDFORCE OC 8GB', 'Gigabyte');
+    const offer = o('Placa de vídeo Gigabyte RTX 5060 WINDFORCE OC 8GB', 'Gigabyte');
     expect(matchesText(offer, 'windforce oc')).toBe(true);
     expect(matchesText(offer, 'Vídeo, gigabyte')).toBe(true);
     expect(matchesText(offer, 'windforce eagle')).toBe(false);
@@ -113,12 +113,12 @@ describe('busca local nos resultados', () => {
 
   it('sugere nomes de linha comuns, sem specs, números, marcas nem palavras presentes em quase todos', () => {
     const offers = [
-      o('Placa de Vídeo Gigabyte RTX 5060 Windforce OC 8GB, GDDR7, Ray Tracing', 'Gigabyte'),
-      o('Placa de Vídeo Gigabyte RTX 5070 Windforce OC 12GB, GDDR7, Ray Tracing', 'Gigabyte'),
-      o('Placa de Vídeo MSI RTX 5060 Ventus 2X OC 8GB, GDDR7, DLSS', 'MSI'),
-      o('Placa de Vídeo MSI RTX 5070 Ventus 2X OC 12GB, GDDR7, DLSS', 'MSI'),
-      o('Placa de Vídeo Asus Dual RTX 5060 8GB, GDDR7', 'ASUS'),
-      o('Placa de Vídeo Asus Dual RX 9060 XT OC 16GB, GDDR6', 'ASUS'),
+      o('Placa de vídeo Gigabyte RTX 5060 Windforce OC 8GB, GDDR7, Ray Tracing', 'Gigabyte'),
+      o('Placa de vídeo Gigabyte RTX 5070 Windforce OC 12GB, GDDR7, Ray Tracing', 'Gigabyte'),
+      o('Placa de vídeo MSI RTX 5060 Ventus 2X OC 8GB, GDDR7, DLSS', 'MSI'),
+      o('Placa de vídeo MSI RTX 5070 Ventus 2X OC 12GB, GDDR7, DLSS', 'MSI'),
+      o('Placa de vídeo Asus Dual RTX 5060 8GB, GDDR7', 'ASUS'),
+      o('Placa de vídeo Asus Dual RX 9060 XT OC 16GB, GDDR6', 'ASUS'),
     ];
     const words = commonWords(offers, 12, ['gigabyte', 'msi', 'asus']);
     expect(words).toEqual(expect.arrayContaining(['windforce', 'ventus', 'dual']));
@@ -156,7 +156,7 @@ describe('termos da busca × rotina de coleta', () => {
 describe('SSD, cooler e gabinete', () => {
   it('SSD: interface vira termo; capacidade filtra pela faixa', () => {
     expect(planSearch('ssd', f({ ssdInterfaces: ['sata', 'nvme'] }))).toMatchObject({ ready: true, terms: ['SSD NVMe', 'SSD SATA'] });
-    expect(planSearch('ssd', f({ ssdCapacity: [1000] }))).toMatchObject({ ready: false, label: 'Escolha a Interface' });
+    expect(planSearch('ssd', f({ ssdCapacity: [1000] }))).toMatchObject({ ready: false, label: 'Escolha a interface' });
     const offer = (ssdCapacity: number) => ({ store: 's1', inStock: true, marketplace: false, openbox: false, priceCash: 100, title: '', specs: { ssdCapacity } }) as unknown as Offer;
     expect(applyFilters([offer(480), offer(512), offer(1000)], f({ ssdCapacity: [500], inStockOnly: false })).map((o) => o.specs.ssdCapacity)).toEqual([480, 512]);
   });
@@ -167,7 +167,7 @@ describe('SSD, cooler e gabinete', () => {
   });
 
   it('gabinete: sem formato busca todos; com formato, mostra onde a placa cabe', () => {
-    expect(planSearch('case', f({}))).toMatchObject({ ready: true, terms: ['Gabinete'], label: 'Buscar Gabinetes' });
+    expect(planSearch('case', f({}))).toMatchObject({ ready: true, terms: ['Gabinete'], label: 'Buscar gabinetes' });
     expect(planSearch('case', f({ caseFormFactors: ['atx'] }))).toMatchObject({ terms: ['Gabinete ATX'] });
     const offer = (caseFormFactor?: string) => ({ store: 's1', inStock: true, marketplace: false, openbox: false, priceCash: 100, title: '', specs: { caseFormFactor } }) as unknown as Offer;
     const shown = applyFilters([offer('matx'), offer('atx'), offer('eatx'), offer()], f({ caseFormFactors: ['atx'], inStockOnly: false }));

@@ -4,9 +4,9 @@ import type { BuildIssue, PartStatus } from '@upgradezin/shared';
 const STATUS: Record<PartStatus, { label: string; icon: LucideIcon; cls: string }> = {
   ok: { label: 'Compatível', icon: CircleCheck, cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200' },
   info: { label: 'Compatível', icon: CircleCheck, cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200' },
-  warn: { label: 'Com Ressalva', icon: CircleAlert, cls: 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200' },
+  warn: { label: 'Com ressalva', icon: CircleAlert, cls: 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200' },
   error: { label: 'Incompatível', icon: CircleX, cls: 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200' },
-  unknown: { label: 'Não Confirmado', icon: CircleHelp, cls: 'bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200' },
+  unknown: { label: 'Não confirmado', icon: CircleHelp, cls: 'bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200' },
 };
 
 /** Selo verde/amarelo/vermelho/cinza de uma peça na montagem. */

@@ -12,6 +12,13 @@ describe('dados do PC importado', () => {
     // Memória: total, pentes, tipo, frequência de fábrica e a de agora.
     expect(detailOf(pc, 'ram')).toMatch(/GB · \dx \d+ GB · DDR4 · \d+ MHz de fábrica.* · rodando a \d+ MHz/);
     expect(detailOf(pc, 'gpu')).toMatch(/^8 GB/);
+    // A ficha do chip completa o vídeo; o tipo de memória medido pelo CPU-Z vale sobre o do catálogo.
+    const sheet = { memType: 'GDDR5', busBits: 128, architecture: 'RDNA 2', shaders: 1792, tdpW: 132, lengthMm: 240 };
+    const full = detailOf(pc, 'gpu', sheet);
+    expect(full).toContain('128 bits');
+    expect(full).toContain('RDNA 2 · 1792 unidades de processamento · consumo de 132 W');
+    expect(full).not.toContain('GDDR5');
+    expect(full).not.toContain('240');
   });
 
   it('resumo numa linha para o cartão recolhido: processador, placa de vídeo, memória e fonte', () => {

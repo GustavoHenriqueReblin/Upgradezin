@@ -19,7 +19,7 @@ Instruções para agentes de código que trabalham no Upgradezin (buscador de pr
 
 ## Convenções
 
-- Português do Brasil em textos do site, comentários e documentação; frases naturais. Botões e títulos do site em Title Case ("Levar para a Montagem"); nunca texto técnico na tela.
+- Português do Brasil em textos do site, comentários e documentação; frases naturais. Botões, títulos, abas, rótulos e categorias com só a primeira letra maiúscula ("Levar para a montagem", "Placa de vídeo"); maiúscula no meio só em nomes próprios, marcas, siglas e termos em inglês ("Meu PC", "Full HD", "Mid Tower"). Sem `uppercase`/`capitalize` no CSS. Nunca texto técnico na tela.
 - TypeScript estrito, aspas simples, linhas de até ~200 colunas, comentários que explicam o porquê. Não rode Prettier sem opções (muda o estilo do repositório inteiro).
 - Mudou o leitor de fichas ou a lista de campos: suba `READER_VERSION` em `packages/shared/src/sheet/read.ts` (o servidor relê as páginas guardadas ao subir).
 - Migrações do banco: só acrescente no fim de `apps/server/src/db/db.ts`; nunca edite uma que já rodou.

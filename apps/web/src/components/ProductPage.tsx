@@ -62,13 +62,13 @@ function Content({ page }: { page: ProductPageData }) {
           {page.image ? <img src={page.image} alt="" className="max-h-full max-w-full object-contain" /> : null}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{CATEGORY_DEFS[page.category].name}</div>
+          <div className="text-xs font-semibold text-zinc-500">{CATEGORY_DEFS[page.category].name}</div>
           <h1 className="mt-1 text-lg font-semibold leading-snug sm:text-xl">{page.title}</h1>
           {best ? (
             <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
               <div>
                 <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                  À Vista{price < best.priceCash ? ' com Cupom' : ''} · {storeName(best.store)}
+                  À vista{price < best.priceCash ? ' com Cupom' : ''} · {storeName(best.store)}
                 </div>
                 <div className="text-3xl font-bold tabular-nums">{brl(price)}</div>
                 {low && (
@@ -87,7 +87,7 @@ function Content({ page }: { page: ProductPageData }) {
                   rel="noreferrer"
                   className="button-link flex items-center gap-1.5 rounded-lg accent-control px-4 font-medium"
                 >
-                  Ver na Loja <ExternalLink className="h-4 w-4" />
+                  Ver na loja <ExternalLink className="h-4 w-4" />
                 </a>
                 <CompareButton category={page.category} productKey={page.key} />
               </div>
@@ -108,7 +108,7 @@ function Content({ page }: { page: ProductPageData }) {
 
       {(rest.length > 0 || others.length > 0) && (
         <section className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="border-b border-zinc-100 px-4 py-3 font-semibold dark:border-zinc-800">{best ? 'Outras Ofertas' : 'Onde Comprar'}</h2>
+          <h2 className="border-b border-zinc-100 px-4 py-3 font-semibold dark:border-zinc-800">{best ? 'Outras ofertas' : 'Onde comprar'}</h2>
           {rest.length > 0 && <OfferList offers={rest} />}
           {others.length > 0 && (
             <div className={rest.length ? 'border-t border-zinc-100 dark:border-zinc-800' : ''}>
@@ -127,7 +127,7 @@ function Content({ page }: { page: ProductPageData }) {
       )}
 
       <section className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 className="border-b border-zinc-100 px-4 py-3 font-semibold dark:border-zinc-800">Ficha Técnica</h2>
+        <h2 className="border-b border-zinc-100 px-4 py-3 font-semibold dark:border-zinc-800">Ficha técnica</h2>
         <dl className="grid grid-cols-1 divide-y divide-zinc-100 sm:grid-cols-2 sm:divide-y-0 dark:divide-zinc-800">
           {rows.map((r) => (
             <div key={r.key} className="flex justify-between gap-4 px-4 py-2 text-sm sm:border-b sm:border-zinc-100 sm:dark:border-zinc-800">
@@ -139,7 +139,7 @@ function Content({ page }: { page: ProductPageData }) {
       </section>
 
       <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 className="mb-3 font-semibold">Histórico de Preço</h2>
+        <h2 className="mb-3 font-semibold">Histórico de preço</h2>
         <PriceHistoryBody offers={history} />
       </section>
     </>

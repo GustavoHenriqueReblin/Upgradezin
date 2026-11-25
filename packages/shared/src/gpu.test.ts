@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { extractGpuModel as chipOf, isGpu as gpuTitle } from './gpu.ts';
+import { extractGpuModel as chipOf, gpuSheetFor, isGpu as gpuTitle } from './gpu.ts';
+import type { Offer } from './types.ts';
 
 describe('placas profissionais', () => {
   it('RTX 4000/4500/5000/6000 não são placas de jogos', () => {
@@ -79,5 +80,22 @@ describe('gpuSeriesOf', () => {
 
   it('vem junto nas specs', () => {
     expect(extractGpuSpecs('Placa de Vídeo MSI RTX 5060 8G VENTUS 2X OC, 8GB GDDR7').gpuSeries).toBe('RTX 50');
+  });
+});
+
+describe('ficha da placa de vídeo pelo modelo do chip', () => {
+  const offer = (gpuModel: string, vram: number, sheet: Record<string, number | string | boolean>) => ({ specs: { gpuModel, vram }, sheet }) as unknown as Offer;
+
+  it('fica com o valor mais comum de cada campo do chip e ignora os do modelo da placa', () => {
+    const offers = [
+      offer('RTX 4060 Ti', 8, { architecture: 'Ada Lovelace', busBits: 128, tdpW: 160, boostMhz: 2595, lengthMm: 250 }),
+      offer('RTX 4060 Ti', 8, { architecture: 'Ada Lovelace', busBits: 128, tdpW: 165, shaders: 4352 }),
+      offer('RTX 4060 Ti', 8, { architecture: 'Ada Lovelace', busBits: 192, tdpW: 160 }),
+      offer('RTX 4060 Ti', 16, { architecture: 'Ada Lovelace', busBits: 128, tdpW: 165 }),
+      offer('RTX 4060', 8, { architecture: 'Ada Lovelace', busBits: 128, tdpW: 115 }),
+    ];
+    expect(gpuSheetFor(offers, 'rtx 4060 ti', 8)).toEqual({ architecture: 'Ada Lovelace', busBits: 128, tdpW: 160, shaders: 4352 });
+    expect(gpuSheetFor(offers, 'RTX 4060 Ti')?.tdpW).toBe(160);
+    expect(gpuSheetFor(offers, 'RTX 5090')).toBeUndefined();
   });
 });

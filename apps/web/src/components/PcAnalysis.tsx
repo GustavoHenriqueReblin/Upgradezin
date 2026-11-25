@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ArrowRight, ChevronDown, FileText, Gauge, Trash2, Wallet, Wrench } from 'lucide-react';
-import { analyzePc, CATEGORY_DEFS, CPU_BOUND, GPU_BOUND, type Balance, type PcPart, type PcProfile, type Specs, type TipKind, type UpgradeAction, type Verdict } from '@upgradezin/shared';
+import { analyzePc, CATEGORY_DEFS, CPU_BOUND, GPU_BOUND, type PcPart, type PcProfile, type Specs, type UpgradeAction, type Verdict } from '@upgradezin/shared';
 import { PC_SLOTS } from '../pc.ts';
 import { CATEGORY_ICONS } from './CategoryPicker.tsx';
 import { ImportPc, PcInputActions } from './ImportPc.tsx';
+import { KIND, SCREEN_LABEL, useCpuSheet, VERDICT, verdictSummary } from '../pcAnalysis.ts';
 import { UpgradePicks } from './UpgradePicks.tsx';
 
 interface Props {
   pc: PcProfile | null;
-  /** Fonte que a pessoa marcou como "Já Tenho" na montagem, quando não informou uma na importação. */
+  /** Fonte que a pessoa marcou como "Já tenho" na montagem, quando não informou uma na importação. */
   psu?: Specs;
   psuTitle?: string;
   onImport: (pc: PcProfile) => void;
@@ -16,68 +17,17 @@ interface Props {
   onUpgrade: (action: UpgradeAction) => void;
   onToBuild: () => void;
   onForget: () => void;
-  /** Abre o Montar pelo Orçamento no modo upgrade (sem ela, o card não aparece). */
+  /** Abre o Montar pelo orçamento no modo upgrade (sem ela, o card não aparece). */
   onBudget?: () => void;
 }
 
-const RES_LABEL = { '1080p': 'Full HD', '1440p': 'Quad HD', '4k': '4K' } as const;
 const PART_ROW = 'flex min-h-10 items-center gap-3 px-4 text-sm';
-
-export const VERDICT: Record<Verdict, string> = {
-  gpu: 'A Placa de Vídeo Segura o PC',
-  cpu: 'O Processador Segura o PC',
-  balanced: 'Processador e Placa de Vídeo Equilibrados',
-  unknown: 'Não Deu para Avaliar o Equilíbrio',
-};
-
-export const KIND: Record<TipKind, { label: string; cls: string }> = {
-  upgrade: { label: 'Upgrade', cls: 'bg-accent-500/15 text-accent-700 dark:text-accent-300' },
-  free: { label: 'Grátis', cls: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' },
-  attention: { label: 'Atenção', cls: 'bg-amber-500/15 text-amber-700 dark:text-amber-300' },
-  info: { label: 'Observação', cls: 'bg-zinc-500/15 text-zinc-600 dark:text-zinc-300' },
-};
 
 /** Posição no medidor (0 a 1): escala logarítmica, equilíbrio no meio. */
 const SPAN = Math.log(1.7);
 const pos = (ratio: number) => Math.min(1, Math.max(0, 0.5 + Math.log(ratio) / (2 * SPAN)));
 
-/**
- * Ficha técnica do processador da pessoa: o mesmo modelo no catálogo (GET /api/sheets/cpu). Sem ela
- * (modelo que o catálogo não tem, ou sem resposta), a análise usa a tabela por linha.
- */
-export function useCpuSheet(model: string | undefined): Record<string, number | string | boolean> | undefined {
-  const [sheet, setSheet] = useState<{ model: string; values: Record<string, number | string | boolean> } | undefined>();
-  useEffect(() => {
-    if (!model) return;
-    let alive = true;
-    fetch(`/api/sheets/cpu?model=${encodeURIComponent(model)}`)
-      .then((r) => (r.ok ? (r.json() as Promise<Record<string, number | string | boolean>>) : undefined))
-      .then((values) => alive && values && setSheet({ model, values }))
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [model]);
-  return sheet && sheet.model === model ? sheet.values : undefined;
-}
-
-/** O veredito em uma frase, na tela da pessoa ("Em Full HD, a RTX 3060 fica esperando o Ryzen 5 3600."). */
-export function verdictSummary(pc: PcProfile, balance: Balance): string {
-  const screen = `${RES_LABEL[balance.res]}${balance.hz && balance.hz >= 120 ? ` a ${balance.hz} Hz` : ''}`;
-  const cpuName = pc.cpu?.title ?? 'o processador';
-  const gpuName = pc.gpu?.specs.gpuModel ?? (pc.gpu ? pc.gpu.title : 'o vídeo integrado');
-  return (
-    balance.verdict === 'gpu'
-      ? `Em ${screen}, o ${cpuName} aguenta mais do que ${pc.gpu ? `a ${gpuName}` : gpuName} entrega.`
-      : balance.verdict === 'cpu'
-        ? `Em ${screen}, ${pc.gpu ? `a ${gpuName}` : 'a placa de vídeo'} fica esperando o ${cpuName}.`
-        : balance.verdict === 'balanced'
-          ? `Em ${screen}, processador e placa de vídeo estão equilibrados. Trocar só um deles rende pouco.`
-          : `Não reconheci ${balance.missing} na tabela de desempenho. As outras dicas continuam valendo.`
-  );
-}
-
-/** "Identificar Gargalo": o PC importado do CPU-Z, o que segura o desempenho e o que vale fazer. */
+/** "Identificar gargalo": o PC importado do CPU-Z, o que segura o desempenho e o que vale fazer. */
 export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onPsu, onUpgrade, onToBuild, onForget, onBudget }: Props) {
   /** 'file': importar de novo; 'psu': só informar a fonte (abre na prévia). */
   const [importing, setImporting] = useState<false | 'file' | 'psu'>(false);
@@ -87,7 +37,7 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onPsu, 
 
   const importModal = importing && (
     <ImportPc
-      applyLabel="Analisar Meu PC"
+      applyLabel="Analisar meu PC"
       initial={importing === 'psu' ? pc : null}
       onClose={() => setImporting(false)}
       onApply={(p, fromFile) => {
@@ -103,7 +53,7 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onPsu, 
     return (
       <div className="mx-auto w-full max-w-4xl space-y-5">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Identificar Gargalo</h2>
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Identificar gargalo</h2>
           <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">Veja o que limita o desempenho do seu PC e quais upgrades valem a pena.</p>
         </div>
         <div className="grid overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 md:grid-cols-[minmax(0,1fr)_minmax(15rem,0.57fr)]">
@@ -112,9 +62,9 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onPsu, 
               <Gauge className="h-5 w-5" strokeWidth={1.75} />
             </span>
             <div>
-              <h3 className="font-semibold">Relatório do CPU-Z</h3>
+              <h3 className="font-semibold">Relatório automático</h3>
               <p className="mt-1 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Importe o relatório ou selecione as peças na montagem e marque Já Tenho. O arquivo fica no seu navegador.
+                Importe o relatório ou selecione as peças na montagem e marque Já tenho. O arquivo fica no seu navegador.
               </p>
             </div>
           </div>
@@ -129,7 +79,7 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onPsu, 
 
   const { balance, tips } = analysis;
   const PsuIcon = CATEGORY_ICONS.psu;
-  // A informada aqui vale mais; sem ela, a "Já Tenho" da montagem.
+  // A informada aqui vale mais; sem ela, a "Já tenho" da montagem.
   const psuTitle = pc.psu?.title ?? buildPsuTitle;
   const summary = verdictSummary(pc, balance);
 
@@ -137,7 +87,7 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onPsu, 
     <div className="mx-auto w-full max-w-4xl space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Identificar Gargalo</h2>
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Identificar gargalo</h2>
           <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">Diagnóstico com as peças do seu PC.</p>
           {pc.source === 'manual' && !pc.monitors.length && (
             <p className="mt-1 text-xs text-zinc-500">Sem dados do monitor, a análise considera Full HD a 60 Hz.</p>
@@ -145,16 +95,16 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onPsu, 
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <button onClick={onForget} className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-red-600 hover:underline">
-            <Trash2 className="h-4 w-4" /> Esquecer Meu PC
+            <Trash2 className="h-4 w-4" /> Esquecer meu PC
           </button>
           <button onClick={() => setImporting('file')} className="flex items-center gap-1.5 text-sm text-zinc-500 hover:underline">
-            <FileText className="h-4 w-4" /> {pc.source === 'manual' ? 'Importar Relatório' : 'Trocar Relatório'}
+            <FileText className="h-4 w-4" /> {pc.source === 'manual' ? 'Importar relatório' : 'Trocar relatório'}
           </button>
           <button
             onClick={onToBuild}
             className="inline-flex items-center gap-2 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-medium transition hover:border-zinc-500 focus-visible:outline-2 focus-visible:outline-accent-500 dark:border-zinc-700 dark:bg-zinc-900"
           >
-            <Wrench className="h-4 w-4" /> Levar para a Montagem
+            <Wrench className="h-4 w-4" /> Levar para a montagem
           </button>
         </div>
       </div>
@@ -177,7 +127,7 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onPsu, 
 
         {/* Peças lidas */}
         <section className="min-w-0 rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-          <h3 className="border-b border-zinc-200 px-4 py-3.5 text-sm font-semibold dark:border-zinc-800">Peças do Seu PC</h3>
+          <h3 className="border-b border-zinc-200 px-4 py-3.5 text-sm font-semibold dark:border-zinc-800">Peças do seu PC</h3>
           <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
             {PC_SLOTS.map((slot) => {
               const Icon = CATEGORY_ICONS[slot];
@@ -211,7 +161,7 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onPsu, 
             <Wallet className="h-5 w-5" strokeWidth={1.75} />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block font-semibold">Tem um Valor em Mente?</span>
+            <span className="block font-semibold">Tem um valor em mente?</span>
             <span className="mt-1 block text-sm text-zinc-600 dark:text-zinc-400">Compare upgrades dentro do seu orçamento.</span>
           </span>
           <ArrowRight className="h-5 w-5 shrink-0 text-accent-600 transition group-hover:translate-x-0.5 dark:text-accent-400" />
@@ -222,7 +172,7 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onPsu, 
       <details open={tipsOpen} onToggle={(event) => setTipsOpen(event.currentTarget.open)}
         className="group rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <summary className="flex list-none items-center justify-between gap-3 rounded-2xl p-4 font-semibold sm:px-6 [&::-webkit-details-marker]:hidden">
-          {tips.length ? 'O Que Fazer' : 'Nada a Fazer por Enquanto'}
+          {tips.length ? 'O que fazer' : 'Nada a fazer por enquanto'}
           <ChevronDown className="h-5 w-5 shrink-0 text-zinc-500 transition group-open:rotate-180 dark:text-zinc-400" aria-hidden="true" />
         </summary>
         {tipsOpen && (tips.length ? <ol className="divide-y divide-zinc-200 border-t border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">

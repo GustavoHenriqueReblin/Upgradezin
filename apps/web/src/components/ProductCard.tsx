@@ -54,8 +54,8 @@ export function ProductCard({ group, compareCategory, compat, onPick, picked, re
   // Processador
   if (specs.cores) chips.push({ label: `${specs.cores} Núcleos${specs.threads ? ` / ${specs.threads} Threads` : ''}` });
   if (specs.cpuGen) chips.push({ label: specs.cpuGen });
-  if (specs.igpu !== undefined && specs.cpuLine) chips.push({ label: specs.igpu ? 'Vídeo Integrado' : 'Sem Vídeo Integrado' });
-  if (specs.cooler !== undefined) chips.push({ label: specs.cooler ? 'Com Cooler' : 'Sem Cooler' });
+  if (specs.igpu !== undefined && specs.cpuLine) chips.push({ label: specs.igpu ? 'Vídeo integrado' : 'Sem vídeo integrado' });
+  if (specs.cooler !== undefined) chips.push({ label: specs.cooler ? 'Com cooler' : 'Sem cooler' });
   if (specs.unlocked && specs.cpuBrand === 'intel') chips.push({ label: 'Desbloqueado' });
   // Fonte
   if (specs.watts) chips.push({ label: `${specs.watts} W` });
@@ -89,7 +89,7 @@ export function ProductCard({ group, compareCategory, compat, onPick, picked, re
   if (specs.caseFormFactor) chips.push({ label: `Cabe ${FORM_FACTOR_LABEL[specs.caseFormFactor]}`, cls: HIGHLIGHT });
   if (specs.caseTower) chips.push({ label: CASE_TOWER_LABEL[specs.caseTower] });
   if (specs.caseGlass) chips.push({ label: 'Vidro' });
-  if (specs.caseFans !== undefined) chips.push({ label: specs.caseFans ? `${specs.caseFans} Fans` : 'Sem Fans' });
+  if (specs.caseFans !== undefined) chips.push({ label: specs.caseFans ? `${specs.caseFans} Fans` : 'Sem fans' });
   // Aparência
   if (specs.white) chips.push({ label: 'Branca', cls: 'bg-white text-zinc-800 ring-1 ring-zinc-300 dark:bg-zinc-100' });
   if (specs.rgb) chips.push({ label: 'RGB' });
@@ -145,7 +145,7 @@ export function ProductCard({ group, compareCategory, compat, onPick, picked, re
 
       <div className="mt-auto px-4 pb-2">
         <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-          À Vista{price < best.priceCash ? ' com Cupom' : ''}
+          À vista{price < best.priceCash ? ' com Cupom' : ''}
         </div>
         <div className="text-2xl font-bold tabular-nums">{brl(price)}</div>
         {low && (
@@ -191,7 +191,7 @@ export function ProductCard({ group, compareCategory, compat, onPick, picked, re
         <div className="flex items-center justify-end gap-2 border-t border-zinc-100 p-3 dark:border-zinc-800">
           {onPick && (picked ? (
             <div className="flex flex-1 items-center justify-center gap-1.5 py-1.5 text-sm font-medium text-accent-600 dark:text-accent-400">
-              <Check className="h-4 w-4" /> Na Montagem
+              <Check className="h-4 w-4" /> Na montagem
             </div>
           ) : (
             <button
@@ -202,7 +202,7 @@ export function ProductCard({ group, compareCategory, compat, onPick, picked, re
                   : 'accent-control'
               }`}
             >
-              <Plus className="h-4 w-4" /> {compat?.status === 'error' ? 'Escolher Mesmo Assim' : replacing ? 'Trocar na Montagem' : 'Adicionar à Montagem'}
+              <Plus className="h-4 w-4" /> {compat?.status === 'error' ? 'Escolher mesmo assim' : replacing ? 'Trocar na montagem' : 'Adicionar à montagem'}
             </button>
           ))}
           {compareCategory && compareKey && <CompareButton category={compareCategory} productKey={compareKey} iconOnly />}
@@ -257,7 +257,7 @@ export function PromoLine({ promo }: { promo: NonNullable<Offer['promo']> }) {
 }
 
 /**
- * "Menor Preço em 30 Dias" quando o preço de agora é o menor que o banco viu nesse período.
+ * "Menor preço em 30 dias" quando o preço de agora é o menor que o banco viu nesse período.
  * Só com ao menos 7 dias de acompanhamento (antes disso, qualquer preço seria "o menor").
  */
 export function lowBadge(best: Offer, price: number): string | null {
@@ -266,7 +266,7 @@ export function lowBadge(best: Offer, price: number): string | null {
   const since = Date.parse(h.since);
   const days = (Date.now() - since) / 86_400_000;
   if (days < 7 || price > h.min30 + 0.005) return null;
-  if (days >= 30) return 'Menor Preço em 30 Dias';
+  if (days >= 30) return 'Menor preço em 30 dias';
   const d = new Date(since);
-  return `Menor Preço Desde ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return `Menor preço desde ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
 }

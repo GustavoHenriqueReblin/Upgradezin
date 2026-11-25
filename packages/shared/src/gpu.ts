@@ -1,5 +1,5 @@
 import { isWhite, stripAccents } from './normalize.ts';
-import type { GpuMaker, GpuSpecs } from './types.ts';
+import type { GpuMaker, GpuSpecs, Offer } from './types.ts';
 
 const plain = (title: string) => stripAccents(title).toLowerCase();
 
@@ -79,4 +79,33 @@ export function gpuModelKey(title: string, brand?: string): string {
     .filter((w) => w && !/\d/.test(w) && !NOISE.has(w) && !b.split(' ').includes(w))
     .sort();
   return [b, chip, vram ? `${vram}gb` : '', ...words, isWhite(title) ? 'white' : ''].filter(Boolean).join(' ');
+}
+
+/**
+ * Campos da ficha que são do chip (iguais em toda placa do mesmo modelo e VRAM). Clock, comprimento, ventoinhas,
+ * conectores e fonte recomendada mudam de um fabricante para outro e ficam de fora.
+ */
+export const GPU_CHIP_FIELDS = ['chip', 'silicon', 'architecture', 'memType', 'busBits', 'vramGb', 'shaders', 'bandwidthGbs', 'tdpW', 'pcie'] as const;
+
+/**
+ * Ficha de uma placa de vídeo pelo modelo do chip ("RTX 4060 Ti") e, quando informada, a VRAM: para cada campo do
+ * chip, o valor mais comum entre as fichas das placas desse modelo no catálogo (uma placa com overclock ou um anúncio
+ * errado não decide sozinho; empate fica com o que apareceu primeiro).
+ */
+export function gpuSheetFor(offers: Offer[], model: string, vram?: number): Record<string, number | string | boolean> | undefined {
+  const want = model.trim().toUpperCase();
+  const votes = new Map<string, Map<string, { value: number | string | boolean; count: number }>>();
+  for (const o of offers) {
+    if (o.specs.gpuModel?.toUpperCase() !== want || !o.sheet || (vram !== undefined && o.specs.vram !== vram)) continue;
+    for (const field of GPU_CHIP_FIELDS) {
+      const value = o.sheet[field];
+      if (value === undefined || value === '') continue;
+      const tally = votes.get(field) ?? new Map();
+      const key = String(value).toUpperCase();
+      tally.set(key, { value, count: (tally.get(key)?.count ?? 0) + 1 });
+      votes.set(field, tally);
+    }
+  }
+  if (!votes.size) return undefined;
+  return Object.fromEntries([...votes].map(([field, tally]) => [field, [...tally.values()].reduce((a, b) => (b.count > a.count ? b : a)).value]));
 }

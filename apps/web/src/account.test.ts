@@ -1,4 +1,13 @@
 import { expect, it, vi } from 'vitest';
+import { firstName } from './account.ts';
+
+it('usa só o primeiro nome da conta e nada quando o Google não manda nome', () => {
+  expect(firstName('Maria')).toBe('Maria');
+  expect(firstName('  Ana Paula  Souza ')).toBe('Ana');
+  expect(firstName('')).toBeUndefined();
+  expect(firstName('   ')).toBeUndefined();
+  expect(firstName(undefined)).toBeUndefined();
+});
 
 it('abre a conta pela base e salva apenas mudanças feitas após o login', async () => {
   vi.resetModules();

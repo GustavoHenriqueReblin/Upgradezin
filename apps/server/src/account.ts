@@ -43,13 +43,13 @@ export function configureGoogleLogin(clientId?: string, secret?: string, redirec
       const ticket = await client.verifyIdToken({ idToken: tokens.id_token, audience: clientId });
       const profile = ticket.getPayload();
       if (!profile?.sub || !profile.email || !profile.email_verified || profile.nonce !== nonce) throw new Error('Identidade inválida.');
-      return { sub: profile.sub, email: profile.email, name: profile.given_name || profile.name || 'Minha Conta' };
+      return { sub: profile.sub, email: profile.email, name: profile.given_name || profile.name || '' };
     },
   };
 }
 
 const dataKeys = new Set([
-  'upgradezin.build.v1', 'upgradezin.pc.v1', 'upgradezin.ui.v1', 'upgradezin.budget.v1',
+  'upgradezin.build.v1', 'upgradezin.pc.v1', 'upgradezin.ui.v1', 'upgradezin.budget.v1', 'upgradezin.budget.result.v1', 'upgradezin.compare.v1',
   ...CATEGORIES.map((category) => `upgradezin.compare.${category}`),
 ]);
 const callbackQuery = z.object({ code: z.string().min(1).max(2000).optional(), state: z.string().regex(/^[\w-]{43}$/) });

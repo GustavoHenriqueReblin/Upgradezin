@@ -1,4 +1,4 @@
-/** Interruptor liga/desliga (mesmo visual do "Já Tenho" da montagem), com o estado escrito ao lado. */
+/** Interruptor liga/desliga (mesmo visual do "Já tenho" da montagem), com o estado escrito ao lado. */
 export function Switch({
   on,
   onChange,

@@ -174,7 +174,7 @@ function Box({ title, right, className = '', children }: { title: string; right?
   return (
     <div className={`rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 ${className}`}>
       <div className="mb-2 flex items-baseline justify-between gap-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">{title}</span>
+        <span className="text-xs font-medium text-zinc-500">{title}</span>
         {right && <span className="text-sm font-semibold tabular-nums">{right}</span>}
       </div>
       {children}

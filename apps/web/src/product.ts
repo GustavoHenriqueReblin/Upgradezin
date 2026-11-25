@@ -11,7 +11,7 @@ export function productKeyFromUrl(path = location.pathname): string | null {
   }
 }
 
-/** Novo e vendido pela própria loja (o padrão da busca: "Só Vendido pela Própria Loja"). */
+/** Novo e vendido pela própria loja (o padrão da busca: "Só vendido pela própria loja"). */
 export const trustedOffer = isOwnRetailOffer;
 
 const byStockThenPrice = (a: Offer, b: Offer) => Number(b.inStock) - Number(a.inStock) || effectiveCash(a) - effectiveCash(b);

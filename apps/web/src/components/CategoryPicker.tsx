@@ -37,7 +37,7 @@ export function CategoryPicker({ value, onChange, variant, disabled }: Props) {
             >
               <Icon className="h-9 w-9 text-zinc-500 transition group-enabled:group-hover:text-accent-500" strokeWidth={1.5} />
               <span className="font-medium">{def.name}</span>
-              {!def.enabled && <span className="absolute right-2 top-2 text-[11px] text-zinc-400">Em Breve</span>}
+              {!def.enabled && <span className="absolute right-2 top-2 text-[11px] text-zinc-400">Em breve</span>}
             </button>
           );
         })}
@@ -57,7 +57,7 @@ export function CategoryPicker({ value, onChange, variant, disabled }: Props) {
             disabled={!def.enabled || disabled}
             aria-pressed={active}
             onClick={() => onChange(id)}
-            title={def.enabled ? def.name : `${def.name} (Em Breve)`}
+            title={def.enabled ? def.name : `${def.name} (Em breve)`}
             className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm transition disabled:cursor-not-allowed ${
               active
                 ? 'accent-control'

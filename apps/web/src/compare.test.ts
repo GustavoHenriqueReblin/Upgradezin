@@ -4,8 +4,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { Offer, ProductPage } from '@upgradezin/shared';
 import { parseCpuzReport } from '@upgradezin/shared';
 import amd from '../../../packages/shared/fixtures/cpuz/amd-am4-rx6600.txt?raw';
-import { applyComparisonSelection, compareKeys, compareUrl, comparisonComputer, comparisonCpuCompatibility, comparisonMetrics, comparisonName, groupComparison, rankComparison, relativeGain } from './compare.ts';
-import { searchCategoryFromUrl, withoutSearchCategory } from './uiState.ts';
+import { compareKeys, compareUrl, comparisonComputer, comparisonCpuCompatibility, comparisonMetrics, comparisonName, groupComparison, rankComparison, relativeGain, sameKeys } from './compare.ts';
+import { screenFromUrl, screenUrl, searchCategoryFromUrl } from './uiState.ts';
 import { ComparisonPage } from './components/ComparisonPage.tsx';
 import { ProductPage as ProductView } from './components/ProductPage.tsx';
 import { CatalogHeader } from './components/CatalogHeader.tsx';
@@ -18,19 +18,20 @@ it('usa o mesmo cabeçalho com a marca Upgradezin no produto e no comparador', (
     expect(comparison).toMatch(/href="\/"[^>]*>Upgradezin<span/);
     const product = header(renderToStaticMarkup(createElement(ProductView, { productKey: 'cpu:1' })));
     expect(product).toMatch(/href="\/"[^>]*>Upgradezin<span/);
-    expect(comparison).toMatch(/Upgradezin[\s\S]*Voltar à Busca[\s\S]*Comparar Peças/);
-    expect(comparison).toMatch(/<h1\b[^>]*>Comparar Peças<\/h1>/);
-    expect(product).toMatch(/Upgradezin[\s\S]*Voltar à Busca[\s\S]*Comparar Peças/);
+    expect(comparison).toMatch(/Upgradezin[\s\S]*Voltar à busca[\s\S]*Comparar peças/);
+    // As abas já dizem que é a comparação: o cabeçalho fica sem título, como o do produto.
+    expect(comparison).not.toMatch(/<h1\b/);
+    expect(product).toMatch(/Upgradezin[\s\S]*Voltar à busca[\s\S]*Comparar peças/);
     for (const markup of [product, comparison]) expect(markup).toMatch(/<header[^>]*class="[^"]*sticky top-0/);
   } finally {
     vi.unstubAllGlobals();
   }
 });
 
-it('aponta Voltar à Busca para a categoria, inclusive nas páginas das demais peças', () => {
+it('aponta Voltar à busca para a categoria, inclusive nas páginas das demais peças', () => {
   for (const category of ['cpu', 'gpu', 'motherboard', 'ram', 'ssd', 'psu', 'cooler', 'case'] as const) {
     const html = renderToStaticMarkup(createElement(CatalogHeader, { category }));
-    expect(html).toMatch(new RegExp(`href="/\\?categoria=${category}"[^>]*>[\\s\\S]*?Voltar à Busca`));
+    expect(html).toMatch(new RegExp(`href="/\\?categoria=${category}"[^>]*>[\\s\\S]*?Voltar à busca`));
   }
 });
 
@@ -41,18 +42,27 @@ it('preserva a ordem e todas as chaves únicas na URL, mesmo acima do limite ant
   expect(compareKeys(new URL(compareUrl(keys), url).searchParams)).toEqual(keys);
 });
 
-it('abre a categoria do atalho e incorpora mudanças de outra guia sem apagar as alternativas do link', () => {
+it('abre a categoria do atalho e reconhece o link com as mesmas peças em outra ordem', () => {
   expect(searchCategoryFromUrl('?categoria=gpu')).toBe('gpu');
   expect(searchCategoryFromUrl('?categoria=cpu')).toBe('cpu');
   expect(searchCategoryFromUrl('?categoria=desconhecida')).toBeUndefined();
-  const initial = ['gpu:link', 'cpu:1', 'gpu:3'];
-  expect(applyComparisonSelection(initial, 'peca=gpu%3A3&peca=gpu%3A4', 'peca=gpu%3A4&peca=gpu%3A5')).toEqual(['gpu:link', 'cpu:1', 'gpu:5']);
+  expect(sameKeys(['gpu:1', 'cpu:2'], ['cpu:2', 'gpu:1'])).toBe(true);
+  expect(sameKeys(['gpu:1'], ['gpu:1', 'cpu:2'])).toBe(false);
 });
 
-it('limpa apenas a categoria que abriu a busca, mantendo os demais dados da URL', () => {
-  expect(withoutSearchCategory({ pathname: '/', search: '?categoria=gpu', hash: '' })).toBe('/');
-  expect(withoutSearchCategory({ pathname: '/', search: '?origem=produto&categoria=cpu', hash: '#busca' })).toBe('/?origem=produto#busca');
-  expect(withoutSearchCategory({ pathname: '/', search: '?origem=produto', hash: '' })).toBeUndefined();
+it('leva cada tela do app para a URL e de volta', () => {
+  const screens = [
+    { kind: 'home' }, { kind: 'category', category: 'gpu' }, { kind: 'build' }, { kind: 'pc' },
+    { kind: 'budget', mode: 'full' }, { kind: 'budget', mode: 'upgrade' },
+  ] as const;
+  expect(screens.map(screenUrl)).toEqual(['/', '/?categoria=gpu', '/montagem', '/gargalo', '/orcamento', '/orcamento?modo=upgrade']);
+  for (const screen of screens.slice(1)) {
+    const url = new URL(screenUrl(screen), 'https://app.example');
+    expect(screenFromUrl(url)).toEqual(screen);
+  }
+  expect(screenFromUrl({ pathname: '/', search: '' })).toBeUndefined();
+  expect(screenFromUrl({ pathname: '/montagem/', search: '' })).toEqual({ kind: 'build' });
+  expect(screenFromUrl({ pathname: '/', search: '?categoria=desconhecida' })).toBeUndefined();
 });
 
 it('separa CPU, GPU e placa-mãe e mantém todos os produtos em cada grupo', () => {
@@ -122,8 +132,53 @@ it('mede a troca no índice do PC, mantendo a outra peça, e deixa a estimativa 
 it('mostra o que precisa mudar na plataforma, sem supor compatibilidade quando faltam dados', () => {
   const pc = parseCpuzReport(amd)!;
   expect(comparisonCpuCompatibility(pc, { cpuBrand: 'amd', cpuLine: 'Ryzen 7', cpuModel: '7800X3D', socket: 'AM5' })).toEqual({
-    status: 'Requer Mudança de Plataforma', parts: 'Placa-Mãe AM5 + DDR5',
+    status: 'Requer mudança de plataforma', parts: 'Placa-mãe AM5 + DDR5',
   });
   expect(comparisonCpuCompatibility(pc, pc.cpu!.specs)).toEqual({ status: 'Compatível', parts: 'Nenhum' });
-  expect(comparisonCpuCompatibility(pc, {})).toEqual({ status: 'Compatibilidade a Confirmar', parts: 'A Confirmar' });
+  expect(comparisonCpuCompatibility(pc, {})).toEqual({ status: 'Compatibilidade a confirmar', parts: 'A confirmar' });
+});
+
+it('esconde a contagem do comparador enquanto nenhuma peça foi escolhida', async () => {
+  const { CompareLink } = await import('./components/CompareControls.tsx');
+  const html = renderToStaticMarkup(createElement(CompareLink));
+  expect(html).toContain('aria-label="Comparar peças"');
+  expect(html).not.toContain('tabular-nums');
+});
+
+it('trata o link do cabeçalho como a própria seleção, para remover uma peça atualizar a página', async () => {
+  const { sharedFromUrl } = await import('./components/ComparisonPage.tsx');
+  expect(sharedFromUrl('?peca=gpu%3A1&peca=cpu%3A2', ['cpu:2', 'gpu:1'])).toBeNull();
+  expect(sharedFromUrl('', ['gpu:1'])).toBeNull();
+  expect(sharedFromUrl('?peca=gpu%3A9', ['gpu:1'])).toEqual(['gpu:9']);
+});
+
+it('mantém as abas de processadores e placas de vídeo mesmo sem peças', () => {
+  vi.stubGlobal('location', { search: '' });
+  try {
+    const html = renderToStaticMarkup(createElement(ComparisonPage));
+    expect(html).toMatch(/role="tab"[^>]*aria-selected="true"[^>]*>[\s\S]*?Processadores <span[^>]*>0<\/span>/);
+    expect(html).toMatch(/role="tab"[^>]*aria-selected="false"[^>]*>[\s\S]*?Placas de vídeo <span[^>]*>0<\/span>/);
+    expect(html).toContain('Nenhum processador na comparação.');
+    expect(html).toContain('Nenhuma placa de vídeo na comparação.');
+    expect(html).not.toMatch(/Limpar /);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it('tem título na página e os quatro atalhos no cabeçalho, com a montagem por link', () => {
+  vi.stubGlobal('location', { search: '' });
+  try {
+    const html = renderToStaticMarkup(createElement(ComparisonPage));
+    expect(html).toMatch(/<h1 class="text-2xl font-bold tracking-tight sm:text-3xl">Comparar peças<\/h1>/);
+    const header = html.match(/<header\b[\s\S]*?<\/header>/)?.[0] ?? '';
+    expect(header).toContain('Meu PC');
+    expect(header).toMatch(/<a class="[^"]*accent-control[^"]*" aria-current="page" href="\/comparar"[^>]*aria-label="Comparar peças"/);
+    expect(header).toMatch(/<a href="\/montagem" aria-label="Montagem"/);
+    // Na página do produto, Comparar não fica ativo.
+    const product = renderToStaticMarkup(createElement(CatalogHeader, { category: 'gpu' }));
+    expect(product).not.toContain('aria-current="page"');
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

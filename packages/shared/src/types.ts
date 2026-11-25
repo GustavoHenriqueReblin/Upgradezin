@@ -32,10 +32,10 @@ export interface CategoryDef {
 
 /** Registro único de categorias: UI, validação da API e busca leem daqui. */
 export const CATEGORY_DEFS: Record<CategoryId, CategoryDef> = {
-  motherboard: { id: 'motherboard', name: 'Placa-Mãe', query: 'placa mae', enabled: true },
+  motherboard: { id: 'motherboard', name: 'Placa-mãe', query: 'placa mae', enabled: true },
   cpu: { id: 'cpu', name: 'Processador', query: 'processador', enabled: true },
   ram: { id: 'ram', name: 'Memória RAM', query: 'memoria ram', enabled: true },
-  gpu: { id: 'gpu', name: 'Placa de Vídeo', query: 'placa de video', enabled: true },
+  gpu: { id: 'gpu', name: 'Placa de vídeo', query: 'placa de video', enabled: true },
   psu: { id: 'psu', name: 'Fonte', query: 'fonte', enabled: true },
   ssd: { id: 'ssd', name: 'SSD', query: 'ssd', enabled: true },
   cooler: { id: 'cooler', name: 'Cooler', query: 'cooler', enabled: true },

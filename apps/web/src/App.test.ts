@@ -18,7 +18,7 @@ it('padroniza as ações de informar o PC no orçamento e no diagnóstico', () =
   const noop = () => {};
   const analysis = renderToStaticMarkup(createElement(PcAnalysis, { pc: null, onImport: noop, onUpgrade: noop, onToBuild: noop, onForget: noop }));
   const budget = renderToStaticMarkup(createElement(BudgetView, { mode: 'upgrade', pc: null, build: {}, onImport: noop, onManual: noop, onMode: noop, onToBuild: noop }));
-  const actions = (html: string) => [...html.matchAll(/<button\b[^>]*>(?:(?!<\/button>)[\s\S])*?(?:Importar Meu PC|Informar Peças Manualmente)<\/button>/g)].map(([button]) => button);
+  const actions = (html: string) => [...html.matchAll(/<button\b[^>]*>(?:(?!<\/button>)[\s\S])*?(?:Importar meu PC|Informar peças manualmente)<\/button>/g)].map(([button]) => button);
   expect(actions(analysis)).toHaveLength(2);
   expect(actions(budget)).toEqual(actions(analysis));
 });
@@ -27,14 +27,14 @@ it('mantém as ações principais da montagem manual e da identificação de gar
   const noop = () => {};
   const edit = { onOpen: noop, onRemove: noop, onQty: noop, onClear: noop, onImport: noop, onOwned: noop };
   const build = renderToStaticMarkup(createElement(BuildView, { build: {}, edit }));
-  expect(build).toContain('>Montar Peça por Peça</h2>');
+  expect(build).toContain('>Montar peça por peça</h2>');
   expect(build).toContain('aria-label="Escolher Processador"');
   expect(build).toMatch(/<button[^>]+aria-label="Escolher Processador"[^>]+class="[^"]*accent-control/);
-  expect(build).toContain('Importar Meu PC');
+  expect(build).toContain('Importar meu PC');
   const analysis = renderToStaticMarkup(createElement(PcAnalysis, { pc: null, onImport: noop, onUpgrade: noop, onToBuild: noop, onForget: noop }));
-  expect(analysis).toContain('>Identificar Gargalo</h2>');
-  expect(analysis).toContain('Relatório do CPU-Z');
-  expect(analysis).toContain('Importar Meu PC');
+  expect(analysis).toContain('>Identificar gargalo</h2>');
+  expect(analysis).toContain('Relatório automático');
+  expect(analysis).toContain('Importar meu PC');
 });
 
 it('liga o título da peça à página do catálogo quando alguma oferta tem a chave do produto', () => {
@@ -74,8 +74,8 @@ it('mostra o orçamento em largura total e começa com as sugestões recolhidas'
   const html = renderToStaticMarkup(createElement(PcAnalysis, {
     pc: parseCpuzReport(amd)!, onImport: noop, onUpgrade: noop, onToBuild: noop, onForget: noop, onBudget: noop,
   }));
-  expect(html).toMatch(/<button[^>]*class="[^"]*w-full[^"]*border-accent-500\/35[^"]*"[^>]*>[\s\S]*?Tem um Valor em Mente\?/);
-  expect(html).toMatch(/<details class="[^"]*"><summary[^>]*>O Que Fazer/);
+  expect(html).toMatch(/<button[^>]*class="[^"]*w-full[^"]*border-accent-500\/35[^"]*"[^>]*>[\s\S]*?Tem um valor em mente\?/);
+  expect(html).toMatch(/<details class="[^"]*"><summary[^>]*>O que fazer/);
   expect(html).not.toContain('<h4');
   expect(html.match(/<li class="flex min-h-10 items-center gap-3 px-4 text-sm">/g)).toHaveLength(5);
   expect(html).toMatch(/<span class="text-right font-semibold text-accent-700 dark:text-accent-400">Placa de vídeo limita<\/span>/);
@@ -102,7 +102,7 @@ it('preenche o orçamento salvo sem enviar o pedido ao abrir a tela', () => {
   }
 });
 
-it('exibe os dois tipos de recomendação com PC Comprável Agora como padrão', () => {
+it('exibe os dois tipos de recomendação com PC comprável agora como padrão', () => {
   const noop = () => {};
   const html = renderToStaticMarkup(createElement(BudgetView, { mode: 'full', onMode: noop, pc: null, build: {}, onImport: noop, onToBuild: noop }));
   const inputs = html.match(/<input[^>]*type="radio"[^>]*>/g) ?? [];
@@ -129,18 +129,18 @@ it('usa o mesmo estilo nos três atalhos da tela inicial', () => {
   vi.stubGlobal('__APP_VERSION__', '0.0.0');
   try {
     const html = renderToStaticMarkup(createElement(App));
-    expect(html).toContain('<span>Comparar</span>');
+    expect(html).toContain('>Comparar</span>');
     const buttons = [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)].map(([button]) => button);
     const classes = (label: string) => {
       const button = buttons.find((item) => item.includes(`>${label}</span>`));
       expect(button).toBeDefined();
       return [button!.match(/^<button[^>]* class="([^"]+)"/)?.[1], button!.match(/<svg[^>]* class="([^"]+)"/)?.[1]?.replace(/lucide lucide-[\w-]+ /, '')];
     };
-    const budget = classes('Montar pelo Orçamento');
+    const budget = classes('Montar pelo orçamento');
     expect(budget[0]).toContain('border-zinc-200');
     expect(budget[1]).toContain('text-zinc-500');
-    expect(budget).toEqual(classes('Montar Peça por Peça'));
-    expect(budget).toEqual(classes('Identificar Gargalo'));
+    expect(budget).toEqual(classes('Montar peça por peça'));
+    expect(budget).toEqual(classes('Identificar gargalo'));
   } finally {
     vi.unstubAllGlobals();
   }
@@ -158,7 +158,79 @@ it('resume o processador no atalho de gargalo quando a peça marcada tem um tít
   try {
     const html = renderToStaticMarkup(createElement(App));
     expect(html).toMatch(/class="hidden max-w-\[28%\][^"]*truncate[^"]*" title="[^"]+">Ryzen 7 5700<\/span>/);
-    expect(html).not.toContain(`>${title}<`);
+    // O título completo só aparece no modal Meu PC; o card de gargalo fica com o nome curto.
+    const card = html.match(/<button[^>]*data-button-layout="card"[^>]*>(?:(?!<\/button>)[\s\S])*Identificar gargalo[\s\S]*?<\/button>/)?.[0];
+    expect(card).toContain('>Ryzen 7 5700</span>');
+    expect(card).not.toContain(`>${title}<`);
+    expect(html).toContain(`>${title}<`);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it('abre direto a tela pedida pela URL', () => {
+  vi.stubGlobal('__APP_VERSION__', '0.0.0');
+  const at = (pathname: string, search = '') => {
+    vi.stubGlobal('location', { pathname, search });
+    return renderToStaticMarkup(createElement(App));
+  };
+  try {
+    expect(at('/montagem')).toContain('>Montar peça por peça</h2>');
+    expect(at('/gargalo')).toContain('>Identificar gargalo</h2>');
+    const budget = at('/orcamento', '?modo=upgrade');
+    expect(budget).toContain('>Montar pelo orçamento</h2>');
+    expect(budget).toMatch(/aria-selected="true"[^>]*>Upgrade do meu PC</);
+    expect(at('/orcamento')).toMatch(/aria-selected="true"[^>]*>PC completo</);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it('usa o visual do app no orçamento do PC completo', () => {
+  vi.stubGlobal('localStorage', { getItem: (key: string) => key === 'upgradezin.budget.v1' ? JSON.stringify({ profile: 'productivity' }) : null, setItem: vi.fn() });
+  try {
+    const noop = () => {};
+    const html = renderToStaticMarkup(createElement(BudgetView, { mode: 'full', onMode: noop, pc: null, build: {}, onImport: noop, onToBuild: noop }));
+    // Seleção em laranja, os três perfis numa linha e a pergunta certa para quem não joga.
+    expect(html).toMatch(/<button[^>]+aria-pressed="true"[^>]+class="[^"]*accent-control[^"]*"[^>]*>Full HD<\/button>/);
+    expect(html).toContain('has-checked:border-accent-500');
+    expect(html).toContain('grid gap-2 sm:grid-cols-3');
+    expect(html).toContain('Qual a resolução do monitor?');
+    expect(html).not.toContain('Em que tela vai jogar?');
+    // Mesmo desenho do upgrade: sem painel lateral, abas sublinhadas.
+    expect(html).not.toContain('md:grid-cols-[minmax(0,1fr)');
+    expect(html).toMatch(/role="tab" aria-selected="true"[^>]*class="[^"]*border-accent-500/);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it('alinha as categorias do cabeçalho logo depois do logo, sem centralizar', () => {
+  vi.stubGlobal('__APP_VERSION__', '0.0.0');
+  vi.stubGlobal('location', { pathname: '/montagem', search: '' });
+  try {
+    const header = renderToStaticMarkup(createElement(App)).match(/<header\b[\s\S]*?<\/header>/)?.[0] ?? '';
+    expect(header).toMatch(/<div class="flex min-w-0 justify-start"><nav\b/);
+    expect(header).not.toMatch(/justify-center"><nav\b/);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it('mostra os mesmos quatro atalhos em todo cabeçalho, e a montagem aberta sem nome em tela menor', () => {
+  vi.stubGlobal('__APP_VERSION__', '0.0.0');
+  const at = (pathname: string) => {
+    vi.stubGlobal('location', { pathname, search: '' });
+    return renderToStaticMarkup(createElement(App));
+  };
+  try {
+    for (const html of [at('/'), at('/montagem')]) {
+      expect(html).toContain('aria-label="Meu PC (não informado)"');
+      expect(html).toContain('aria-label="Comparar peças"');
+      expect(html).toMatch(/aria-label="Montagem"/);
+    }
+    // Aberta: em laranja, e o nome só nas telas bem largas, como nos outros atalhos.
+    expect(at('/montagem')).toMatch(/aria-label="Montagem"[^>]*aria-pressed="true"[^>]*accent-control[\s\S]*?<span class="hidden 2xl:inline">Montagem<\/span>/);
   } finally {
     vi.unstubAllGlobals();
   }

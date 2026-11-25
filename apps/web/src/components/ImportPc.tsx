@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Cpu, ExternalLink, FileText, Upload, Wrench, X } from 'lucide-react';
 import { EFFICIENCY_LEVELS, normalizeBrand, PSU_POWERS, type Efficiency, type PcPart, type PcProfile } from '@upgradezin/shared';
 import { loadPc, readReportFile, type ReadResult } from '../pc.ts';
@@ -12,7 +13,7 @@ interface Props {
   onApply: (pc: PcProfile, fromFile: boolean) => void;
   /** Peças que já estão na montagem e serão trocadas. */
   replacing?: string[];
-  /** Texto do botão final (padrão: "Usar na Montagem"). */
+  /** Texto do botão final (padrão: "Usar na montagem"). */
   applyLabel?: string;
   /** PC já importado: abre direto na prévia (ex. para informar a fonte). */
   initial?: PcProfile | null;
@@ -25,12 +26,12 @@ export function PcInputActions({ onImport, onManual }: { onImport: () => void; o
   return (
     <div className="flex flex-wrap justify-center gap-2">
       <button type="button" onClick={onImport} className={`${button} accent-control`}>
-        <Cpu aria-hidden="true" className="h-4 w-4 shrink-0" /> Importar Meu PC
+        <Cpu aria-hidden="true" className="h-4 w-4 shrink-0" /> Importar meu PC
       </button>
       {onManual && (
         <button type="button" onClick={onManual}
           className={`${button} border border-zinc-300 text-zinc-800 hover:border-accent-500 dark:border-zinc-700 dark:text-zinc-100`}>
-          <Wrench aria-hidden="true" className="h-4 w-4 shrink-0" /> Informar Peças Manualmente
+          <Wrench aria-hidden="true" className="h-4 w-4 shrink-0" /> Informar peças manualmente
         </button>
       )}
     </div>
@@ -44,7 +45,7 @@ const ERRORS: Record<Exclude<ReadResult, { ok: true }>['reason'], string> = {
 };
 
 /** Importar o PC atual pelo relatório do CPU-Z: passo a passo, arquivo e o que foi lido. */
-export function ImportPc({ onClose, onApply, replacing = [], applyLabel = 'Usar na Montagem', initial = null }: Props) {
+export function ImportPc({ onClose, onApply, replacing = [], applyLabel = 'Usar na montagem', initial = null }: Props) {
   const [pc, setPc] = useState<PcProfile | null>(initial);
   // A fonte não está no relatório: vem do que a pessoa já informou antes (importar de novo não apaga).
   const [psu, setPsu] = useState<PsuForm>(() => formOf((initial ?? loadPc())?.psu));
@@ -76,7 +77,7 @@ export function ImportPc({ onClose, onApply, replacing = [], applyLabel = 'Usar 
     void read(e.dataTransfer.files[0]);
   };
 
-  return (
+  const modal = (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4" onClick={onClose}>
       <div
         role="dialog"
@@ -86,7 +87,7 @@ export function ImportPc({ onClose, onApply, replacing = [], applyLabel = 'Usar 
       >
         <div className="mb-4 flex items-start gap-3">
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-semibold">Importar Meu PC</h2>
+            <h2 className="text-lg font-semibold">Importar meu PC</h2>
             <p className="text-sm text-zinc-500">As peças que você tem hoje entram na montagem como "Atual". Depois é só trocar o que quiser.</p>
           </div>
           <button onClick={onClose} title="Fechar" className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">
@@ -124,7 +125,7 @@ export function ImportPc({ onClose, onApply, replacing = [], applyLabel = 'Usar 
               }`}
             >
               <Upload className="h-6 w-6 text-accent-600 dark:text-accent-400" />
-              <span className="font-medium">Escolher o Relatório do CPU-Z</span>
+              <span className="font-medium">Escolher o relatório do CPU-Z</span>
               <span className="text-xs text-zinc-500">Arquivo .txt</span>
             </button>
             <input ref={input} type="file" accept=".txt,text/plain" className="hidden" onChange={(e) => void read(e.target.files?.[0])} />
@@ -149,7 +150,7 @@ export function ImportPc({ onClose, onApply, replacing = [], applyLabel = 'Usar 
                 }}
                 className="flex items-center gap-1.5 text-sm text-zinc-500 hover:underline"
               >
-                <FileText className="h-4 w-4" /> Escolher Outro Arquivo
+                <FileText className="h-4 w-4" /> Escolher outro arquivo
               </button>
               <button
                 onClick={() => {
@@ -167,6 +168,9 @@ export function ImportPc({ onClose, onApply, replacing = [], applyLabel = 'Usar 
       </div>
     </div>
   );
+  // Vai direto para o body: aberta de dentro do cabeçalho (atalho Meu PC), o backdrop-blur dele viraria a referência
+  // do position: fixed e a janela ficaria presa na faixa do cabeçalho. No servidor (testes) não há document.
+  return typeof document === 'undefined' ? modal : createPortal(modal, document.body);
 }
 
 // ---------- Fonte (o CPU-Z não mostra) ----------
@@ -213,7 +217,7 @@ const formOf = (p: PcPart | undefined): PsuForm => ({
   watts: p?.specs.watts ? String(p.specs.watts) : '',
   brand: p?.brand ?? '',
   pfc: p?.specs.activePfc === true ? 'yes' : p?.specs.activePfc === false ? 'no' : '',
-  eff: p?.specs.efficiency ?? (p && p.specs.watts && !p.specs.efficiency && p.title.includes('Sem Certificação') ? 'none' : ''),
+  eff: p?.specs.efficiency ?? (p && p.specs.watts && !p.specs.efficiency && p.title.includes('Sem certificação') ? 'none' : ''),
 });
 
 /** Fonte informada: só com a potência (sem ela, nada a conferir). */
@@ -223,7 +227,7 @@ function psuPart(f: PsuForm): PcPart | undefined {
   // Mesma grafia da busca ("corsair" -> "Corsair", "gamemax" -> "GameMax").
   const brand = normalizeBrand(f.brand.trim() || undefined);
   const eff = f.eff && f.eff !== 'none' ? f.eff : undefined;
-  const title = ['Fonte', brand, `${watts}W`, eff ? `80 Plus ${EFF_LABEL[eff]}` : f.eff === 'none' ? 'Sem Certificação' : '', f.pfc === 'yes' ? 'PFC Ativo' : '']
+  const title = ['Fonte', brand, `${watts}W`, eff ? `80 Plus ${EFF_LABEL[eff]}` : f.eff === 'none' ? 'Sem certificação' : '', f.pfc === 'yes' ? 'PFC ativo' : '']
     .filter(Boolean)
     .join(' ');
   return {
@@ -270,14 +274,14 @@ function PsuFields({ value, onChange }: { value: PsuForm; onChange: (f: PsuForm)
             set({ brand: next === OTHER_BRAND ? '' : next });
           }}>
             <option value="">Não sei</option>
-            <option value={OTHER_BRAND}>Outra Marca</option>
+            <option value={OTHER_BRAND}>Outra marca</option>
             {brands.map((b) => (
               <option key={b} value={b}>{b}</option>
             ))}
           </select>
         </label>
         <label className="text-xs text-zinc-500">
-          PFC Ativo
+          PFC ativo
           <select className={`${field} mt-1`} value={value.pfc} onChange={(e) => set({ pfc: e.target.value as PsuForm['pfc'] })}>
             <option value="">Não sei</option>
             <option value="yes">Sim</option>
@@ -285,7 +289,7 @@ function PsuFields({ value, onChange }: { value: PsuForm; onChange: (f: PsuForm)
           </select>
         </label>
         <label className="text-xs text-zinc-500">
-          Eficiência Mínima
+          Eficiência mínima
           <select className={`${field} mt-1`} value={value.eff} onChange={(e) => set({ eff: e.target.value as PsuForm['eff'] })}>
             <option value="">Não sei</option>
             <option value="none">Sem certificação</option>
@@ -298,7 +302,7 @@ function PsuFields({ value, onChange }: { value: PsuForm; onChange: (f: PsuForm)
         </label>
         {otherBrand && (
           <label className="col-span-full text-xs text-zinc-500">
-            Nome da Marca
+            Nome da marca
             <input className={`${field} mt-1`} value={value.brand} onChange={(e) => {
               setManualBrand(true);
               set({ brand: e.target.value });

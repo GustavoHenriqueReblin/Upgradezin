@@ -11,7 +11,7 @@ import {
   type Offer,
   type UpgradeAction,
 } from '@upgradezin/shared';
-import { buildDrives, checkCandidate, editDrive, itemFromGroup, itemFromPc, loadBuild, MAX_QTY, sanitizeBuild, saveBuild, slotFilters, type SavedBuild } from './build.ts';
+import { buildDrives, buildPartCount, checkCandidate, editDrive, itemFromGroup, itemFromPc, loadBuild, MAX_QTY, sanitizeBuild, saveBuild, slotFilters, type SavedBuild } from './build.ts';
 import { discountOf, SORT_LABEL } from './format.ts';
 import { applyFilters, CATEGORY_SORTS, commonWords, DEFAULT_FILTERS, resetResultFilters, type Filters } from './filters.ts';
 import { MAX_TERMS, planSearch } from './searchPlan.ts';
@@ -19,11 +19,13 @@ import { storeIds, storeName } from './stores.ts';
 import { settleStatus, useSearch, type Fresh, type SearchSnapshot } from './useSearch.ts';
 import { BuildView } from './components/BuildView.tsx';
 import { loadSharedBuild, sharedIdFromUrl, type SharedBuild } from './share.ts';
-import { loadUi, saveUi, searchCategoryFromUrl, withoutSearchCategory } from './uiState.ts';
+import { loadUi, saveUi, screenFromUrl, screenUrl, type Screen } from './uiState.ts';
 import { applyPc, clearPc, currentPc, fillPc, forgetPcBuild, loadPc, savePc } from './pc.ts';
 import { PcAnalysis } from './components/PcAnalysis.tsx';
 import { CompareLink } from './components/CompareControls.tsx';
 import { AccountControl } from './components/AccountControl.tsx';
+import { MyPcButton } from './components/MyPc.tsx';
+import { BuildAction } from './components/HeaderActions.tsx';
 import { BudgetView } from './components/BudgetView.tsx';
 import { BUDGET_VISIBLE, lastBudgetMode, type BudgetMode } from './budget.ts';
 import { CategoryPicker } from './components/CategoryPicker.tsx';
@@ -70,23 +72,20 @@ interface CategoryState extends SearchSnapshot {
 
 export function App() {
   const { offers, status, running, lastTerms, fresh, search, cancel, restore } = useSearch();
-  /** Categoria e filtros da última visita (navegador): o app reabre onde estava. */
+  /** Tela pedida pela URL (/montagem, /orcamento, /gargalo, /?categoria=...); em "/" o app reabre onde estava. */
+  const [initialScreen] = useState(() => screenFromUrl(location));
+  /** Categoria e filtros da última visita (navegador). */
   const [initialUi] = useState(() => {
     const saved = loadUi();
-    const category = searchCategoryFromUrl(location.search);
-    return category ? { ...saved, category } : saved;
+    return initialScreen?.kind === 'category' ? { ...saved, category: initialScreen.category } : saved;
   });
   const uiRef = useRef(initialUi);
-  // O link escolhe a categoria uma vez. A partir daí, a navegação usa o estado da tela.
-  useEffect(() => {
-    const url = withoutSearchCategory(location);
-    if (url) history.replaceState(history.state, '', url);
-  }, []);
-  /** Busca a refazer ao abrir (lida antes de qualquer gravação desta visita). */
+  /** Busca a refazer ao abrir (lida antes de qualquer gravação desta visita). Abrindo direto outra tela, não busca em segundo plano. */
   const [resumeAtStart] = useState(() => {
     const c = initialUi.category;
     const s = c ? initialUi.byCategory[c] : undefined;
-    return c && s?.results ? { c, filters: s.filters } : null;
+    const otherScreen = initialScreen && initialScreen.kind !== 'category';
+    return c && s?.results && !otherScreen ? { c, filters: s.filters } : null;
   });
   const [category, setCategory] = useState<CategoryId | null>(() => uiRef.current.category ?? null);
   const [view, setView] = useState<View>('setup');
@@ -99,25 +98,24 @@ export function App() {
 
   /** Montagem do PC: fica no navegador. buildSlot = escolhendo essa peça no resultado. */
   const [build, setBuild] = useState<SavedBuild>(loadBuild);
-  /** PC importado do CPU-Z (Identificar Gargalo). */
+  /** PC importado do CPU-Z (Identificar gargalo). */
   const [report, setReport] = useState(loadPc);
   const pc = useMemo(() => currentPc(report, build), [report, build]);
   const cpuLabel = pc?.cpu && ([pc.cpu.specs.cpuLine, pc.cpu.specs.cpuModel].filter(Boolean).join(' ') || pc.cpu.title);
   const importPc = (next: NonNullable<typeof report>) => {
-    savePc(next);
-    setReport(next);
+    setReport(savePc(next));
     setBuild((current) => applyPc(current, next));
   };
-  const [pcOpen, setPcOpen] = useState(false);
-  const [buildOpen, setBuildOpen] = useState(false);
-  /** Montar pelo Orçamento aberto, e em que modo (PC inteiro ou upgrade do PC importado). */
-  const [budgetOpen, setBudgetOpen] = useState<BudgetMode | null>(null);
+  const [pcOpen, setPcOpen] = useState(initialScreen?.kind === 'pc');
+  const [buildOpen, setBuildOpen] = useState(initialScreen?.kind === 'build');
+  /** Montar pelo orçamento aberto, e em que modo (PC inteiro ou upgrade do PC importado). */
+  const [budgetOpen, setBudgetOpen] = useState<BudgetMode | null>(initialScreen?.kind === 'budget' ? initialScreen.mode : null);
   const [buildSlot, setBuildSlot] = useState<BuildSlot | null>(null);
   const [driveIndex, setDriveIndex] = useState(0);
   const [onlyCompatible, setOnlyCompatible] = useState(true);
   useEffect(() => saveBuild(build), [build]);
 
-  /** Montagem aberta por link (/m/<id>): só leitura, até "Usar Esta Montagem" ou voltar. */
+  /** Montagem aberta por link (/m/<id>): só leitura, até "Usar esta montagem" ou voltar. */
   const [shared, setShared] = useState<{ id: string; state: 'loading' | 'missing' | 'error'; data?: SharedBuild } | null>(() => {
     const id = sharedIdFromUrl();
     return id ? { id, state: 'loading' } : null;
@@ -271,6 +269,41 @@ export function App() {
     setBuildSlot(null);
   };
 
+  // A tela atual vai para a URL: trocar de tela cria uma entrada no histórico (o Voltar do navegador funciona);
+  // trocar só a aba do orçamento substitui a entrada. Montagem aberta por link (/m/<id>) fica fora até sair dela.
+  const screen: Screen = buildOpen ? { kind: 'build' } : pcOpen ? { kind: 'pc' } : budgetOpen ? { kind: 'budget', mode: budgetOpen }
+    : category ? { kind: 'category', category } : { kind: 'home' };
+  const url = screenUrl(screen);
+  const historyRef = useRef({ first: true, fromHistory: false });
+  useEffect(() => {
+    if (shared) return;
+    const flags = historyRef.current;
+    const here = location.pathname + location.search;
+    if (here !== url) {
+      const samePage = location.pathname === url.split('?')[0] && location.pathname !== '/';
+      if (flags.first || flags.fromHistory || samePage) history.replaceState(null, '', url);
+      else history.pushState(null, '', url);
+    }
+    flags.first = false;
+    flags.fromHistory = false;
+  }, [url, shared]);
+  const showScreen = useRef<(next: Screen | undefined) => void>(() => {});
+  showScreen.current = (next) => {
+    if (!next || next.kind === 'home') goHome();
+    else if (next.kind === 'build') openBuild();
+    else if (next.kind === 'pc') openAnalysis();
+    else if (next.kind === 'budget') openBudget(next.mode);
+    else pickCategory(next.category);
+  };
+  useEffect(() => {
+    const onPop = () => {
+      historyRef.current.fromHistory = true;
+      showScreen.current(screenFromUrl(location));
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
   const startSearch = () => {
     if (!category) return;
     const plan = planSearch(category, filters);
@@ -356,38 +389,30 @@ export function App() {
   const compat = useMemo(() => (slot ? new Map(groups.map((g) => [g.key, checkCandidate(build, slot, g.specs, activeDrive)])) : null), [groups, build, slot, activeDrive]);
   const shown = compat && onlyCompatible ? groups.filter((g) => compat.get(g.key)!.status !== 'error') : groups;
   const hiddenIncompatible = groups.length - shown.length;
-  const buildCount = BUILD_SLOTS.filter((s) => build[s]).length + (build.extraDrives?.length ?? 0);
+  const buildCount = buildPartCount(build);
   const pickedItem = pickSlot === 'ssd' ? buildDrives(build)[activeDrive] : pickSlot ? build[pickSlot] : undefined;
 
   const pickPart = (g: Group) => {
     if (!pickSlot) return;
     // Trocar a memória mantém a quantidade escolhida.
     setBuild((b) => pickSlot === 'ssd' ? editDrive(b, activeDrive, itemFromGroup(g)) : ({ ...b, [pickSlot]: { ...itemFromGroup(g), qty: b[pickSlot]?.qty } }));
-    // Vindo da montagem, volta para ela; na busca comum, fica no resultado (o card mostra "Na Montagem").
+    // Vindo da montagem, volta para ela; na busca comum, fica no resultado (o card mostra "Na montagem").
     if (choosing) {
       setBuildSlot(null);
       setBuildOpen(true);
     }
   };
 
-  const buildButton = (
-    <button
-      onClick={openBuild}
-      aria-label={buildCount ? `Montagem (${buildCount})` : 'Montagem'}
-      title="Montagem"
-      className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm transition ${
-        buildOpen ? 'accent-control' : 'border border-zinc-300 hover:border-accent-500 dark:border-zinc-700'
-      }`}
-    >
-      <Wrench className="h-4 w-4" strokeWidth={1.75} />
-      {(!category || buildOpen || pcOpen || budgetOpen) && <span className="hidden sm:inline">Montagem</span>}
-      {buildCount > 0 && (
-        <span className="tabular-nums">
-          {buildCount}
-        </span>
-      )}
-    </button>
-  );
+  // Aberta, a montagem fica em laranja; o nome segue a regra dos outros atalhos (só em telas bem largas).
+  const buildButton = (wide = false) => <BuildAction count={buildCount} active={buildOpen} wide={wide} onClick={openBuild} />;
+
+  /** Esquece o PC: apaga o relatório do CPU-Z e tira as marcações Já tenho da montagem (Gargalo e modal Meu PC). */
+  const forgetPc = () => {
+    clearPc();
+    setReport(null);
+    setBuild(forgetPcBuild);
+  };
+  const myPcButton = (wide = false) => <MyPcButton pc={pc} wide={wide} onAnalyze={openAnalysis} onImport={importPc} onManual={openBuild} onForget={forgetPc} />;
 
   if (shared) {
     const data = shared.data;
@@ -408,18 +433,18 @@ export function App() {
               header={
                 <div className="mb-6 flex flex-wrap items-end gap-3">
                   <div>
-                    <h2 className="text-xl font-semibold">Montagem Compartilhada</h2>
+                    <h2 className="text-xl font-semibold">Montagem compartilhada</h2>
                     <p className="text-sm text-zinc-500">Salva em {when}. Os preços são os mais recentes que o Upgradezin tem.</p>
                   </div>
                   <div className="ml-auto flex items-center gap-3">
                     <button onClick={() => leaveShared(false)} className="text-sm text-zinc-500 hover:underline">
-                      Ir para a Minha Montagem
+                      Ir para a minha montagem
                     </button>
                     <button
                       onClick={() => leaveShared(true)}
                       className="rounded-lg accent-control px-3 py-1.5 text-sm font-medium"
                     >
-                      Usar Esta Montagem
+                      Usar esta montagem
                     </button>
                   </div>
                 </div>
@@ -430,7 +455,7 @@ export function App() {
               {shared.state === 'loading' ? 'Carregando a montagem…' : shared.state === 'missing' ? 'Esta montagem não existe ou o link está errado.' : 'Não foi possível carregar agora.'}{' '}
               {shared.state !== 'loading' && (
                 <button className="font-medium text-accent-600 underline" onClick={() => leaveShared(false)}>
-                  Ir para o Início
+                  Ir para o início
                 </button>
               )}
             </div>
@@ -447,8 +472,10 @@ export function App() {
           <div className="flex items-center justify-between gap-2">
             <h1 className="text-3xl font-bold tracking-tight">Upgradezin<span className="text-accent-500">.</span></h1>
             <div className="flex flex-wrap justify-end gap-2">
+              {myPcButton(true)}
               <CompareLink showLabel />
-              <AccountControl showLabel />
+              {buildButton(true)}
+              <AccountControl showLabel separated />
             </div>
           </div>
           <p className="mb-8 mt-1 text-zinc-500">Qual peça você quer trocar?</p>
@@ -461,7 +488,7 @@ export function App() {
             >
               <Wallet className="h-8 w-8 shrink-0 text-zinc-500 transition group-hover:text-accent-500" strokeWidth={1.5} />
               <span className="flex-1">
-                <span className="block font-medium">Montar pelo Orçamento</span>
+                <span className="block font-medium">Montar pelo orçamento</span>
                 <span className="block text-sm text-zinc-500">Diga quanto quer gastar para montar o PC completo ou o dar um upgrade do seu.</span>
               </span>
             </button>
@@ -473,7 +500,7 @@ export function App() {
           >
             <Wrench className="h-8 w-8 shrink-0 text-zinc-500 transition group-hover:text-accent-500" strokeWidth={1.5} />
             <span className="flex-1">
-              <span className="block font-medium">{BUDGET_VISIBLE ? 'Montar Peça por Peça' : 'Montar o PC'}</span>
+              <span className="block font-medium">{BUDGET_VISIBLE ? 'Montar peça por peça' : 'Montar o PC'}</span>
               <span className="block text-sm text-zinc-500">Peça por peça, com a compatibilidade conferida a cada escolha.</span>
             </span>
             {buildCount > 0 && (
@@ -489,7 +516,7 @@ export function App() {
           >
             <Gauge className="h-8 w-8 shrink-0 text-zinc-500 transition group-hover:text-accent-500" strokeWidth={1.5} />
             <span className="min-w-0 flex-1">
-              <span className="block font-medium">Identificar Gargalo</span>
+              <span className="block font-medium">Identificar gargalo</span>
               <span className="block text-sm text-zinc-500">Veja qual peça limita o desempenho do seu PC e o que vale trocar.</span>
             </span>
             {cpuLabel && <span className="hidden max-w-[28%] shrink-0 truncate rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 sm:block"
@@ -504,22 +531,27 @@ export function App() {
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <header className="sticky top-0 z-20 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
-        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
+        {/* O cabeçalho usa a largura toda (logo e categorias à esquerda, atalhos à direita); o conteúdo continua centralizado. */}
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 lg:gap-6 lg:px-6">
           <button onClick={goHome} className="shrink-0 text-lg font-bold tracking-tight" title="Início">
             Upgradezin<span className="text-accent-500">.</span>
           </button>
-          <CategoryPicker variant="bar" value={buildOpen || budgetOpen || pcOpen ? null : category} onChange={pickCategory} />
-          <div className="ml-auto flex shrink-0 items-center gap-2">
+          {/* Categorias logo depois do logo: começam sempre no mesmo ponto, seja qual for a largura dos atalhos à direita. */}
+          <div className="flex min-w-0 justify-start">
+            <CategoryPicker variant="bar" value={buildOpen || budgetOpen || pcOpen ? null : category} onChange={pickCategory} />
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {myPcButton()}
             <CompareLink />
-            {buildButton}
-            <AccountControl />
+            {buildButton()}
+            <AccountControl separated />
           </div>
         </div>
         {choosing && !buildOpen && (
           <div className="border-t border-accent-200 bg-accent-50 dark:border-accent-900 dark:bg-accent-950/40">
             <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 text-sm text-accent-900 dark:text-accent-200">
               <button onClick={openBuild} className="flex items-center gap-1 font-medium hover:underline">
-                <ArrowLeft className="h-4 w-4" /> Voltar à Montagem
+                <ArrowLeft className="h-4 w-4" /> Voltar à montagem
               </button>
               <span>Escolhendo {CATEGORY_DEFS[choosing].name.toLowerCase()} para a montagem.</span>
             </div>
@@ -548,9 +580,7 @@ export function App() {
             onImport={importPc}
             onPsu={(psu) => {
               if (report) {
-                const next = { ...report, psu };
-                savePc(next);
-                setReport(next);
+                setReport(savePc({ ...report, psu }));
               }
               setBuild((current) => {
                 if (psu) return { ...current, psu: itemFromPc('psu', psu) };
@@ -564,11 +594,7 @@ export function App() {
               if (report) setBuild((b) => fillPc(b, report));
               openBuild();
             }}
-            onForget={() => {
-              clearPc();
-              setReport(null);
-              setBuild(forgetPcBuild);
-            }}
+            onForget={forgetPc}
             onBudget={BUDGET_VISIBLE && (pc?.cpu || pc?.gpu) ? () => openBudget('upgrade') : undefined}
           />
         </main>
@@ -652,9 +678,9 @@ export function App() {
                 onChange={(e) => setFilters({ ...filters, sort: e.target.value as Filters['sort'] })}
                 className="ml-auto rounded-lg border border-zinc-300 bg-white px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
               >
-                <option value="price">Menor Preço à Vista</option>
-                <option value="price-desc">Maior Preço à Vista</option>
-                <option value="discount">Maior Desconto</option>
+                <option value="price">Menor preço à vista</option>
+                <option value="price-desc">Maior preço à vista</option>
+                <option value="discount">Maior desconto</option>
                 {extraSorts.map((s) => (
                   <option key={s} value={s}>
                     {SORT_LABEL[s]}
@@ -667,7 +693,7 @@ export function App() {
               <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={onlyCompatible} onChange={(e) => setOnlyCompatible(e.target.checked)} className="accent-accent-600" />
-                  Só Compatíveis com a Montagem
+                  Só compatíveis com a montagem
                 </label>
                 {onlyCompatible && hiddenIncompatible > 0 && (
                   <span className="text-zinc-500">
@@ -690,7 +716,7 @@ export function App() {
               <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
                 Os filtros estão escondendo {hiddenByFilters} ofertas.
                 <button className="font-medium underline" onClick={() => setFilters(resetResultFilters(filters, category))}>
-                  Limpar Filtros
+                  Limpar filtros
                 </button>
               </div>
             )}
@@ -699,7 +725,7 @@ export function App() {
               <div className="rounded-xl border border-dashed border-zinc-300 p-10 text-center text-zinc-500 dark:border-zinc-700">
                 Nada encontrado.{' '}
                 <button className="font-medium text-accent-600 underline" onClick={() => setView('setup')}>
-                  Alterar Busca
+                  Alterar busca
                 </button>
               </div>
             )}

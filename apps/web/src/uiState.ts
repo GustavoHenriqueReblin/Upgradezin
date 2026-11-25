@@ -21,11 +21,34 @@ export function searchCategoryFromUrl(search: string): CategoryId | undefined {
   return ENABLED_CATEGORIES.find((id) => id === category);
 }
 
-export function withoutSearchCategory({ pathname, search, hash }: Pick<Location, 'pathname' | 'search' | 'hash'>): string | undefined {
-  const params = new URLSearchParams(search);
-  if (!params.has('categoria')) return undefined;
-  params.delete('categoria');
-  return `${pathname}${params.size ? `?${params}` : ''}${hash}`;
+/**
+ * Tela do app na URL, para o Voltar do navegador, o F5 e os links (ex. voltar de uma peça para o orçamento).
+ * A busca fica em /?categoria=..., a montagem em /montagem, o orçamento em /orcamento (?modo=upgrade) e o
+ * gargalo em /gargalo. Em "/" sem categoria, o app reabre a última categoria guardada (ou a tela inicial).
+ */
+export type Screen =
+  | { kind: 'home' }
+  | { kind: 'category'; category: CategoryId }
+  | { kind: 'build' }
+  | { kind: 'pc' }
+  | { kind: 'budget'; mode: 'full' | 'upgrade' };
+
+const PATHS = { build: '/montagem', pc: '/gargalo', budget: '/orcamento' } as const;
+
+export function screenUrl(screen: Screen): string {
+  if (screen.kind === 'home') return '/';
+  if (screen.kind === 'category') return searchCategoryHref(screen.category);
+  if (screen.kind === 'budget') return screen.mode === 'upgrade' ? `${PATHS.budget}?modo=upgrade` : PATHS.budget;
+  return PATHS[screen.kind];
+}
+
+export function screenFromUrl({ pathname, search }: Pick<Location, 'pathname' | 'search'>): Screen | undefined {
+  const path = pathname.replace(/\/+$/, '') || '/';
+  if (path === PATHS.build) return { kind: 'build' };
+  if (path === PATHS.pc) return { kind: 'pc' };
+  if (path === PATHS.budget) return { kind: 'budget', mode: new URLSearchParams(search).get('modo') === 'upgrade' ? 'upgrade' : 'full' };
+  const category = path === '/' ? searchCategoryFromUrl(search) : undefined;
+  return category ? { kind: 'category', category } : undefined;
 }
 
 /** Filtros salvos por uma versão antiga podem não ter campos novos: completa com o padrão e descarta tipos errados. */

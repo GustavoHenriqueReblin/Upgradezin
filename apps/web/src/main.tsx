@@ -69,7 +69,7 @@ async function start() {
             <p>
               Não foi possível carregar agora.{' '}
               <button className="font-medium text-accent-600 underline" onClick={() => location.reload()}>
-                Tentar de Novo
+                Tentar de novo
               </button>
             </p>
           </div>,
@@ -82,7 +82,7 @@ void start().catch(() => {
   root.render(
     <main className="flex min-h-screen items-center justify-center px-4 text-center text-zinc-500">
       <p>Não foi possível carregar a conta.{' '}
-        <button type="button" className="font-medium text-accent-500 underline" onClick={() => location.reload()}>Tentar de Novo</button>
+        <button type="button" className="font-medium text-accent-500 underline" onClick={() => location.reload()}>Tentar de novo</button>
       </p>
     </main>,
   );

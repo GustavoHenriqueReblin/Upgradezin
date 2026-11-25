@@ -7,7 +7,7 @@ import { storeName } from '../stores.ts';
 /**
  * Histórico de preço de um produto: uma linha em degrau por loja (o preço vale até a próxima
  * mudança), à vista com cupom. Trecho tracejado = sem estoque. Passar o mouse mostra o preço de
- * cada loja naquele dia; "Ver Tabela" lista as mudanças.
+ * cada loja naquele dia; "Ver tabela" lista as mudanças.
  */
 
 const DAY = 86_400_000;
@@ -66,7 +66,7 @@ export function PriceHistory({ title, offers, onClose }: { title: string; offers
       >
         <div className="mb-4 flex items-start gap-3">
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-semibold">Histórico de Preço</h2>
+            <h2 className="text-lg font-semibold">Histórico de preço</h2>
             <p className="line-clamp-1 text-sm text-zinc-500" title={title}>
               {title}
             </p>
@@ -124,8 +124,8 @@ export function PriceHistoryBody({ offers }: { offers: Offer[] }) {
         <>
           <div className="mb-4 grid grid-cols-3 gap-3 text-sm">
             <Stat label="Agora" value={current ? brl(current.v!.price) : '—'} sub={current ? storeName(current.store) : 'sem estoque'} />
-            <Stat label="Menor no Período" value={low ? brl(low.price) : '—'} sub={low ? `${storeName(low.store)}, ${day(Math.max(low.from, x0))}` : ''} />
-            <Stat label="Maior no Período" value={high ? brl(high.price) : '—'} sub={high ? `${storeName(high.store)}, ${day(Math.max(high.from, x0))}` : ''} />
+            <Stat label="Menor no período" value={low ? brl(low.price) : '—'} sub={low ? `${storeName(low.store)}, ${day(Math.max(low.from, x0))}` : ''} />
+            <Stat label="Maior no período" value={high ? brl(high.price) : '—'} sub={high ? `${storeName(high.store)}, ${day(Math.max(high.from, x0))}` : ''} />
           </div>
 
           <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -155,7 +155,7 @@ export function PriceHistoryBody({ offers }: { offers: Offer[] }) {
           <div className="mt-3 flex items-center justify-between text-xs text-zinc-500">
             <span>À vista com cupom. Tracejado: sem estoque. Acompanhado desde {dayFull(first)}.</span>
             <button onClick={() => setTable((v) => !v)} className="font-medium text-accent-600 hover:underline dark:text-accent-400">
-              {table ? 'Ver Gráfico' : 'Ver Tabela'}
+              {table ? 'Ver gráfico' : 'Ver tabela'}
             </button>
           </div>
         </>
@@ -326,7 +326,7 @@ function HistoryTable({ data }: { data: ListingHistory[] }) {
           <tr>
             <th className="px-3 py-2 font-medium">Data</th>
             <th className="px-3 py-2 font-medium">Loja</th>
-            <th className="px-3 py-2 text-right font-medium">À Vista com Cupom</th>
+            <th className="px-3 py-2 text-right font-medium">À vista com cupom</th>
             <th className="px-3 py-2 font-medium">Estoque</th>
           </tr>
         </thead>

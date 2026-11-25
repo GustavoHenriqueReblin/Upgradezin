@@ -33,7 +33,7 @@ Fora do escopo: marketplaces abertos, usado/recondicionado, checkout, afiliados,
 
 No admin, fichas em revisão podem ser concluídas com campos pendentes e reabertas. O monitoramento do servidor continua ativo em qualquer aba do painel.
 
-O PC atual pode ser informado marcando Já Tenho nas peças da montagem ou importando um relatório do CPU-Z. Os dois caminhos alimentam o diagnóstico e as sugestões de upgrade. A importação coloca as peças na montagem automaticamente.
+O PC atual pode ser informado marcando Já tenho nas peças da montagem ou importando um relatório do CPU-Z. Os dois caminhos alimentam o diagnóstico e as sugestões de upgrade. A importação coloca as peças na montagem automaticamente.
 
 ### Implementadas
 
@@ -41,12 +41,12 @@ O PC atual pode ser informado marcando Já Tenho nas peças da montagem ou impor
 |---|---|---|
 | Busca por categoria | Formulário por categoria (potência, soquete, chipset, memória, linha de processador, fabricante de placa de vídeo, capacidade etc.) com a contagem de produtos em estoque em cada opção; o resultado vem do banco, filtrado pelas specs da ficha | §7, §9 |
 | Filtros do resultado | Calculados dos próprios resultados, com contagem; filtros genéricos para cada campo da ficha; ordenações por categoria (R$ por watt, por GB, por TB…) | §7 |
-| Produto | Página do produto (`/produto/<chave>`) com as ofertas de todas as lojas, a ficha completa e o histórico de preço (30/90 dias/tudo), selo "Menor Preço em 30 Dias" | §9 |
-| Comparador | Seleção de peças de várias categorias, com tabelas separadas e rolagem horizontal. CPUs e GPUs têm índices de jogos e, com o PC atual informado, estimativas de ganho e equilíbrio | §14 |
+| Produto | Página do produto (`/produto/<chave>`) com as ofertas de todas as lojas, a ficha completa e o histórico de preço (30/90 dias/tudo), selo "Menor preço em 30 dias" | §9 |
+| Comparador | Seleção de peças de várias categorias (até 5 por categoria), com tabelas separadas e rolagem horizontal, remover e limpar na página e link compartilhado só para ver. CPUs e GPUs têm índices de jogos e, com o PC atual informado, estimativas de ganho, equilíbrio e a coluna da peça atual | §14 |
 | Montagem do PC | Oito categorias, com múltiplos discos NVMe e SATA. Busca e compatibilidade por peça, quantidade na memória, total por loja e na melhor combinação e compartilhamento por link (`/m/<id>`) | §17.1 |
-| Montar pelo Orçamento | PC completo ou upgrade do PC atual, com até 3 opções. Acesso pela tela inicial e pelo Identificar Gargalo | §17.4 |
-| Informar o PC atual | Marcação Já Tenho na montagem ou importação do relatório `.txt` do CPU-Z no navegador. O relatório preenche a montagem automaticamente | §17.2 |
-| Identificar Gargalo | Equilíbrio processador × placa de vídeo na tela da pessoa (resolução e Hz do monitor), dicas (upgrade, grátis, atenção, observação) e as 3 melhores ofertas de cada dica | §17.3 |
+| Montar pelo orçamento | PC completo ou upgrade do PC atual, com até 3 opções. Acesso pela tela inicial e pelo Identificar gargalo | §17.4 |
+| Informar o PC atual | Marcação Já tenho na montagem ou importação do relatório `.txt` do CPU-Z no navegador. O relatório preenche a montagem automaticamente | §17.2 |
+| Identificar gargalo | Equilíbrio processador × placa de vídeo na tela da pessoa (resolução e Hz do monitor), dicas (upgrade, grátis, atenção, observação) e as 3 melhores ofertas de cada dica | §17.3 |
 | Admin (`/admin`) | Lojas, rotina por loja, intervalos, fila, pausas, registro de consultas, cobertura, produtos, fichas (lista, "Ler ficha", preencher/editar à mão, revisão), busca na web, monitor do servidor (CPU, memória, disco, rede), backups e merge de bancos | §9.3 |
 | Rotinas no servidor | Coleta das páginas de categoria, varredura completa (também de madrugada), rotina de fichas, busca na web das fichas, backup noturno | §8.2, §8.3 |
 
@@ -111,7 +111,7 @@ Migrações por `PRAGMA user_version` em `apps/server/src/db/db.ts`: só acresce
 
 Tabelas antigas (`search_terms`, `term_runs`, `listing_terms`, `parts`, `part_codes`, `product_sheets`) foram removidas por migrações.
 
-**No navegador** (localStorage, só da pessoa): montagem e marcações Já Tenho (`upgradezin.build.v1`), perfil lido do CPU-Z (`upgradezin.pc.v1`, só os dados tratados, nunca o arquivo), categoria e filtros (`upgradezin.ui.v1`), preferências do orçamento (`upgradezin.budget.v1`) e peças selecionadas para comparar (`upgradezin.compare.<categoria>`). O plano de sincronização está na seção 11.
+**No navegador** (localStorage, só da pessoa): montagem e marcações Já tenho (`upgradezin.build.v1`), perfil lido do CPU-Z (`upgradezin.pc.v1`, só os dados tratados, nunca o arquivo), categoria e filtros (`upgradezin.ui.v1`), preferências do orçamento (`upgradezin.budget.v1`), último resultado de cada aba do orçamento (`upgradezin.budget.result.v1`) e peças selecionadas para comparar (`upgradezin.compare.v1`). O plano de sincronização está na seção 11.
 
 ---
 
@@ -154,19 +154,19 @@ Tabelas antigas (`search_terms`, `term_runs`, `listing_terms`, `parts`, `part_co
 - **Equilíbrio:** `cpuNeeded(gpu, resolução, hz)` = (60 + 0,4 × gpu × fator da resolução) × 1,05 se ≥ 120 Hz; fator 1 (1080p), 0,8 (1440p), 0,62 (4K). `gpuMatching` é o inverso. Processador ÷ o que a placa pede ≥ 1,2: a placa de vídeo é o gargalo; ≤ 0,8: o processador.
 
 ### 7.2 Gargalo e dicas (`packages/shared/src/upgrade.ts`, §17.3)
-A partir do PC importado e da ficha do processador (GET `/api/sheets/cpu`): veredito, placas de vídeo na faixa do que o processador aguenta (cabendo na fonte, com aviso de banda PCIe quando aplicável), processador do mesmo encaixe ou troca de plataforma, memória (XMP, single channel, 32 GB), disco do sistema, monitor, fonte, erros WHEA.
+A partir do PC importado, da ficha do processador (GET `/api/sheets/cpu`) e dos campos do chip da placa de vídeo (GET `/api/sheets/gpu`, valor mais comum entre as placas do mesmo modelo): veredito, placas de vídeo na faixa do que o processador aguenta (cabendo na fonte, com aviso de banda PCIe quando aplicável), processador do mesmo encaixe ou troca de plataforma, memória (XMP, single channel, 32 GB), disco do sistema, monitor, fonte, erros WHEA.
 
 ### 7.3 Melhores ofertas de cada dica (`packages/shared/src/picks.ts`)
 Do banco (cache de 1 min): processador e placa de vídeo, uma por modelo, só as compatíveis (chipset, fonte, memória de vídeo mínima); primeiro as que resolvem o gargalo (≥ 90% do equilíbrio), da mais barata, depois mais desempenho por real; ganho mínimo de 15%. Memória, fonte e SSD: as mais baratas que servem. 3 por dica.
 
 ### 7.4 Montar pelo orçamento (`packages/shared/src/budget.ts`, §17.4)
 
-Os perfis disponíveis são Jogos, Jogos e Trabalho e Produtividade. Nos dois perfis com trabalho, o pedido pode distinguir cargas de CPU de cargas com aceleração gráfica. A auditoria local ampliada mede a progressão de orçamento e a resposta da recomendação a mudanças no catálogo, mantendo o relatório original de 120 cenários como referência.
+Os perfis disponíveis são Jogos, jogos e trabalho e Produtividade. Nos dois perfis com trabalho, o pedido pode distinguir cargas de CPU de cargas com aceleração gráfica. A auditoria local ampliada mede a progressão de orçamento e a resposta da recomendação a mudanças no catálogo, mantendo o relatório original de 120 cenários como referência.
 
 A montagem usa referências locais de CPU por modelo e ajustes de GPU por resolução. A metodologia, as fontes e os resultados da comparação com o catálogo local estão na seção 17.4 da arquitetura.
-- Percorre pares de CPU e GPU, preserva variantes e compara 16 e 32 GB com SSDs de 500 GB, 1 TB e 2 TB. Jogos e Trabalho e Produtividade também avaliam 64 GB e SSD de 4 TB. Dimensiona refrigeração, fonte e placa-mãe a partir da potência estimada, características físicas e evidência disponível. Verifica se o cooler acompanha a variante anunciada.
+- Percorre pares de CPU e GPU, preserva variantes e compara 16 e 32 GB com SSDs de 500 GB, 1 TB e 2 TB. Jogos e trabalho e Produtividade também avaliam 64 GB e SSD de 4 TB. Dimensiona refrigeração, fonte e placa-mãe a partir da potência estimada, características físicas e evidência disponível. Verifica se o cooler acompanha a variante anunciada.
 - Com placa dedicada, combina o teto estimado da CPU com a nota de GPU em cada resolução. Entre opções de desempenho próximo, compara custo e benefícios marginais de RAM, SSD e peças de apoio conforme o perfil. As alternativas mostram diferenças de preço, capacidade ou ganho estimado.
-- PC Comprável Agora usa estoque observado nas últimas 24 horas. PC Ideal também aceita o último preço em estoque registrado em até 90 dias, marcado como histórico na peça e no total.
+- PC comprável agora usa estoque observado nas últimas 24 horas. PC ideal também aceita o último preço em estoque registrado em até 90 dias, marcado como histórico na peça e no total.
 - Marcas com **prioridade, não exclusividade** (`BUDGET_BRANDS`): produto de outra marca conta como mais caro na escolha (fonte +70%, memória +30%, placa de vídeo +20%, placa-mãe +15%).
 - Upgrade: cada peça fica ou sai; só sugere troca que renda ≥ 10%; reaproveita a memória quando serve.
 
@@ -207,7 +207,7 @@ ADRs completos em ARCHITECTURE §15. As principais:
 - **Nunca citar o nome das lojas** em commits, código ou documentação: só S1, S2, S3.
 - **Sempre com testes:** toda mudança vem com teste (Vitest). Rodar a suíte da **raiz** do repositório: `npx vitest run --reporter=json --outputFile=.vitest/full.json` (o JSON padrão em `.vitest/json/` pode estar velho), mais `pnpm -r typecheck` e `pnpm --filter web build`.
 - **Estilo de código:** TypeScript estrito, aspas simples, linhas longas (até ~200 colunas); comentários explicam o porquê, em português. Não há Prettier configurado: rodar Prettier sem as opções muda o estilo do repositório inteiro (se usar: `--single-quote --print-width 200`, só nos arquivos novos).
-- **Textos do site:** botões e títulos em Title Case em português ("Levar para a Montagem"); nunca texto técnico na tela (o servidor manda códigos, a interface escolhe a frase).
+- **Textos do site:** botões, títulos e rótulos com só a primeira letra maiúscula ("Levar para a montagem", "Placa de vídeo"), exceto nomes próprios, marcas, siglas e termos em inglês; nunca texto técnico na tela (o servidor manda códigos, a interface escolhe a frase).
 - **Respostas:** diretas; quando o mantenedor diz "só responde", responder curto, sem mexer em código.
 - **Servidor:** parar o serviço antes de escrever no banco do servidor; a senha de sudo nunca é guardada; o mantenedor reinicia o serviço; o repositório precisa continuar **público** (o deploy faz `git pull` sem credencial) e o túnel de acesso precisa continuar funcionando; `.env` e `data/` nunca vão para o git.
 - **Privacidade:** dados pessoais do mantenedor nunca em requisições a serviços externos.
@@ -222,7 +222,7 @@ ADRs completos em ARCHITECTURE §15. As principais:
 | Admin arredonda o progresso das fichas para 100% com itens na fila | Confunde (os itens podem estar parados por erro) | Mostrar "X com erro, voltam às HH:MM" e não arredondar para 100% |
 | As ofertas das dicas (`picks.ts`) têm ranking próprio | Duas lógicas de escolha (dicas e orçamento) | Unificar com o motor do orçamento |
 | Texto da dica de placa de vídeo cita chips sem saber a memória de vídeo de cada um | A frase pode citar um chip sem versão com memória suficiente (as ofertas e a busca já filtram) | Falta uma tabela de memória de vídeo por chip |
-| Orçamento ainda em refino | Disponível na tela inicial e no Identificar Gargalo | Refinar: preço acima do normal, qualidade por modelo, mais avaliações |
+| Orçamento ainda em refino | Disponível na tela inicial e no Identificar gargalo | Refinar: preço acima do normal, qualidade por modelo, mais avaliações |
 | Memória e SSD caros nas lojas (nov/2026) | Montagens baratas saem sem placa de vídeo | Preço de mercado; nada a corrigir no motor |
 | Processador sem informação de cooler na caixa (~100 ofertas) | O orçamento compra um cooler à parte por segurança | Ler da ficha quando houver |
 | Campos opcionais pouco publicados (fases do VRM, cache DRAM) | Depois da web, podem encher a revisão manual | Se ficar demais: marcar campos que não vão para a revisão |
@@ -243,11 +243,11 @@ ADRs completos em ARCHITECTURE §15. As principais:
 
 No primeiro login, os dados vêm da conta no SQLite. Os dados antigos do visitante ficam no navegador. A partir do login, sincronizar entre dispositivos:
 
-- **Meu PC**, com as peças marcadas Já Tenho e os dados tratados do CPU-Z.
+- **Meu PC**, com as peças marcadas Já tenho e os dados tratados do CPU-Z.
 - **Montagens feitas**, incluindo as peças, quantidades e indicações de peças atuais.
 - **Última busca de cada categoria de hardware**, com categoria, filtros, ordenação, resultado e data da consulta.
-- **Último Montar pelo Orçamento**, incluindo o valor informado, as opções usadas, os preços e as recomendações mostradas, com a data do cálculo.
-- **Peças adicionadas ao comparador**, organizadas por categoria.
+- **Último Montar pelo orçamento**, incluindo o valor informado, as opções usadas, os preços e as recomendações mostradas, com a data do cálculo.
+- **Peças adicionadas ao comparador**, numa lista com a categoria de cada peça.
 
 Ao reabrir uma busca ou um orçamento antigo, mostrar quando foi feito, avisar que preços e disponibilidade podem ter mudado e orientar a atualizar a busca ou refazer o cálculo. Antes do login, o armazenamento continua local.
 
@@ -259,11 +259,11 @@ Ao reabrir uma busca ou um orçamento antigo, mostrar quando foi feito, avisar q
 
 ### Melhorias
 - Cupons da S2 e da S3 (hoje só a S1).
-- Cotação de frete por loja usando o CEP de entrega já disponível em Minha Conta.
+- Cotação de frete por loja usando o CEP de entrega já disponível em Minha conta.
 - Variantes do mesmo modelo por part number (cor, versão OC).
 - Detectar queda de rede na rotina de fichas (seção 10).
 - Marcar "preço acima do normal" pelo histórico de 30 dias (já está no banco).
-- Refinar a calibração do Montar pelo Orçamento e ampliar as referências de desempenho sustentado por modelo.
+- Refinar a calibração do Montar pelo orçamento e ampliar as referências de desempenho sustentado por modelo.
 - Usar mais campos da ficha no ranking, como BIOS Flashback na placa-mãe e cache DRAM e TBW no SSD.
 
 ---

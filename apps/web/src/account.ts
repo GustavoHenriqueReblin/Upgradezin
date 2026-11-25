@@ -9,6 +9,9 @@ const pending = new Map<string, string | null>();
 let sync: Promise<void> | undefined;
 let channel: BroadcastChannel | undefined;
 
+/** Primeiro nome para cumprimentar; contas antigas podem ter o nome completo gravado, e o Google pode não mandar nome nenhum. */
+export const firstName = (name: string | null | undefined) => name?.trim().split(/\s+/)[0] || undefined;
+
 export const accountStatus = () => status;
 export const guestAccountStatus = () => guest;
 export const subscribeAccount = (listener: () => void) => {

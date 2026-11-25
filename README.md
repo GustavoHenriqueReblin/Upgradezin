@@ -2,7 +2,7 @@
 
 Buscador de preços de hardware no varejo brasileiro. Uma rotina no servidor acompanha os preços de três lojas configuráveis e guarda o histórico num banco local; o site responde na hora a partir dele, agrupa o mesmo produto entre lojas e filtra como as grandes lojas (potência, certificação, socket, chipset, linha do processador, modelo da placa de vídeo, capacidade e frequência da memória, marca…).
 
-> **Status:** em desenvolvimento. Categorias disponíveis: **Fonte**, **Placa-Mãe**, **Processador**, **Placa de Vídeo**, **Memória RAM**, **SSD**, **Cooler** e **Gabinete**. Tema escuro.
+> **Status:** em desenvolvimento. Categorias disponíveis: **Fonte**, **Placa-mãe**, **Processador**, **Placa de vídeo**, **Memória RAM**, **SSD**, **Cooler** e **Gabinete**. Tema escuro.
 
 ## Recursos
 
@@ -11,13 +11,13 @@ Buscador de preços de hardware no varejo brasileiro. Uma rotina no servidor aco
 - O resultado de cada loja traz também o que o banco já tem dela e bate com a busca (ex. buscar AM4 acha o processador AM4 que veio da coleta de "Ryzen 7"), inclusive de loja bloqueada naquela hora, com a idade de cada preço.
 - Preço à vista (PIX) em destaque, já com o cupom anunciado pela loja quando houver, e a idade da coleta.
 - Mesmo modelo em várias lojas vira um card, com o menor preço em destaque.
-- Histórico de preço de cada produto: gráfico por loja (30 dias, 90 dias ou tudo) e o selo "Menor Preço em 30 Dias" quando o preço de agora é o menor do período.
+- Histórico de preço de cada produto: gráfico por loja (30 dias, 90 dias ou tudo) e o selo "Menor preço em 30 dias" quando o preço de agora é o menor do período.
 - Filtros calculados dos próprios resultados, com contagem, sem refazer a busca; ordenação por preço, maior desconto e as de cada categoria (eficiência, R$ por watt, núcleos…).
 - Só produto novo vendido pela loja, por padrão.
 - Trocar de categoria e voltar não refaz a busca, e a categoria e os filtros ficam salvos no navegador: reabrir o app volta onde estava.
-- Montar pelo orçamento: diga quanto quer gastar e o app recomenda um PC completo ou um upgrade para as peças informadas no seu PC. Escolha Jogos, Jogos e Trabalho ou Produtividade e compare ofertas recentes em estoque ou referências de preços históricos no modo PC Ideal. O resultado vai para a montagem.
+- Montar pelo orçamento: diga quanto quer gastar e o app recomenda um PC completo ou um upgrade para as peças informadas no seu PC. Escolha Jogos, jogos e trabalho ou Produtividade e compare ofertas recentes em estoque ou referências de preços históricos no modo PC ideal. O resultado vai para a montagem.
 - Montar o PC peça por peça: a busca usa os filtros das peças já escolhidas e a compatibilidade é conferida a cada troca. A memória aceita quantidade, e a montagem aceita múltiplos discos NVMe e SATA, com total por loja e na melhor combinação.
-- Informar o PC atual: escolha peças na montagem e marque **Já Tenho** ou importe um relatório do CPU-Z. A importação preenche automaticamente a montagem, incluindo os discos, e o relatório é lido no navegador. As peças atuais ficam fora do total de compra.
+- Informar o PC atual: escolha peças na montagem e marque **Já tenho** ou importe um relatório do CPU-Z. A importação preenche automaticamente a montagem, incluindo os discos, e o relatório é lido no navegador. As peças atuais ficam fora do total de compra.
 - Identificar gargalo: usa as peças atuais para indicar o que limita o desempenho e sugerir trocas. O diagnóstico aproveita os dados medidos quando há relatório. Sem dados do monitor, considera Full HD a 60 Hz.
 - Comparar hardware: selecione peças pela busca, pela página do produto ou pelas sugestões de upgrade. As abas mostram preços e fichas por categoria. Para CPUs e GPUs, o comparador mostra desempenho estimado e desempenho por real. Com uma CPU atual informada, a aba de processadores também mostra essa referência e a compatibilidade com a plataforma.
 - O filtro de texto pesquisa nos resultados já carregados. A consulta direta por texto nas lojas está desativada na interface.
@@ -57,7 +57,7 @@ Configure um cliente OAuth do tipo **Aplicativo da Web** no Google Cloud e defin
 
 Ao entrar, a conta carrega os dados do SQLite. As alterações seguintes são salvas na conta. O que foi preenchido como visitante permanece separado.
 
-Em **Minha Conta**, o usuário pode salvar, alterar ou remover o CEP de entrega. A cotação de frete pelas lojas ainda está planejada.
+Em **Minha conta**, o usuário pode salvar, alterar ou remover o CEP de entrega. A cotação de frete pelas lojas ainda está planejada.
 
 ## Teste do orçamento
 

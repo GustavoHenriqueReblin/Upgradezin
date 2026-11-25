@@ -162,9 +162,9 @@ function Routine({
       </div>
       <ol aria-label="Prioridades da fila" className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
         {([
-          [1, 'Com Estoque · Vendido pela Própria Loja'],
-          [2, 'Sem Estoque · Vendido pela Própria Loja'],
-          [3, 'Demais Produtos'],
+          [1, 'Com estoque · Vendido pela própria loja'],
+          [2, 'Sem estoque · Vendido pela própria loja'],
+          [3, 'Demais produtos'],
         ] as const).map(([priority, label]) => (
           <li key={priority} className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-800">
             <span>{label}</span>
@@ -240,7 +240,7 @@ function Answers({ busy, ask, fail }: { busy: boolean; ask: (key?: string) => vo
       ) : !data.items.length ? (
         <p className="text-sm text-zinc-500">Nenhum produto perguntado com esses filtros.</p>
       ) : (
-        <Table head={['Quando', 'Produto', 'Situação da Ficha', 'Campos', 'Resposta']}>
+        <Table head={['Quando', 'Produto', 'Situação da ficha', 'Campos', 'Resposta']}>
           {data.items.map((a) => (
             <tr key={`${a.key}|${a.at}`} className="border-t border-zinc-100 align-top dark:border-zinc-800">
               <Td className="whitespace-nowrap text-xs text-zinc-500">{formatWhen(a.at)}</Td>
@@ -267,7 +267,7 @@ function Answers({ busy, ask, fail }: { busy: boolean; ask: (key?: string) => vo
               </Td>
               <Td className="min-w-36 text-xs">
                 {a.sheetBefore && a.sheetAfter ? (
-                  <span className="capitalize">{SHEET_FILTER_LABEL[a.sheetBefore]} → <strong>{SHEET_FILTER_LABEL[a.sheetAfter]}</strong></span>
+                  <span className="inline-block first-letter:uppercase">{SHEET_FILTER_LABEL[a.sheetBefore]} → <strong>{SHEET_FILTER_LABEL[a.sheetAfter]}</strong></span>
                 ) : (
                   <>
                     {a.sheetCurrent && <span className="block">Atual · <strong>{SHEET_FILTER_LABEL[a.sheetCurrent]}</strong></span>}

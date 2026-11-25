@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { normalizeListing, parseCpuzReport } from '@upgradezin/shared';
 import { analyzePc } from '@upgradezin/shared';
 import amd from '../../../packages/shared/fixtures/cpuz/amd-am4-rx6600.txt?raw';
 import intel from '../../../packages/shared/fixtures/cpuz/intel-lga1700-rtx4060ti.txt?raw';
 import { buildTotals, checkCandidate, type BuildItem } from './build.ts';
-import { applyPc, currentPc, forgetPcBuild, readReportFile, validPc } from './pc.ts';
+import { applyPc, currentPc, forgetPcBuild, loadPc, readReportFile, savePc, validPc } from './pc.ts';
 
 const pc = parseCpuzReport(amd)!;
 const file = (text: BlobPart, name = 'PC.txt') => new File([text], name, { type: 'text/plain' });
@@ -58,7 +58,7 @@ describe('importar o PC pelo relatório do CPU-Z', () => {
   it('PC sem placa dedicada tira a placa "Atual" de antes, mas não a escolhida numa loja', () => {
     const noGpu = { ...pc, gpu: undefined };
     expect(applyPc(applyPc({}, pc), noGpu).gpu).toBeUndefined();
-    const bought: BuildItem = { key: 'g', title: 'RTX 4060', specs: normalizeListing('gpu', 'Placa de Vídeo RTX 4060 8GB').specs, offers: [] };
+    const bought: BuildItem = { key: 'g', title: 'RTX 4060', specs: normalizeListing('gpu', 'Placa de vídeo RTX 4060 8GB').specs, offers: [] };
     expect(applyPc({ gpu: bought }, noGpu).gpu).toBe(bought);
   });
 
@@ -77,4 +77,17 @@ describe('importar o PC pelo relatório do CPU-Z', () => {
     expect(validPc('lixo')).toBeNull();
     expect(validPc(null)).toBeNull();
   });
+});
+
+it('guarda a data da importação e a mantém ao regravar o mesmo PC', () => {
+  const store = new Map<string, string>();
+  vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) });
+  try {
+    const saved = savePc(pc, 1_700_000_000_000);
+    expect(saved.importedAt).toBe(1_700_000_000_000);
+    expect(loadPc()?.importedAt).toBe(1_700_000_000_000);
+    expect(savePc({ ...saved, psu: undefined }, 1_800_000_000_000).importedAt).toBe(1_700_000_000_000);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

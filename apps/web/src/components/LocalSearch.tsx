@@ -29,7 +29,7 @@ export function LocalSearch({ value, onChange, suggestions, onSearchStores }: Pr
           type="search"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="Filtrar nos Resultados (ex.: Windforce, Fury, OC)"
+          placeholder="Filtrar nos resultados (ex.: Windforce, Fury, OC)"
           className="w-full rounded-lg border border-zinc-300 bg-white py-2 pl-9 pr-9 text-sm dark:border-zinc-700 dark:bg-zinc-900"
         />
         {value && (

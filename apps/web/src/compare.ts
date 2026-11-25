@@ -22,14 +22,10 @@ export function compareUrl(keys: string[]): string {
   return keys.length ? `/comparar?${params}` : '/comparar';
 }
 
-export const comparisonSelectionKey = (category: CategoryId) => `upgradezin.compare.${category}`;
-
-export function applyComparisonSelection(keys: string[], previous: string | null, next: string | null): string[] {
-  const before = new Set(compareKeys(new URLSearchParams(previous ?? '')));
-  const after = new Set(compareKeys(new URLSearchParams(next ?? '')));
-  const updated = keys.filter((key) => !before.has(key) || after.has(key));
-  for (const key of after) if (!before.has(key) && !updated.includes(key)) updated.push(key);
-  return updated.length === keys.length && updated.every((key, index) => key === keys[index]) ? keys : updated;
+/** Mesmas peças, em qualquer ordem. */
+export function sameKeys(a: readonly string[], b: readonly string[]): boolean {
+  const set = new Set(b);
+  return a.length === b.length && a.every((key) => set.has(key));
 }
 
 export function comparisonMetrics(page: ProductPage) {
@@ -85,20 +81,20 @@ export function comparisonCpuCompatibility(pc: PcProfile, specs: Specs): { statu
   const acceptedMemory = specs.socket ? SOCKET_MEMORY[specs.socket] : undefined;
   const needsMemory = has('memory-cpu-mismatch');
   const parts = [
-    ...(needsBoard ? [`Placa-Mãe ${specs.socket}`] : []),
+    ...(needsBoard ? [`Placa-mãe ${specs.socket}`] : []),
     ...(needsMemory && acceptedMemory ? [acceptedMemory.join(' ou ').toUpperCase()] : []),
   ];
   const sameModel = !!specs.cpuBrand && !!specs.cpuModel && specs.cpuBrand === installed?.cpuBrand &&
     specs.cpuModel.toUpperCase() === installed?.cpuModel?.toUpperCase();
   const unknown = !socket || !specs.socket || has('chipset-unknown') || !memory;
-  const status = changesPlatform ? 'Requer Mudança de Plataforma'
-    : needsBoard ? 'Requer Outra Placa-Mãe'
-    : needsMemory ? 'Requer Outra Memória'
+  const status = changesPlatform ? 'Requer mudança de plataforma'
+    : needsBoard ? 'Requer outra placa-mãe'
+    : needsMemory ? 'Requer outra memória'
     : sameModel ? 'Compatível'
-    : has('chipset-bios') ? 'Pode Exigir Atualização de BIOS'
-    : unknown ? 'Compatibilidade a Confirmar' : 'Compatível';
-  if (needsBoard && !memory) parts.push('Verificar Memória');
-  return { status, parts: parts.join(' + ') || (unknown && !sameModel ? 'A Confirmar' : 'Nenhum') };
+    : has('chipset-bios') ? 'Pode exigir atualização de BIOS'
+    : unknown ? 'Compatibilidade a confirmar' : 'Compatível';
+  if (needsBoard && !memory) parts.push('Verificar memória');
+  return { status, parts: parts.join(' + ') || (unknown && !sameModel ? 'A confirmar' : 'Nenhum') };
 }
 
 /** Índice combinado ao trocar só a peça comparada e manter o restante do PC. */

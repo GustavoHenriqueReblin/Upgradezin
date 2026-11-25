@@ -35,18 +35,18 @@ export const MEMORY_LABEL: Record<MemoryType, string> = { ddr4: 'DDR4', ddr5: 'D
 
 /** Ordenações extras por categoria (preço menor/maior são fixas na tela). */
 export const SORT_LABEL = {
-  price: 'Menor Preço à Vista',
-  'price-desc': 'Maior Preço à Vista',
-  discount: 'Maior Desconto',
-  efficiency: 'Melhor Eficiência',
-  'per-watt': 'Melhor Preço por Watt',
-  watts: 'Maior Potência',
-  cores: 'Mais Núcleos',
-  vram: 'Mais Memória de Vídeo',
-  'per-gb': 'Menor Preço por GB',
-  speed: 'Maior Frequência',
-  'per-tb': 'Menor Preço por TB',
-  read: 'Maior Leitura',
+  price: 'Menor preço à vista',
+  'price-desc': 'Maior preço à vista',
+  discount: 'Maior desconto',
+  efficiency: 'Melhor eficiência',
+  'per-watt': 'Melhor preço por watt',
+  watts: 'Maior potência',
+  cores: 'Mais núcleos',
+  vram: 'Mais memória de vídeo',
+  'per-gb': 'Menor preço por GB',
+  speed: 'Maior frequência',
+  'per-tb': 'Menor preço por TB',
+  read: 'Maior leitura',
 } as const;
 
 export const SSD_INTERFACE_LABEL = { nvme: 'NVMe (M.2)', sata: 'SATA' } as const;
@@ -66,7 +66,7 @@ export const COLOR_LABEL = { black: 'Preta', white: 'Branca' } as const;
 
 export const PSU_FORMAT_LABEL = { atx: 'ATX', sfx: 'SFX (Compacta)' } as const;
 
-export const MODULAR_LABEL = { full: 'Full Modular', semi: 'Semi Modular', none: 'Não Modular', unknown: 'Não Informado' };
+export const MODULAR_LABEL = { full: 'Full Modular', semi: 'Semi Modular', none: 'Não modular', unknown: 'Não informado' };
 
 export function ago(iso: string): string {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);

@@ -197,7 +197,7 @@ export function CoveragePanel({ onUnauthorized }: Props) {
 
 /**
  * Processadores e placas de vídeo à venda que a tabela de desempenho (packages/shared/src/perf.ts) não
- * conhece: ficam fora do "Identificar Gargalo" e do ranking de upgrade até alguém acrescentar.
+ * conhece: ficam fora do "Identificar gargalo" e do ranking de upgrade até alguém acrescentar.
  */
 export function PerfGapsPanel({ onUnauthorized }: Props) {
   const names = useStoreNames(onUnauthorized);

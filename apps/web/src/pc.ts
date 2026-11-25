@@ -144,10 +144,13 @@ export function clearPc(): void {
   }
 }
 
-export function savePc(pc: PcProfile): void {
+/** Relatório recém-lido chega sem data e ganha a de agora; regravar (ex. só a fonte) mantém a da importação. */
+export function savePc(pc: PcProfile, now = Date.now()): PcProfile {
+  const saved = typeof pc.importedAt === 'number' ? pc : { ...pc, importedAt: now };
   try {
-    accountStorage.setItem(KEY, JSON.stringify(pc));
+    accountStorage.setItem(KEY, JSON.stringify(saved));
   } catch {
     // sem armazenamento: o PC vale só enquanto a página estiver aberta
   }
+  return saved;
 }

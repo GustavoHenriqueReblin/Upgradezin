@@ -154,7 +154,7 @@ export const DEFAULT_FILTERS: Filters = {
   sort: 'price',
 };
 
-/** O que define a busca em cada categoria: "Limpar" mantém isso (refazer a busca é em "Alterar Busca"). */
+/** O que define a busca em cada categoria: "Limpar" mantém isso (refazer a busca é em "Alterar busca"). */
 const SEARCH_KEYS: Partial<Record<CategoryId, (keyof Filters)[]>> = {
   psu: ['watts'],
   motherboard: ['sockets', 'chipsets'],

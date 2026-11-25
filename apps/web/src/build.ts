@@ -42,6 +42,9 @@ export interface BuildItem {
 /** Peças que aceitam quantidade: memória (pentes avulsos iguais, ex. 2× 8 GB). */
 export const QTY_SLOTS: readonly BuildSlot[] = ['ram'];
 export const MAX_QTY = 4;
+
+/** Quantas peças a montagem tem (cada disco conta): a contagem do atalho Montagem. */
+export const buildPartCount = (b: SavedBuild) => BUILD_SLOTS.filter((s) => b[s]).length + (b.extraDrives?.length ?? 0);
 export const qtyOf = (i: BuildItem) => Math.min(MAX_QTY, Math.max(1, Math.floor(i.qty ?? 1)));
 
 export type SavedBuild = Partial<Record<BuildSlot, BuildItem>> & { extraDrives?: BuildItem[] };

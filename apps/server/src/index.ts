@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { z } from 'zod';
-import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, cpuSheetFor, pickUpgrades, searchOptionCounts, STORES, type CategoryId, type Offer, type SearchOptionCounts, type SheetRoutineStatus, type StoreId } from '@upgradezin/shared';
+import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, cpuSheetFor, gpuSheetFor, pickUpgrades, searchOptionCounts, STORES, type CategoryId, type Offer, type SearchOptionCounts, type SheetRoutineStatus, type StoreId } from '@upgradezin/shared';
 import { fullSweep, fullSweepAll, probePage, readSheetNow, resumeRoutines, saveFullSweepSettings, useStoreIntervals, stopAdminJobs, stopFullSweep, storesState } from './admin/actions.ts';
 import { clearFullSweeps } from './prices/sweep.ts';
 import { budgetOffers, budgetPlan } from './budget.ts';
@@ -285,6 +285,22 @@ app.get('/api/sheets/cpu', async (req, reply) => {
   const parsed = z.object({ model: z.string().trim().min(3).max(20).regex(/^[\w-]+$/) }).safeParse(req.query);
   if (!parsed.success) return reply.code(400).send({ error: 'invalid' });
   const sheet = cpuSheetFor(categoryOffers('cpu').value, parsed.data.model);
+  if (!sheet) return reply.code(404).send({ error: 'not-found' });
+  reply.header('Cache-Control', 'public, max-age=300');
+  return sheet;
+});
+
+/**
+ * Ficha de uma placa de vídeo pelo modelo do chip ("RTX 4060 Ti") e a VRAM: só os campos do chip, com o valor mais
+ * comum entre as placas desse modelo no catálogo. Completa a placa do PC importado (o CPU-Z traz pouco do vídeo).
+ */
+app.get('/api/sheets/gpu', async (req, reply) => {
+  const parsed = z.object({
+    model: z.string().trim().min(3).max(30).regex(/^[\w -]+$/),
+    vram: z.coerce.number().int().min(1).max(128).optional(),
+  }).safeParse(req.query);
+  if (!parsed.success) return reply.code(400).send({ error: 'invalid' });
+  const sheet = gpuSheetFor(categoryOffers('gpu').value, parsed.data.model, parsed.data.vram);
   if (!sheet) return reply.code(404).send({ error: 'not-found' });
   reply.header('Cache-Control', 'public, max-age=300');
   return sheet;

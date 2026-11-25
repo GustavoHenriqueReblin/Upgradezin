@@ -4,15 +4,37 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
-- Minha Conta permite salvar, alterar ou remover o CEP de entrega, vinculado ao usuário.
+- Todo cabeçalho tem os mesmos quatro atalhos: Meu PC, Comparar, Montagem e a conta. A tela inicial e as páginas de produto e de comparação ganharam o atalho da montagem (link para `/montagem`). Com a montagem aberta, o atalho fica em laranja e o nome só aparece em telas bem largas, como nos outros; na página de comparação, o atalho Comparar fica ativo do mesmo jeito. A página de comparação ganhou título, como as demais telas.
+
+- A janela de importar o relatório do CPU-Z aberta pelo atalho Meu PC aparecia cortada no topo da tela e sem o fundo escurecido. Ela passa a abrir direto no corpo da página.
+
+- Montar pelo orçamento volta à estética do app: opções selecionadas em laranja, os três perfis de uso numa linha, abas sublinhadas como as do comparador e o valor numa faixa embaixo nas duas abas (o PC completo não usa mais o painel lateral). Em Produtividade, a pergunta da tela vira "Qual a resolução do monitor?".
+
+- Textos do site padronizados com só a primeira letra maiúscula em botões, títulos, abas, filtros e categorias ("Placa de vídeo", "Montar pelo orçamento", "Já tenho"). Nomes próprios, marcas, siglas e termos em inglês continuam com maiúscula. Os rótulos pequenos acima dos blocos deixam de aparecer todos em maiúsculas.
+
+- A placa de vídeo do PC importado passa a mostrar arquitetura, barramento, unidades de processamento e consumo, pela ficha do chip no catálogo (`/api/sheets/gpu`, valor mais comum entre as placas do mesmo modelo e VRAM). Aparece no Meu PC, no orçamento e na coluna da placa atual do comparador. O que o CPU-Z mediu continua valendo sobre o catálogo.
+
+- Montagem, Montar pelo orçamento e Identificar gargalo têm URL própria (`/montagem`, `/orcamento`, `/gargalo`): o Voltar do navegador reabre a tela anterior, o F5 mantém a tela e voltar de uma peça reabre o orçamento.
+
+- O orçamento guarda o último resultado de cada aba, com a data, e oferece Refazer cálculo. O tipo de trabalho passa a ser lembrado. Opção que só compra outras peças leva o nome delas em vez de "Memória". Com preço histórico, Refazer com PC comprável agora roda de novo com ofertas de agora. Cada peça comprada tem o botão Comparar. Mensagem própria quando o servidor recusa o pedido.
+
+- O comparador permite remover uma peça ou limpar a categoria da aba aberta na própria página, limita a seleção a 5 peças por categoria e mostra a coluna da placa de vídeo atual. As abas Processadores e Placas de vídeo ficam sempre visíveis, com a contagem, para deixar claro o que dá para comparar, e têm visual de aba (linha de base e a ativa sublinhada). Um link compartilhado abre só para ver, com Adicionar à minha comparação. A seleção passa a ficar numa lista só, convertida automaticamente da anterior.
+
+- O cabeçalho ocupa a largura toda: logo à esquerda com as categorias logo em seguida (sempre no mesmo ponto, em qualquer tela) e, à direita, os atalhos Meu PC, Comparar e Montagem como ícones com a contagem no canto, seguidos da conta com a inicial e o primeiro nome. A contagem só aparece quando há peças.
+
+- Novo atalho Meu PC no cabeçalho: abre um modal com as peças do PC guardado e a data da importação do CPU-Z, com Identificar gargalo, Trocar relatório e Esquecer meu PC (com confirmação); sem PC, convida a importar ou marcar as peças.
+
+- Com a conta aberta, o cabeçalho mostra o primeiro nome do usuário no lugar de Minha conta, e a janela Minha conta exibe o nome acima do e-mail.
+
+- Minha conta permite salvar, alterar ou remover o CEP de entrega, vinculado ao usuário.
 
 - Login com Google e sessão de usuário no SQLite. Após entrar, o app carrega os dados da conta e sincroniza as mudanças novas, sem copiar os dados de teste do visitante.
 
-- O card Identificar Gargalo exibe o modelo curto do processador sem comprimir a descrição.
+- O card Identificar gargalo exibe o modelo curto do processador sem comprimir a descrição.
 
 - Os botões para informar o PC usam o mesmo visual nas telas de gargalo e orçamento.
 
-- Peças marcadas como Já Tenho alimentam o diagnóstico, o comparador e as sugestões de upgrade sem depender do CPU-Z. Importar um relatório preenche a montagem a partir de qualquer tela de entrada.
+- Peças marcadas como Já tenho alimentam o diagnóstico, o comparador e as sugestões de upgrade sem depender do CPU-Z. Importar um relatório preenche a montagem a partir de qualquer tela de entrada.
 
 - A marca da fonte no formulário do CPU-Z usa o select do sistema, com menu compacto e opção para digitar outra marca.
 
@@ -24,21 +46,21 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 - A busca remove o parâmetro de categoria ao abrir, evitando reabrir a busca depois de voltar ao início e recarregar.
 
-- Voltar à Busca abre a categoria do produto ou da aba ativa no comparador.
+- Voltar à busca abre a categoria do produto ou da aba ativa no comparador.
 
 - Categorias ativas e ações em destaque do app e do admin adotam borda laranja com fundo suave, seguindo as abas do comparador.
 
 - O comparador tem um atalho para adicionar hardware pela busca em outra guia e posiciona a ordenação junto das abas.
 
-- Produto e comparador mantêm o cabeçalho no topo ao rolar e têm Voltar à Busca. O comparador separa as categorias em abas na mesma rota.
+- Produto e comparador mantêm o cabeçalho no topo ao rolar e têm Voltar à busca. O comparador separa as categorias em abas na mesma rota.
 
 - As sugestões de upgrade têm um atalho para comparar suas alternativas. O comparador mostra a VRAM no nome curto da GPU e estima o ganho em jogos no PC além do ganho isolado.
 
-- O título Comparar Peças fica centralizado no cabeçalho do comparador.
+- O título Comparar peças fica centralizado no cabeçalho do comparador.
 
 - Alinha o cabeçalho à largura do comparador e centraliza o texto nos selects personalizáveis.
 
-- Os menus de seleção usam a paleta do app em navegadores com suporte a menus personalizáveis. Voltar à Busca fica ao lado da marca no comparador.
+- Os menus de seleção usam a paleta do app em navegadores com suporte a menus personalizáveis. Voltar à busca fica ao lado da marca no comparador.
 
 - O comparador usa o mesmo cabeçalho com a marca Upgradezin da página de produto.
 
@@ -75,7 +97,7 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 - O servidor e os testes filtram o aviso de inicialização do SQLite embutido no Node.
 - Placa de vídeo com o chip incompleto na ficha da loja ("Chipset: GT 218", o nome interno; "Arquitetura Radeon RX 6900", sem o XT; "RX 7800"; "RX 9000", a série) ficava com esse modelo, sem nota de desempenho, fora dos filtros por modelo e das sugestões: o chip que a tabela de desempenho não conhece perde para o modelo do título (GT 210, RX 6900 XT, RX 7800 XT, RX 9060 XT). Os 4 modelos sem índice do admin eram esses.
-- Gabinete: ventoinhas inclusas que as lojas chamam de "cooler" no título ("Com 3 Coolers RGB", "3 Cooler", "3 Coolers Rgb Inclusos") eram ignoradas, e o gabinete ficava com o padrão da categoria (0, "não tem"); o que o gabinete suporta ("Suporta 6 Coolers", "até 9 Fans") continua de fora. "Com Fans" sem o número deixa o campo como "não sei" em vez de "não tem".
+- Gabinete: ventoinhas inclusas que as lojas chamam de "cooler" no título ("Com 3 Coolers RGB", "3 Cooler", "3 Coolers Rgb Inclusos") eram ignoradas, e o gabinete ficava com o padrão da categoria (0, "não tem"); o que o gabinete suporta ("Suporta 6 Coolers", "até 9 Fans") continua de fora. "Com fans" sem o número deixa o campo como "não sei" em vez de "não tem".
 - Clock máximo do processador: com vários turbos na ficha (Intel: Thermal Velocity Boost, Turbo Boost Max 3.0, P-core Max Turbo), vale o maior, o que conta em jogos. O i9-13900K era lido com 5,4 GHz em vez de 5,8. No título "3.7ghz Turbo 4.4ghz", o 3,7 era lido como turbo. A base "Frequência de base P-core" também passa a ser lida. Nas páginas guardadas, 14 processadores sobem o clock e nenhum desce; o servidor relê as fichas ao subir.
 - Admin: as lacunas de desempenho e a nota da aba Produtos usam a ficha do processador, como o site. Processador fora da tabela, mas com nota pela ficha, não aparece mais como lacuna.
 - Air cooler lido como water cooler por um "bomba" no texto da ficha ("ARGB: design para bomba e ventilador", copiado de water cooler): a bomba agora só conta no rótulo ("Bomba: 2800 RPM"). Nas páginas guardadas, muda só o Aigo Darkflash Ellsworth S31 (preto e branco), que passa a air cooler com altura de 153 mm, e nenhum water cooler deixa de ser water.
@@ -103,32 +125,32 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 - GPUs x8 concorrem normalmente em placas-mãe PCIe 3.0 no diagnóstico e no orçamento. A diferença de banda aparece como observação de compatibilidade.
 
-- Montar pelo Orçamento inclui o perfil Produtividade e ajusta o ganho marginal de CPU e GPU, a preferência por RAM e SSD e a escolha de placa-mãe, gabinete e refrigeração. A auditoria ampliada registra progressão de orçamento e sensibilidade às ofertas.
+- Montar pelo orçamento inclui o perfil Produtividade e ajusta o ganho marginal de CPU e GPU, a preferência por RAM e SSD e a escolha de placa-mãe, gabinete e refrigeração. A auditoria ampliada registra progressão de orçamento e sensibilidade às ofertas.
 
 - Na montagem peça por peça, o título abre a página do produto quando há uma oferta identificada no catálogo.
 
-- Identificar Gargalo destaca o atalho de orçamento em largura total, recolhe as sugestões por padrão e alinha a linha da fonte às demais peças. O medidor usa a paleta do site, com destaque na faixa do diagnóstico.
+- Identificar gargalo destaca o atalho de orçamento em largura total, recolhe as sugestões por padrão e alinha a linha da fonte às demais peças. O medidor usa a paleta do site, com destaque na faixa do diagnóstico.
 
 - Botões de ação do site e do admin usam a mesma altura. A montagem peça por peça usa o laranja do tema nas ações de escolher e nos ícones de categoria.
 
-- Montar Peça por Peça e Identificar Gargalo seguem o estilo do orçamento, com painéis, ações e espaçamentos consistentes.
+- Montar peça por peça e Identificar gargalo seguem o estilo do orçamento, com painéis, ações e espaçamentos consistentes.
 
-- Montar pelo Orçamento ganhou um formulário responsivo que agrupa as preferências e destaca o valor e o botão de montagem. Tipo de recomendação e perfil de uso são botões de opção com as cores do site.
+- Montar pelo orçamento ganhou um formulário responsivo que agrupa as preferências e destaca o valor e o botão de montagem. Tipo de recomendação e perfil de uso são botões de opção com as cores do site.
 
-- Montar pelo Orçamento ganhou os perfis Jogos e Jogos e Trabalho. RAM e SSD maiores ganham preferência gradual quando há margem no orçamento. A escolha também considera o custo de ganhos pequenos de CPU, a evidência de alimentação sustentada da placa-mãe e as folgas entre gabinete, placa de vídeo e radiador.
+- Montar pelo orçamento ganhou os perfis Jogos e jogos e trabalho. RAM e SSD maiores ganham preferência gradual quando há margem no orçamento. A escolha também considera o custo de ganhos pequenos de CPU, a evidência de alimentação sustentada da placa-mãe e as folgas entre gabinete, placa de vídeo e radiador.
 
-- Montar pelo Orçamento ganhou PC Comprável Agora, com ofertas em estoque vistas nas últimas 24 horas, e PC Ideal, com preços históricos de até 90 dias identificados por peça. O motor ampliou as referências de CPU e GPU, suavizou a combinação do desempenho, passou a dimensionar a fonte por carga e conectores e valida as peças finais antes de ordenar por preço real, desempenho e capacidade.
+- Montar pelo orçamento ganhou PC comprável agora, com ofertas em estoque vistas nas últimas 24 horas, e PC ideal, com preços históricos de até 90 dias identificados por peça. O motor ampliou as referências de CPU e GPU, suavizou a combinação do desempenho, passou a dimensionar a fonte por carga e conectores e valida as peças finais antes de ordenar por preço real, desempenho e capacidade.
 
-- Montar pelo Orçamento compara diferentes capacidades de memória e SSD na mesma busca. Diferencia variantes gráficas, aplica as primeiras referências por resolução e permite montar com vídeo integrado mesmo sem ofertas de placas de vídeo. A escolha de placa-mãe e cooler considera a potência estimada e as medidas do gabinete. A tela informa quando o cooler acompanha o processador e só mostra ganho percentual quando existe uma referência positiva.
+- Montar pelo orçamento compara diferentes capacidades de memória e SSD na mesma busca. Diferencia variantes gráficas, aplica as primeiras referências por resolução e permite montar com vídeo integrado mesmo sem ofertas de placas de vídeo. A escolha de placa-mãe e cooler considera a potência estimada e as medidas do gabinete. A tela informa quando o cooler acompanha o processador e só mostra ganho percentual quando existe uma referência positiva.
 
-- Montar pelo Orçamento voltou à tela inicial e ao Identificar Gargalo, com o mesmo estilo dos demais atalhos.
+- Montar pelo orçamento voltou à tela inicial e ao Identificar gargalo, com o mesmo estilo dos demais atalhos.
 
 - Montar pelo orçamento: sete processadores passam a usar referências locais de testes de jogos, na escala em que o Ryzen 5 5600 vale 100. A mesma referência vale para a peça à venda e para o processador atual no upgrade.
-- Montar pelo Orçamento lembra os campos preenchidos no navegador. A busca só roda quando a pessoa escolhe Montar ou pressiona Enter no campo de valor.
-- Montar pelo Orçamento compara kits com pares de pentes avulsos iguais. A tela identifica a recomendação, a melhor relação entre índice e preço e, quando distinta, a opção de maior desempenho entre as exibidas no orçamento.
-- Identificar Gargalo: cada dica de upgrade mostra as 3 melhores ofertas (1ª, 2ª e 3ª opção) em vez de 5, o mesmo número do Montar pelo Orçamento.
-- Troca de placa de vídeo nunca sugere uma com menos memória de vídeo que a atual, mesmo com chip melhor (seria downgrade): vale no Montar pelo Orçamento, nas melhores ofertas e na busca que a dica do Identificar Gargalo abre, e a dica avisa ("Só versões com 8 GB de memória de vídeo ou mais, como a sua"). Placa sem a memória informada também fica de fora.
-- "Importar Meu PC" na montagem, com um PC já importado (no Identificar Gargalo ou antes), abre direto na prévia com as peças lidas, sem pedir o arquivo de novo; "Escolher Outro Arquivo" continua lá.
+- Montar pelo orçamento lembra os campos preenchidos no navegador. A busca só roda quando a pessoa escolhe Montar ou pressiona Enter no campo de valor.
+- Montar pelo orçamento compara kits com pares de pentes avulsos iguais. A tela identifica a recomendação, a melhor relação entre índice e preço e, quando distinta, a opção de maior desempenho entre as exibidas no orçamento.
+- Identificar gargalo: cada dica de upgrade mostra as 3 melhores ofertas (1ª, 2ª e 3ª opção) em vez de 5, o mesmo número do Montar pelo orçamento.
+- Troca de placa de vídeo nunca sugere uma com menos memória de vídeo que a atual, mesmo com chip melhor (seria downgrade): vale no Montar pelo orçamento, nas melhores ofertas e na busca que a dica do Identificar gargalo abre, e a dica avisa ("Só versões com 8 GB de memória de vídeo ou mais, como a sua"). Placa sem a memória informada também fica de fora.
+- "Importar meu PC" na montagem, com um PC já importado (no Identificar gargalo ou antes), abre direto na prévia com as peças lidas, sem pedir o arquivo de novo; "Escolher outro arquivo" continua lá.
 - "Gabinete ATX" (e Micro ATX, Mini ITX) na busca passa a mostrar os gabinetes onde a placa cabe, incluindo os que aceitam formatos maiores. Antes eram só os de maior placa exatamente ATX, e mid towers que aceitam E-ATX ficavam de fora. A contagem do formulário segue a mesma regra.
 - "Não achou? Buscar nas lojas", abaixo do filtro de texto do resultado, desligado por enquanto: a varredura completa das lojas já traz praticamente todas as peças. O filtro de texto nos resultados continua.
 - Cooler: altura e ruído ficam opcionais (só tipo, soquetes e, no water cooler, o radiador são principais).
@@ -142,7 +164,7 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 - Fichas técnicas: campos novos, todos opcionais e lidos das páginas já guardadas (o servidor relê ao subir, sem abrir as lojas de novo). Placa-mãe: fases do VRM, dissipador no VRM, BIOS Flashback. Placa de vídeo: arquitetura (pelo chip), unidades de processamento (CUDA/stream), largura de banda (lida ou pelo barramento × a velocidade da memória), conectores de alimentação (sem o adaptador). Memória: XMP, EXPO. SSD: geração PCIe, tipo de NAND (sem confundir com o "SLC cache"), cache DRAM, durabilidade (TBW). Cooler: heatpipes, tamanho da ventoinha. Nas páginas guardadas: arquitetura em 87% das placas de vídeo, banda em 80%, unidades em 74%; ventoinha em 75% dos coolers; geração PCIe em 83% dos SSDs; BIOS Flashback em 47% das placas-mãe.
 - Fichas: "não tem" diferente de "não sei". Campo que o produto pode não ter guarda o "não tem" ("Não", 0 ou false) quando a ficha deixa claro: 394 placas-mãe sem Wi-Fi, 400 fontes sem conector de 16 pinos, 597 SSDs SATA, 1.006 memórias DDR4 sem EXPO. O título com "Wifi" (mesmo sem a versão) ou outra fonte com o valor de verdade ganham do "não tem" automático. A web e o preenchimento à mão também respondem "Não".
 - Busca na web também para os produtos de ficha completa com campo opcional vazio (depois dos que falta campo principal); o que nem a web completa vai para a revisão manual ("precisa de você"), que agora mostra os opcionais. Nova coluna "Completas com opcional vazio" na Cobertura.
-- Montar pelo Orçamento recomenda PC completo ou upgrade do PC importado. Mostra até três opções com benefícios distintos, informa o valor mínimo quando necessário e leva o resultado para a montagem peça por peça.
+- Montar pelo orçamento recomenda PC completo ou upgrade do PC importado. Mostra até três opções com benefícios distintos, informa o valor mínimo quando necessário e leva o resultado para a montagem peça por peça.
 - Prévia da importação do CPU-Z com mais detalhes: memória com os pentes e a frequência de fábrica, TDP e vídeo integrado do processador, linhas PCIe da placa de vídeo e polegadas do monitor.
 - Memória: 32 GB é o recomendado. Com 16 GB, a análise do PC mostra uma observação (não um upgrade pendente) com as memórias de 32 GB, e a montagem uma observação que não muda o selo. Jogos atuais em Full HD já passam de 16 GB com navegador e Discord abertos. O upgrade de memória (pouca, um pente só, lenta) também passa a mirar 32 GB (2x 16 GB).
 - Gargalo e upgrade pela ficha técnica:
@@ -179,7 +201,7 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 - Admin, Coleta, painel da S2 (botões fora da tela por enquanto; a rota `POST /api/admin/stores/:id/probe` e a lógica continuam), dois testes que mostram o que a loja devolveu em cada página (produtos e páginas da lista, se abriu pelo clique ou pelo endereço, ou o bloqueio e a mensagem), gravam as ofertas como a rotina sem mexer na volta da categoria e aparecem em Consultas; bloqueio não pausa a loja, e loja em pausa ou sem páginas na hora recusa. "Testar página 2 de fonte" abre só essa página, direto pelo endereço (aba nova, sem passar pela 1). "Testar páginas 1 a 5" abre um endereço editável (padrão: a página de fontes filtrada por parâmetro) e vai às seguintes clicando no link da próxima, como a rotina, com o intervalo da varredura completa da loja entre as páginas, parando na primeira que não abrir.
 - Lista paginada lida pelo clique: o link da próxima página é achado com os parâmetros em qualquer ordem, e a aba da lista fica aberta até 11 min parada (antes 90 s, menos que o intervalo que a varredura completa pode ter entre páginas).
 - Rotina de preços por categoria: cada vez de uma loja lê a categoria inteira (todas as páginas com estoque) e passa à próxima, no intervalo de listagens da loja.
-- Página do produto (`/produto/<chave>`): melhor preço com "Ver na Loja" no topo (como no card da busca), as outras ofertas abaixo, sem repetir a do topo (preço de cada loja, cupom, estoque; como na busca, só o novo vendido pela própria loja, com produto aberto e outros vendedores atrás de um botão; o melhor preço e o histórico também ficam sem eles), ficha técnica com todos os campos da categoria (o que falta aparece como "não informado"; quem usa vê só o valor, não de qual loja veio) e histórico de preço. Junta os anúncios do mesmo produto nas lojas. No ar mesmo com o resto do site em manutenção; por enquanto aberta pelo admin (aba Fichas, "Ver página do produto").
+- Página do produto (`/produto/<chave>`): melhor preço com "Ver na loja" no topo (como no card da busca), as outras ofertas abaixo, sem repetir a do topo (preço de cada loja, cupom, estoque; como na busca, só o novo vendido pela própria loja, com produto aberto e outros vendedores atrás de um botão; o melhor preço e o histórico também ficam sem eles), ficha técnica com todos os campos da categoria (o que falta aparece como "não informado"; quem usa vê só o valor, não de qual loja veio) e histórico de preço. Junta os anúncios do mesmo produto nas lojas. No ar mesmo com o resto do site em manutenção; por enquanto aberta pelo admin (aba Fichas, "Ver página do produto").
 - Fichas técnicas refeitas do zero, para todas as categorias: cada uma com seus campos fixos, só o indispensável para quem monta ou faz upgrade (placa-mãe: chipset, soquete, formato, memória, PCIe, M.2, SATA, rede; processador: soquete, arquitetura, núcleos, threads, clocks, cache, TDP, vídeo integrado; placa de vídeo: chip, VRAM, memória, barramento, clocks, consumo, comprimento; memória, SSD, fonte, gabinete e cooler com os seus). Uma tabela por categoria no banco, uma coluna por campo: mudar a lista de campos cria ou apaga a coluna sozinho. A ficha de um produto junta as páginas de todas as lojas que o vendem (mesmo part number), campo a campo, guardando de onde veio cada um. O texto da ficha fica guardado: melhorar o leitor relê tudo sem abrir as páginas de novo. A rotina de fichas lê todas as categorias, o que a coleta achou há menos tempo primeiro, e só abre página de produto sem ficha completa.
 - Admin, aba Fichas: a rotina de fichas (saiu da aba Produtos), a cobertura por categoria (completas, incompletas, não lidas, as que só a web completaria e os campos que mais faltam) e os produtos de cada categoria com os campos lidos, de onde veio cada um, o texto guardado da página e "Ler ficha".
 - Tabela de desempenho: RX 9050 e RX 7650 GRE (índice pelas vizinhas na TechPowerUp, consumo e PCIe x8 da 7650 GRE).
@@ -190,7 +212,7 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 - Varredura completa automática de madrugada, em todas as lojas, todo dia às `NIGHTLY_SWEEP_HOUR` (padrão 01:00), antes do backup das 04:30, com as mesmas pausas. O admin mostra a próxima e a última. Cobertura: anúncios em estoque, volta em andamento e última volta completa por loja e categoria.
 
 - Mesmo produto em lojas diferentes: chave de produto por anúncio (mesmo part number, também achado no título ou no endereço de outra loja, sem o "NAC" que uma loja põe no fim) e de grupo (mais EAN, chave do título e assinatura de placa de vídeo: marca + chip + memória + linha). Nas placas de vídeo, os anúncios casados com outra loja foram de 24% para 35% (exato) e de 37% para 44% (grupo). A ficha técnica passa a valer para todos os anúncios do mesmo produto: 190 anúncios ganharam ficha de outra loja na hora, e a rotina não abre a página de produto já coberto. Admin, Produtos: status "de outra loja", de onde veio a ficha e os outros anúncios do mesmo produto. A busca agrupa com as mesmas regras (e deixa de juntar variantes como "Infinity 2" e "Infinity 3", "Ventus 2X" e "3X", DDR4 e DDR5).
-- Identificar Gargalo: cada dica de upgrade mostra as 5 melhores ofertas de agora. Processador e placa de vídeo ordenados por desempenho ganho por real (só os compatíveis: placa que cabe na fonte, processador aceito pela placa-mãe, com aviso quando pede BIOS nova), com o ganho estimado; memória, fonte e SSD, as mais baratas que servem. Tudo do banco, sem consultar loja.
+- Identificar gargalo: cada dica de upgrade mostra as 5 melhores ofertas de agora. Processador e placa de vídeo ordenados por desempenho ganho por real (só os compatíveis: placa que cabe na fonte, processador aceito pela placa-mãe, com aviso quando pede BIOS nova), com o ganho estimado; memória, fonte e SSD, as mais baratas que servem. Tudo do banco, sem consultar loja.
 - Admin, cobertura: modelos de processador e placa de vídeo à venda que a tabela de desempenho não conhece.
 - Tabela de desempenho: placas antigas ainda à venda (GT 210 a GTX 750) e RX 5600.
 - Fichas técnicas nas três lojas (antes só na S1): uma rotina própria, separada da coleta, percorre aos poucos o catálogo de placa de vídeo, gabinete e cooler e lê a ficha de cada produto uma vez (uma por loja a cada `SHEET_ROUTINE_SECONDS`, padrão 180 s; desligada até ligar no admin). A checagem física da montagem passa a sair na hora para quase tudo. Ficha com dados vale para sempre; página sem ficha é lida de novo depois de 30 dias. Admin, cobertura: fichas lidas por loja e categoria.
@@ -201,7 +223,7 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ### Corrigido
 
-- Rotina de fichas: produto cuja página dá erro (sem ser bloqueio da loja, ex.: a loja redireciona o endereço para ele mesmo) sai da fila por 6 h e a rotina segue para o próximo. Antes, tentava o mesmo produto a cada vez e travava a fila de fichas da loja. Com 2 falhas seguidas, a oferta daquela loja sai do app (busca, ofertas e página do produto), porque o "Ver na Loja" cairia numa página de erro; volta sozinha quando a página abrir de novo. Fica guardado no banco (tabela `page_errors`, migração 14).
+- Rotina de fichas: produto cuja página dá erro (sem ser bloqueio da loja, ex.: a loja redireciona o endereço para ele mesmo) sai da fila por 6 h e a rotina segue para o próximo. Antes, tentava o mesmo produto a cada vez e travava a fila de fichas da loja. Com 2 falhas seguidas, a oferta daquela loja sai do app (busca, ofertas e página do produto), porque o "Ver na loja" cairia numa página de erro; volta sozinha quando a página abrir de novo. Fica guardado no banco (tabela `page_errors`, migração 14).
 - Chrome das lojas no servidor Linux com cara de navegador comum: em português (no Linux o Chrome ignorava `--lang` e os sites recebiam inglês com fuso de São Paulo; agora vai `--accept-lang=pt-BR` e o idioma do sistema em português) e janela no canto da tela virtual (a posição fora da tela, `-32000`, fica só no Windows: no Linux ninguém vê a tela e o site enxergava uma posição que não existe num monitor). No servidor, o Chrome troca `--disable-gpu` (que tirava o WebGL) por `--enable-unsafe-swiftshader` (WebGL desenhado na CPU).
 - S2: páginas de categoria da segunda em diante passaram a cair na página de "manutenção" da loja (só no navegador do servidor). Agora a leitura da lista usa uma aba só e, da segunda página em diante, clica no link da página seguinte como uma pessoa (o site troca a lista sem recarregar, e os dados vêm do pedido que ele faz), em vez de abrir cada `?page=N` numa aba nova como endereço digitado.
 - Fichas novas, gabinete e water cooler (conferido nas 490 páginas da primeira noite): a frente agora é lida também pela frase sobre a frente ("painel frontal em mesh"), e não mais pelo material (o vidro de "Materiais" é o da lateral: um gabinete Airflow, de frente em malha, saía "Vidro"); as ventoinhas inclusas somam as posições escritas nas linhas de baixo ("Frente: 2 x 120 mm" / "Traseira: 1 x 140 mm") e não contam duas vezes o texto repetido (conferido com o título do anúncio: de 59 para 96 batendo, de 52 para 13 diferentes); dimensões sem a da caixa, com "(C)" antes do número, com "*" e na ficha numa linha só; "Tamanho máximo do cooler" sem "CPU"; radiador pelas medidas em qualquer ordem, com "mm" no meio e sem as medidas "incluindo ventilador". Gabinetes completos de 35 para cerca de 70 das 256 páginas.

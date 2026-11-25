@@ -61,7 +61,7 @@ export function StatusPanel({ onUnauthorized }: { onUnauthorized: () => void }) 
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-500">{title}</div>
+      <div className="mb-1 text-xs font-medium text-zinc-500">{title}</div>
       {children}
     </div>
   );

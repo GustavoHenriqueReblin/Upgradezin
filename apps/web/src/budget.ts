@@ -1,5 +1,5 @@
 import { accountStorage } from './account.ts';
-import { BUILD_SLOTS, groupOffers, type BudgetMode as PriceMode, type BudgetNote, type BudgetOption, type BudgetPlan, type BudgetProfile, type BudgetRequest, type PcProfile, type Resolution } from '@upgradezin/shared';
+import { BUILD_SLOTS, CATEGORY_DEFS, groupOffers, type BudgetMode as PriceMode, type BudgetNote, type BudgetOption, type BudgetPlan, type BudgetProfile, type BudgetRequest, type PcProfile, type Resolution } from '@upgradezin/shared';
 import { itemFromGroup, toBuild, type BuildItem, type SavedBuild } from './build.ts';
 import { applyPc } from './pc.ts';
 
@@ -9,8 +9,9 @@ import { applyPc } from './pc.ts';
  */
 
 export type BudgetMode = 'full' | 'upgrade';
+export type BudgetWorkload = NonNullable<BudgetRequest['workload']>;
 
-/** Exibe os atalhos na tela inicial e no Identificar Gargalo. */
+/** Exibe os atalhos na tela inicial e no Identificar gargalo. */
 export const BUDGET_VISIBLE = true;
 
 /** Valor que a tela sugere ao abrir (a pessoa digita o dela). */
@@ -24,6 +25,8 @@ export interface SavedBudget {
   mode?: BudgetMode;
   priceMode?: PriceMode;
   profile?: BudgetProfile;
+  /** Fora de Jogos: se o trabalho pesa mais no processador ou usa aceleração pela placa de vídeo. */
+  workload?: BudgetWorkload;
   text: Record<BudgetMode, string>;
   res: Resolution;
   fast: boolean;
@@ -52,6 +55,7 @@ export function sanitizeBudgetUi(raw: unknown): SavedBudget {
   if (MODES.includes(src.mode as BudgetMode)) out.mode = src.mode as BudgetMode;
   if (src.priceMode === 'buyable' || src.priceMode === 'ideal') out.priceMode = src.priceMode;
   if (src.profile === 'games' || src.profile === 'mixed' || src.profile === 'productivity') out.profile = src.profile;
+  if (src.workload === 'cpu' || src.workload === 'gpu') out.workload = src.workload;
   const text = (src.text && typeof src.text === 'object' ? src.text : {}) as Record<string, unknown>;
   for (const m of MODES) {
     const saved = text[m];
@@ -107,8 +111,11 @@ export function ownedBuild(pc: PcProfile, build: SavedBuild): SavedBuild {
 }
 
 /** Pedido ao servidor. No upgrade, as peças atuais vão como specs (nunca o relatório). */
-export function budgetRequest(budget: number, screen: Pick<BudgetRequest, 'res' | 'hz' | 'mode' | 'profile'>, owned?: SavedBuild, current?: BudgetRequest['current']): BudgetRequest {
+export function budgetRequest(budget: number, screen: Pick<BudgetRequest, 'res' | 'hz' | 'mode' | 'profile' | 'workload'>, owned?: SavedBuild, current?: BudgetRequest['current']): BudgetRequest {
+  // O tipo de trabalho só vale fora de Jogos.
+  const workload = screen.profile && screen.profile !== 'games' ? screen.workload : undefined;
   return { budget, res: screen.res, ...(screen.hz && { hz: screen.hz }), ...(screen.mode && { mode: screen.mode }), ...(screen.profile && { profile: screen.profile }),
+    ...(workload && { workload }),
     ...(owned && { owned: toBuild(owned) }), ...(current && { current }) };
 }
 
@@ -123,7 +130,7 @@ export function optionLabels(options: BudgetOption[]): string[] {
   const value = inBudget.length > 1 ? inBudget.reduce((a, b) => (perReal(b.o) > perReal(a.o) ? b : a)).i : -1;
   const highest = inBudget.reduce((top, next) => (next.o.objective ?? next.o.fps) > (top.o.objective ?? top.o.fps) ? next : top, inBudget[0]!);
   return options.map((o, i) => {
-    const tags = [i === 0 ? 'Recomendada no valor' : undefined, highest?.i === i && i !== 0 ? 'Maior Desempenho no Valor' : undefined, i === value ? 'Melhor custo-benefício' : undefined, o.stretch ? 'Acima do valor' : undefined].filter(Boolean);
+    const tags = [i === 0 ? 'Recomendada no valor' : undefined, highest?.i === i && i !== 0 ? 'Maior desempenho no valor' : undefined, i === value ? 'Melhor custo-benefício' : undefined, o.stretch ? 'Acima do valor' : undefined].filter(Boolean);
     return tags.join(' · ');
   });
 }
@@ -158,7 +165,7 @@ export const NOTE_TEXT: Record<BudgetNote, string> = {
   igpu: 'Esta opção usa o vídeo integrado do processador. O desempenho varia conforme o jogo e a memória instalada.',
   'ram-16': 'Esta opção inclui 16 GB de memória. Jogos pesados e uso de vários programas ao mesmo tempo podem se beneficiar de 32 GB.',
   'ssd-500': 'Esta opção inclui um SSD de 500 GB. Confira quanto espaço os seus jogos ocupam.',
-  'psu-unknown': 'Você não informou a sua fonte: informe-a em Identificar Gargalo para o Upgradezin conferir se ela aguenta, ou inclua uma fonte nova.',
+  'psu-unknown': 'Você não informou a sua fonte: informe-a em Identificar gargalo para o Upgradezin conferir se ela aguenta, ou inclua uma fonte nova.',
   'keeps-ram': 'A sua memória serve na placa-mãe nova e fica.',
   'ram-pair': 'Esta opção usa dois pentes avulsos iguais. Confira a frequência que a placa-mãe aceita com os dois instalados.',
   bios: 'A sua placa-mãe aceita o processador novo depois de atualizar a BIOS: atualize com o processador atual ainda instalado, antes da troca.',
@@ -170,8 +177,65 @@ export const NOTE_TEXT: Record<BudgetNote, string> = {
   'cooling-estimate': 'O cooler foi dimensionado pela potência estimada do processador. A temperatura depende da ventilação e da carga.',
 };
 
+/** Erro do pedido: 'invalid' quando o servidor recusou os dados (tentar de novo não adianta), 'failed' no resto. */
+export class BudgetError extends Error {
+  constructor(readonly kind: 'invalid' | 'failed') {
+    super(`budget ${kind}`);
+  }
+}
+
 export async function fetchPlan(req: BudgetRequest, signal?: AbortSignal): Promise<BudgetPlan> {
   const r = await fetch('/api/budget/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req), signal });
-  if (!r.ok) throw new Error(`budget ${r.status}`);
+  if (!r.ok) throw new BudgetError(r.status === 400 ? 'invalid' : 'failed');
   return (await r.json()) as BudgetPlan;
+}
+
+/** Nome curto do que a opção compra de principal: placa de vídeo e processador; sem eles, as peças compradas. */
+export function optionHeadline(opt: BudgetOption): string {
+  const video = opt.parts.gpu?.offer.specs;
+  const gpu = video?.gpuModel ? [video.gpuModel, video.vram && `${video.vram} GB`].filter(Boolean).join(' ') : opt.notes.includes('igpu') ? 'Vídeo integrado' : undefined;
+  const c = opt.parts.cpu?.offer.specs;
+  const cpu = c ? [c.cpuLine, c.cpuModel].filter(Boolean).join(' ') : undefined;
+  if (gpu || cpu) return [gpu, cpu].filter(Boolean).join(' + ');
+  const others = BUILD_SLOTS.filter((slot) => slot !== 'gpu' && slot !== 'cpu' && opt.parts[slot]).map((slot) => CATEGORY_DEFS[slot].name);
+  return others.join(' + ') || 'Sem peças novas';
+}
+
+const RESULT_KEY = 'upgradezin.budget.result.v1';
+
+/** Último resultado de cada aba, com a data: reabrir a tela (ou voltar de uma peça) mostra o que foi calculado. */
+export interface SavedBudgetResult {
+  at: number;
+  plan: BudgetPlan;
+  owned?: SavedBuild;
+}
+
+export function loadBudgetResult(mode: BudgetMode): SavedBudgetResult | undefined {
+  try {
+    const raw = accountStorage.getItem(RESULT_KEY);
+    const saved = (raw ? JSON.parse(raw) : {}) as Partial<Record<BudgetMode, SavedBudgetResult>>;
+    const entry = saved[mode];
+    return entry && typeof entry.at === 'number' && entry.plan && typeof entry.plan.status === 'string' && typeof entry.plan.budget === 'number' ? entry : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Limite do servidor por chave é 512 KB; acima disso o resultado fica só na tela (cada peça já traz só as ofertas do mesmo produto). */
+const RESULT_MAX = 400_000;
+
+/** Grava (ou apaga, com undefined) o resultado de uma aba sem mexer no da outra. */
+export function saveBudgetResult(mode: BudgetMode, result: SavedBudgetResult | undefined): void {
+  try {
+    const raw = accountStorage.getItem(RESULT_KEY);
+    const saved = (raw ? JSON.parse(raw) : {}) as Partial<Record<BudgetMode, SavedBudgetResult>>;
+    if (result) saved[mode] = result;
+    else delete saved[mode];
+    const text = JSON.stringify(saved);
+    if (text.length > RESULT_MAX) return;
+    if (Object.keys(saved).length) accountStorage.setItem(RESULT_KEY, text);
+    else accountStorage.removeItem(RESULT_KEY);
+  } catch {
+    // sem armazenamento: o resultado vale só enquanto a tela estiver aberta
+  }
 }

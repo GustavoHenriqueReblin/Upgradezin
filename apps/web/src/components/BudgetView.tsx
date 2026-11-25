@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, ChevronDown, FileText, Loader2, Monitor, Wallet } from 'lucide-react';
+import { ArrowRight, ChevronDown, FileText, Loader2, Monitor, RefreshCw, Wallet } from 'lucide-react';
 import { analyzePc, BUILD_SLOTS, CATEGORY_DEFS, CPU_BOUND, GPU_BOUND, productPath, type BudgetMode as PriceMode, type BudgetOption, type BudgetPlan, type BudgetProfile, type PcProfile, type Resolution } from '@upgradezin/shared';
-import { budgetRequest, fetchPlan, formatBudget, loadBudgetUi, NOTE_TEXT, optionLabels, optionsOf, ownedBuild, parseBudget, planToBuild, saveBudgetUi, stretchGain, type BudgetMode } from '../budget.ts';
+import { BudgetError, budgetRequest, fetchPlan, formatBudget, loadBudgetResult, loadBudgetUi, NOTE_TEXT, optionHeadline, optionLabels, optionsOf, ownedBuild, parseBudget, planToBuild,
+  saveBudgetResult, saveBudgetUi, stretchGain, type BudgetMode, type BudgetWorkload } from '../budget.ts';
+import { CompareButton } from './CompareControls.tsx';
 import type { SavedBuild } from '../build.ts';
 import { brl } from '../format.ts';
 import { storeName } from '../stores.ts';
 import { CATEGORY_ICONS } from './CategoryPicker.tsx';
 import { ImportPc, PcInputActions } from './ImportPc.tsx';
-import { KIND, useCpuSheet, VERDICT, verdictSummary } from './PcAnalysis.tsx';
+import { KIND, SCREEN_LABEL, useCpuSheet, VERDICT, verdictSummary } from '../pcAnalysis.ts';
 import { pcSummary, PcSpecs } from './PcSpecs.tsx';
 import { StoreDot } from './StoreDot.tsx';
 
@@ -27,16 +29,23 @@ const RES: { id: Resolution; label: string }[] = [
   { id: '1440p', label: 'Quad HD' },
   { id: '4k', label: '4K' },
 ];
-const RES_LABEL: Record<Resolution, string> = { '1080p': 'Full HD', '1440p': 'Quad HD', '4k': '4K' };
 const REFERENCE_DATE = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' });
-const RADIO_CARD = 'flex min-w-0 cursor-pointer items-start gap-2.5 rounded-xl border border-zinc-200 px-3 py-2.5 transition hover:border-zinc-500 has-checked:border-zinc-500 has-checked:bg-zinc-100 dark:border-zinc-700 dark:has-checked:bg-zinc-800';
+const RESULT_DATE = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+/** Opção marcável: selecionada em laranja, como a categoria ativa, a aba aberta e as opções do resultado. */
+const RADIO_CARD = 'flex min-w-0 cursor-pointer items-start gap-2.5 rounded-xl border border-zinc-200 px-3 py-2.5 transition hover:border-accent-500 has-checked:border-accent-500 has-checked:bg-accent-100 dark:border-zinc-700 dark:has-checked:bg-accent-500/15';
 const PRICE_MODES = [
-  { id: 'buyable', label: 'PC Comprável Agora', description: 'Usa preços e estoques observados nas últimas 24 horas.' },
-  { id: 'ideal', label: 'PC Ideal', description: 'Também considera peças sem oferta recente pelo último preço em estoque.' },
+  { id: 'buyable', label: 'PC comprável agora', description: 'Usa preços e estoques observados nas últimas 24 horas.' },
+  { id: 'ideal', label: 'PC ideal', description: 'Também considera peças sem oferta recente pelo último preço em estoque.' },
 ] as const;
-const PROFILES = [{ id: 'games', label: 'Jogos' }, { id: 'mixed', label: 'Jogos e Trabalho' }, { id: 'productivity', label: 'Produtividade' }] as const;
+const PROFILES = [{ id: 'games', label: 'Jogos' }, { id: 'mixed', label: 'Jogos e trabalho' }, { id: 'productivity', label: 'Produtividade' }] as const;
 
-type State = { kind: 'idle' } | { kind: 'loading' } | { kind: 'error' } | { kind: 'done'; plan: BudgetPlan; owned?: SavedBuild };
+type State = { kind: 'idle' } | { kind: 'loading' } | { kind: 'error'; invalid: boolean } | { kind: 'done'; plan: BudgetPlan; owned?: SavedBuild; at: number };
+
+/** O último resultado guardado da aba, para a tela reabrir com ele. */
+const restored = (mode: BudgetMode): State => {
+  const saved = loadBudgetResult(mode);
+  return saved ? { kind: 'done', ...saved } : { kind: 'idle' };
+};
 
 /**
  * Montar pelo orçamento: um ponto de entrada ("quanto quer gastar?") para o PC inteiro ou o upgrade do PC
@@ -50,8 +59,15 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
   const [fast, setFast] = useState(saved.fast);
   const [priceMode, setPriceMode] = useState<PriceMode>(saved.priceMode ?? 'buyable');
   const [profile, setProfile] = useState<BudgetProfile>(saved.profile ?? 'games');
-  const [workload, setWorkload] = useState<'cpu' | 'gpu'>('cpu');
-  const [state, setState] = useState<State>({ kind: 'idle' });
+  const [workload, setWorkload] = useState<BudgetWorkload>(saved.workload ?? 'cpu');
+  const [state, setState] = useState<State>(() => restored(mode));
+  // Trocar de aba mostra o último resultado daquela aba.
+  const shownMode = useRef(mode);
+  useEffect(() => {
+    if (shownMode.current === mode) return;
+    shownMode.current = mode;
+    setState(restored(mode));
+  }, [mode]);
   const pending = useRef<AbortController>(undefined);
   useEffect(() => () => pending.current?.abort(), []);
   const [importing, setImporting] = useState(false);
@@ -60,7 +76,7 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
   const budget = parseBudget(text[mode]);
   const hasUpgradeBase = !!(pc?.cpu || pc?.gpu);
 
-  // Upgrade: desempenho atual e tela, como no Identificar Gargalo (processador pela ficha do modelo).
+  // Upgrade: desempenho atual e tela, como no Identificar gargalo (processador pela ficha do modelo).
   const cpuSheet = useCpuSheet(mode === 'upgrade' ? pc?.cpu?.specs.cpuModel : undefined);
   const owned = useMemo(() => (pc ? ownedBuild(pc, build) : undefined), [pc, build]);
   const analysis = useMemo(() => (pc ? analyzePc(pc, { psu: owned?.psu?.specs, ...(cpuSheet && { cpuSheet }) }) : undefined), [pc, owned, cpuSheet]);
@@ -68,45 +84,53 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
   // O que o diagnóstico sugere: os upgrades e o que pede atenção (a pessoa vê antes de dizer o valor).
   const suggested = analysis?.tips.filter((t) => t.kind === 'upgrade' || t.kind === 'attention') ?? [];
 
+  /** Mudar um campo invalida o resultado mostrado (e o guardado desta aba). */
   const change = (fn: () => void) => {
     pending.current?.abort();
     fn();
     setState({ kind: 'idle' });
+    saveBudgetResult(mode, undefined);
   };
 
   const showBudget = (amount: number) => setText((values) => ({ ...values, [mode]: formatBudget(amount) }));
 
-  const run = () => {
+  /** Monta o pedido e roda; `prices` refaz com outro tipo de recomendação (ex. Comprável Agora a partir do Ideal). */
+  const run = (prices: PriceMode = priceMode) => {
     if (!budget || (mode === 'upgrade' && (!hasUpgradeBase || !owned || !balance))) return;
     showBudget(budget);
     const req =
       mode === 'full'
-        ? budgetRequest(budget, { res, mode: priceMode, profile, ...(fast && { hz: 144 }) })
-        : budgetRequest(budget, { res: balance!.res, hz: balance!.hz, mode: priceMode, profile }, owned, { ...(balance!.cpu && { cpu: balance!.cpu }), ...(balance!.gpu && { gpu: balance!.gpu }) });
+        ? budgetRequest(budget, { res, mode: prices, profile, workload, ...(fast && { hz: 144 }) })
+        : budgetRequest(budget, { res: balance!.res, hz: balance!.hz, mode: prices, profile, workload }, owned, { ...(balance!.cpu && { cpu: balance!.cpu }), ...(balance!.gpu && { gpu: balance!.gpu }) });
     pending.current?.abort();
     const controller = new AbortController();
     pending.current = controller;
     setState({ kind: 'loading' });
-    fetchPlan({ ...req, ...(profile !== 'games' && { workload }) }, controller.signal)
+    fetchPlan(req, controller.signal)
       .then((plan) => {
         if (controller.signal.aborted) return;
-        setState({ kind: 'done', plan, ...(mode === 'upgrade' && { owned }) });
+        const result = { plan, at: Date.now(), ...(mode === 'upgrade' && { owned }) };
+        setState({ kind: 'done', ...result });
+        saveBudgetResult(mode, result);
       })
-      .catch(() => { if (!controller.signal.aborted) setState({ kind: 'error' }); });
+      .catch((error: unknown) => { if (!controller.signal.aborted) setState({ kind: 'error', invalid: error instanceof BudgetError && error.kind === 'invalid' }); });
   };
 
   // Guarda a cada mudança.
-  useEffect(() => saveBudgetUi({ mode, text, res, fast, priceMode, profile }), [mode, text, res, fast, priceMode, profile]);
+  useEffect(() => saveBudgetUi({ mode, text, res, fast, priceMode, profile, workload }), [mode, text, res, fast, priceMode, profile, workload]);
 
-  const screen = mode === 'full' ? `${RES_LABEL[res]}${fast ? ' a 144 Hz' : ''}` : balance ? `${RES_LABEL[balance.res]}${balance.hz && balance.hz >= 120 ? ` a ${balance.hz} Hz` : ''}` : '';
+  const screen = mode === 'full' ? `${SCREEN_LABEL[res]}${fast ? ' a 144 Hz' : ''}` : balance ? `${SCREEN_LABEL[balance.res]}${balance.hz && balance.hz >= 120 ? ` a ${balance.hz} Hz` : ''}` : '';
   const tab = (m: BudgetMode, label: string) => (
     <button
       role="tab"
       aria-selected={mode === m}
-      onClick={() => change(() => onMode(m))}
-      className={`min-w-0 flex-1 rounded-lg px-2.5 py-2.5 text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-accent-500 sm:text-sm ${mode === m
-        ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-800 dark:text-zinc-100'
-        : 'text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-100'}`}
+      onClick={() => {
+        pending.current?.abort();
+        onMode(m);
+      }}
+      className={`border-b-2 px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-accent-500 ${mode === m
+        ? 'border-accent-500 text-accent-700 dark:text-accent-300'
+        : 'border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-900 dark:hover:border-zinc-600 dark:hover:text-zinc-100'}`}
     >
       {label}
     </button>
@@ -115,24 +139,24 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
   return (
     <div className="mx-auto w-full max-w-4xl space-y-5">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Montar pelo Orçamento</h2>
+        <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Montar pelo orçamento</h2>
         <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">
           Compare montagens e upgrades para o seu orçamento.
         </p>
       </div>
 
       <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="border-b border-zinc-200 px-4 py-3 sm:px-6 dark:border-zinc-800">
-          <div role="tablist" aria-label="Tipo de montagem" className="flex gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-950">
-            {tab('full', 'PC Completo')}
-            {tab('upgrade', 'Upgrade do Meu PC')}
+        <div className="border-b border-zinc-200 px-2 sm:px-4 dark:border-zinc-800">
+          <div role="tablist" aria-label="Tipo de montagem" className="-mb-px flex">
+            {tab('full', 'PC completo')}
+            {tab('upgrade', 'Upgrade do meu PC')}
           </div>
         </div>
 
-        <div className={mode === 'full' ? 'grid md:grid-cols-[minmax(0,1fr)_minmax(15rem,0.57fr)]' : ''}>
+        <div>
           <div className="min-w-0 space-y-5 p-4 sm:p-6">
             <fieldset className="min-w-0">
-              <legend className="mb-2 text-sm font-semibold">Tipo de Recomendação</legend>
+              <legend className="mb-2 text-sm font-semibold">Tipo de recomendação</legend>
               <div className="grid gap-2 sm:grid-cols-2">
                 {PRICE_MODES.map(({ id, label, description }) => (
                   <label key={id} className={RADIO_CARD}>
@@ -149,8 +173,8 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
             </fieldset>
 
             <fieldset className="min-w-0">
-              <legend className="mb-2 text-sm font-semibold">Como Você Usa o PC?</legend>
-              <div className="grid gap-2 sm:grid-cols-2">
+              <legend className="mb-2 text-sm font-semibold">Como você usa o PC?</legend>
+              <div className="grid gap-2 sm:grid-cols-3">
                 {PROFILES.map(({ id, label }) => (
                   <label key={id} className={RADIO_CARD}>
                     <input type="radio" name="budget-profile" value={id} checked={profile === id}
@@ -167,18 +191,18 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
 
             {profile !== 'games' && (
               <label className="block text-sm font-semibold">
-                Tipo de Trabalho
+                Tipo de trabalho
                 <select value={workload} onChange={(e) => change(() => setWorkload(e.target.value === 'gpu' ? 'gpu' : 'cpu'))}
-                  className="ml-2 rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-2 font-normal text-white">
-                  <option value="cpu">Principalmente no Processador</option>
-                  <option value="gpu">Com Aceleração por Placa de Vídeo</option>
+                  className="ml-2 min-h-10 rounded-lg border border-zinc-300 bg-white px-3 font-normal dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100">
+                  <option value="cpu">Principalmente no processador</option>
+                  <option value="gpu">Com aceleração por placa de vídeo</option>
                 </select>
               </label>
             )}
             {mode === 'full' ? (
               <fieldset className="min-w-0">
                 <legend className="mb-2.5 text-sm font-semibold">
-                  <Monitor className="mr-1.5 inline h-4 w-4 align-text-bottom text-zinc-500 dark:text-zinc-400" aria-hidden="true" /> Em Que Tela Vai Jogar?
+                  <Monitor className="mr-1.5 inline h-4 w-4 align-text-bottom text-zinc-500 dark:text-zinc-400" aria-hidden="true" /> {profile === 'productivity' ? 'Qual a resolução do monitor?' : 'Em que tela vai jogar?'}
                 </legend>
                 <div className="grid grid-cols-3 gap-2">
                   {RES.map((r) => (
@@ -187,8 +211,8 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
                       aria-pressed={res === r.id}
                       onClick={() => change(() => setRes(r.id))}
                       className={`rounded-xl border px-2 py-2.5 text-sm transition focus-visible:outline-2 focus-visible:outline-accent-500 ${res === r.id
-                        ? 'border-zinc-500 bg-zinc-100 font-semibold dark:border-zinc-500 dark:bg-zinc-800'
-                        : 'border-zinc-200 text-zinc-600 hover:border-zinc-500 dark:border-zinc-700 dark:text-zinc-400'}`}
+                        ? 'accent-control font-semibold'
+                        : 'border-zinc-200 text-zinc-600 hover:border-accent-500 dark:border-zinc-700 dark:text-zinc-400'}`}
                     >
                       {r.label}
                     </button>
@@ -206,14 +230,14 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
                     <button onClick={() => setPcOpen(!pcOpen)} aria-expanded={pcOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                       <ChevronDown className={`h-4 w-4 shrink-0 text-zinc-400 transition ${pcOpen ? '' : '-rotate-90'}`} />
                       <span className="min-w-0 flex-1">
-                        <span className="block text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                        <span className="block text-xs font-semibold text-zinc-400">
                           Seu PC{screen && ` · ${screen}`}
                         </span>
                         <span className="block truncate text-sm">{pcSummary(pc, owned?.psu)}</span>
                       </span>
                     </button>
                     <button onClick={() => setImporting(true)} className="flex shrink-0 items-center gap-1.5 text-sm text-zinc-500 hover:underline">
-                      <FileText className="h-4 w-4" /> <span className="hidden sm:inline">Trocar Relatório</span>
+                      <FileText className="h-4 w-4" /> <span className="hidden sm:inline">Trocar relatório</span>
                     </button>
                   </div>
                   {pcOpen && (
@@ -245,7 +269,7 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
               </div>
             ) : (
               <div className="rounded-xl border border-dashed border-zinc-300 p-4 text-center text-sm text-zinc-500 dark:border-zinc-700">
-                Importe o relatório do CPU-Z ou marque Já Tenho nas peças da sua montagem para receber sugestões de upgrade.
+                Importe o relatório do CPU-Z ou marque Já tenho nas peças da sua montagem para receber sugestões de upgrade.
                 <div className="mt-3">
                   <PcInputActions onImport={() => setImporting(true)} onManual={onManual} />
                 </div>
@@ -253,12 +277,10 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
             )}
           </div>
 
-          <div className={`flex flex-col gap-3 border-t border-zinc-200 bg-zinc-50 p-4 sm:p-6 dark:border-zinc-800 dark:bg-zinc-950/45 ${mode === 'full'
-            ? 'md:justify-center md:border-l md:border-t-0'
-            : 'sm:flex-row sm:items-end sm:justify-between'}`}>
+          <div className="flex flex-col gap-3 border-t border-zinc-200 bg-zinc-50 p-4 sm:flex-row sm:items-end sm:justify-between sm:p-6 dark:border-zinc-800 dark:bg-zinc-950/45">
             <div className="min-w-0">
               <label htmlFor="budget" className="mb-2 block text-sm font-semibold">
-                {mode === 'full' ? 'Quanto Você Quer Gastar?' : 'Quanto Você Quer Gastar no Upgrade?'}
+                {mode === 'full' ? 'Quanto você quer gastar?' : 'Quanto você quer gastar no upgrade?'}
               </label>
               <div className="flex items-center gap-2 rounded-xl border border-zinc-300 bg-white px-3 focus-within:border-accent-500 dark:border-zinc-700 dark:bg-zinc-950">
                 <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400">R$</span>
@@ -275,23 +297,37 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
             </div>
 
             <button
-              onClick={run}
+              onClick={() => run()}
               disabled={!budget || state.kind === 'loading' || (mode === 'upgrade' && !hasUpgradeBase)}
               className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl accent-control px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {state.kind === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
-              {state.kind === 'loading' ? 'Montando…' : mode === 'full' ? 'Montar o PC' : 'Montar o Upgrade'}
+              {state.kind === 'loading' ? 'Montando…' : mode === 'full' ? 'Montar o PC' : 'Montar o upgrade'}
             </button>
           </div>
         </div>
       </section>
 
-      {state.kind === 'error' && <p className="text-sm text-red-600">Não deu para montar agora. Tente de novo em instantes.</p>}
-      {state.kind === 'done' && <Result plan={state.plan} owned={state.owned} screen={screen} onUse={showBudget} onToBuild={onToBuild} />}
+      {state.kind === 'error' && <p role="status" className="text-sm text-red-600 dark:text-red-400">{state.invalid
+        ? 'O servidor não aceitou os dados do pedido. Revise o valor e as peças do seu PC.'
+        : 'Não deu para montar agora. Tente de novo em instantes.'}</p>}
+      {state.kind === 'done' && (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-zinc-500">
+            <span>Resultado calculado em {resultDate(state.at)}.</span>
+            <button type="button" onClick={() => run()} disabled={!budget}
+              className="button-link inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 px-3 font-medium text-zinc-800 hover:border-accent-500 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-100">
+              <RefreshCw aria-hidden="true" className="h-4 w-4" /> Refazer cálculo
+            </button>
+          </div>
+          <Result plan={state.plan} owned={state.owned} screen={screen} onUse={showBudget} onToBuild={onToBuild}
+            onBuyable={() => { setPriceMode('buyable'); run('buyable'); }} />
+        </>
+      )}
 
       {importing && (
         <ImportPc
-          applyLabel="Usar Este PC"
+          applyLabel="Usar este PC"
           initial={null}
           onClose={() => setImporting(false)}
           onApply={(p) => {
@@ -305,7 +341,12 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
   );
 }
 
-function Result({ plan, owned, screen, onUse, onToBuild }: { plan: BudgetPlan; owned?: SavedBuild; screen: string; onUse: (v: number) => void; onToBuild: (b: SavedBuild) => void }) {
+/** "25/11 às 14:30" */
+export const resultDate = (at: number) => RESULT_DATE.format(at).replace(', ', ' às ');
+
+function Result({ plan, owned, screen, onUse, onToBuild, onBuyable }: {
+  plan: BudgetPlan; owned?: SavedBuild; screen: string; onUse: (v: number) => void; onToBuild: (b: SavedBuild) => void; onBuyable: () => void;
+}) {
   const upgrade = !!owned;
   if (plan.status !== 'ok') {
     const text =
@@ -328,23 +369,14 @@ function Result({ plan, owned, screen, onUse, onToBuild }: { plan: BudgetPlan; o
     );
   }
 
-  return <Options plan={plan} owned={owned} screen={screen} onToBuild={onToBuild} />;
-}
-
-/** Nome curto do que a opção compra de principal: placa de vídeo e processador (ou "fica a atual"). */
-function headline(opt: BudgetOption): string {
-  const video = opt.parts.gpu?.offer.specs;
-  const gpu = video?.gpuModel ? [video.gpuModel, video.vram && `${video.vram} GB`].filter(Boolean).join(' ') : opt.notes.includes('igpu') ? 'vídeo integrado' : undefined;
-  const c = opt.parts.cpu?.offer.specs;
-  const cpu = c ? [c.cpuLine, c.cpuModel].filter(Boolean).join(' ') : undefined;
-  return [gpu, cpu].filter(Boolean).join(' + ') || 'Memória';
+  return <Options plan={plan} owned={owned} screen={screen} onToBuild={onToBuild} onBuyable={onBuyable} />;
 }
 
 /**
  * As opções que fecham no orçamento (até 3), lado a lado: a 1ª é a melhor; cada outra traz outra placa de
  * vídeo (ou outro processador). Escolher uma mostra as peças dela.
  */
-function Options({ plan, owned, screen, onToBuild }: { plan: BudgetPlan; owned?: SavedBuild; screen: string; onToBuild: (b: SavedBuild) => void }) {
+function Options({ plan, owned, screen, onToBuild, onBuyable }: { plan: BudgetPlan; owned?: SavedBuild; screen: string; onToBuild: (b: SavedBuild) => void; onBuyable: () => void }) {
   const options = optionsOf(plan);
   const labels = optionLabels(options);
   const [at, setAt] = useState(0);
@@ -352,25 +384,25 @@ function Options({ plan, owned, screen, onToBuild }: { plan: BudgetPlan; owned?:
   return (
     <div className="space-y-3">
       {options.length > 1 && (
-        <div role="tablist" className={`grid gap-2 ${options.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+        <div role="group" aria-label="Opções do orçamento" className={`grid gap-2 ${options.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
           {options.map((o, i) => {
             const extraGain = o.stretch ? stretchGain(o, options[0]!) : undefined;
             return (
               <button
                 key={i}
                 data-button-layout="card"
-                role="tab"
-                aria-selected={i === at}
+                type="button"
+                aria-pressed={i === at}
                 onClick={() => setAt(i)}
                 className={`rounded-xl border p-3 text-left transition ${
                   i === at ? 'border-accent-500 bg-accent-500/10' : 'border-zinc-200 bg-white hover:border-accent-500 dark:border-zinc-800 dark:bg-zinc-900'
                 }`}
               >
-                <span className="block text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                <span className="block text-xs font-semibold text-zinc-400">
                   Opção {i + 1}
                 </span>
                 {labels[i] && <span className="block text-xs font-medium text-accent-700 dark:text-accent-300">{labels[i]}</span>}
-                <span className="mt-0.5 block truncate text-sm font-medium">{headline(o)}</span>
+                <span className="mt-0.5 block truncate text-sm font-medium">{optionHeadline(o)}</span>
                 <span className="mt-1 flex items-baseline gap-2">
                   <span className="font-semibold tabular-nums">{brl(o.total)}</span>
                   {o.gain !== undefined && <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">+{Math.round(o.gain * 100)}%</span>}
@@ -387,30 +419,30 @@ function Options({ plan, owned, screen, onToBuild }: { plan: BudgetPlan; owned?:
         </div>
       )}
       <OptionDetail key={at} opt={opt} first={options[0]!} n={options.length > 1 ? at + 1 : undefined} budget={plan.budget} owned={owned} screen={screen}
-        profile={plan.profile ?? 'games'} onToBuild={onToBuild} />
+        profile={plan.profile ?? 'games'} onToBuild={onToBuild} onBuyable={onBuyable} />
     </div>
   );
 }
 
-function OptionDetail({ opt, first, n, budget, owned, screen, profile, onToBuild }: {
+function OptionDetail({ opt, first, n, budget, owned, screen, profile, onToBuild, onBuyable }: {
   opt: BudgetOption; first: BudgetOption; n?: number; budget: number; owned?: SavedBuild; screen: string; profile: BudgetProfile; onToBuild: (b: SavedBuild) => void;
+  onBuyable: () => void;
 }) {
   const upgrade = !!owned;
-  const plan = opt;
-  const left = budget - plan.total;
+  const left = budget - opt.total;
   const extraGain = stretchGain(opt, first);
-  const hasReference = Object.values(plan.parts).some((part) => part.reference);
-  const costDelta = plan.total - first.total;
+  const hasReference = Object.values(opt.parts).some((part) => part.reference);
+  const costDelta = opt.total - first.total;
   const baseline = first.objective ?? first.fps;
-  const perfDelta = baseline > 0 ? Math.round(((plan.objective ?? plan.fps) / baseline - 1) * 100) : undefined;
-  const ratio = plan.ratio;
+  const perfDelta = baseline > 0 ? Math.round(((opt.objective ?? opt.fps) / baseline - 1) * 100) : undefined;
+  const ratio = opt.ratio;
   const balanced = ratio !== undefined && ratio > CPU_BOUND && ratio < GPU_BOUND;
   const perf = profile !== 'games'
-    ? plan.gain === undefined ? undefined : `Ganho estimado de ${Math.round(plan.gain * 100)}% para este perfil de uso.`
-    : plan.notes.includes('igpu')
+    ? opt.gain === undefined ? undefined : `Ganho estimado de ${Math.round(opt.gain * 100)}% para este perfil de uso.`
+    : opt.notes.includes('igpu')
     ? undefined
-    : upgrade && plan.gain !== undefined
-      ? `Ganho estimado de ${Math.round(plan.gain * 100)}% em jogos em ${screen}${balanced ? ', com processador e placa de vídeo equilibrados' : ''}.`
+    : upgrade && opt.gain !== undefined
+      ? `Ganho estimado de ${Math.round(opt.gain * 100)}% em jogos em ${screen}${balanced ? ', com processador e placa de vídeo equilibrados' : ''}.`
       : balanced
         ? `Processador e placa de vídeo equilibrados em ${screen}.`
         : ratio !== undefined && ratio >= GPU_BOUND
@@ -421,12 +453,12 @@ function OptionDetail({ opt, first, n, budget, owned, screen, profile, onToBuild
     <section className="rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
       <div className="flex flex-wrap items-end gap-x-4 gap-y-1 border-b border-zinc-200 p-5 dark:border-zinc-800">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            {upgrade ? 'O Upgrade' : 'O PC'}
+          <p className="text-xs font-semibold text-zinc-400">
+            {upgrade ? 'O upgrade' : 'O PC'}
             {n && ` · Opção ${n}`}
-            {hasReference && ' · Preço Estimado'}
+            {hasReference && ' · Preço estimado'}
           </p>
-          <p className="text-2xl font-bold tabular-nums">{brl(plan.total)}</p>
+          <p className="text-2xl font-bold tabular-nums">{brl(opt.total)}</p>
         </div>
         <p className="pb-1 text-sm text-zinc-500">
           de {brl(budget)}
@@ -451,12 +483,12 @@ function OptionDetail({ opt, first, n, budget, owned, screen, profile, onToBuild
       <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
         {BUILD_SLOTS.map((slot) => {
           const Icon = CATEGORY_ICONS[slot];
-          const part = plan.parts[slot];
-          const boxCooler = slot === 'cooler' && plan.notes.includes('box-cooler');
+          const part = opt.parts[slot];
+          const boxCooler = slot === 'cooler' && opt.notes.includes('box-cooler');
           const kept = !part && !boxCooler && owned?.[slot];
           const note =
             !part && !kept
-              ? slot === 'gpu' && plan.notes.includes('igpu')
+              ? slot === 'gpu' && opt.notes.includes('igpu')
                 ? 'Vídeo integrado do processador'
                 : boxCooler
                   ? 'O que vem com o processador'
@@ -466,13 +498,13 @@ function OptionDetail({ opt, first, n, budget, owned, screen, profile, onToBuild
           return (
             <li key={slot} className="flex items-center gap-3 px-5 py-2.5 text-sm">
               <Icon className="h-4 w-4 shrink-0 text-accent-600 dark:text-accent-400" strokeWidth={1.75} />
-              <span className="hidden w-28 shrink-0 text-xs font-semibold uppercase tracking-wide text-zinc-400 sm:block">{CATEGORY_DEFS[slot].name}</span>
+              <span className="hidden w-28 shrink-0 text-xs font-semibold text-zinc-400 sm:block">{CATEGORY_DEFS[slot].name}</span>
               {part?.reference ? (
                 <span className="flex min-w-0 flex-1 items-center gap-3">
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{part.qty && part.qty > 1 ? `${part.qty}x ` : ''}{part.offer.title}</span>
                     <span className="block text-xs text-zinc-500">
-                      Preço Histórico de {REFERENCE_DATE.format(new Date(part.reference.at))} · Sem Oferta Recente
+                      Preço histórico de {REFERENCE_DATE.format(new Date(part.reference.at))} · Sem Oferta Recente
                     </span>
                   </span>
                   <span className="shrink-0 font-semibold tabular-nums">{brl(part.price)}</span>
@@ -491,7 +523,9 @@ function OptionDetail({ opt, first, n, budget, owned, screen, profile, onToBuild
                   </span>
                   <span className="shrink-0 font-semibold tabular-nums">{brl(part.price)}</span>
                 </a>
-              ) : (
+              ) : null}
+              {part && !part.reference && part.offer.productKey && <CompareButton category={slot} productKey={part.offer.productKey} iconOnly />}
+              {part ? null : (
                 <span className="min-w-0 flex-1 truncate text-zinc-500">{kept ? `Fica: ${kept.title}` : note}</span>
               )}
             </li>
@@ -499,13 +533,13 @@ function OptionDetail({ opt, first, n, budget, owned, screen, profile, onToBuild
         })}
       </ul>
 
-      {(plan.notes.length > 0 || plan.issues.length > 0) && (
+      {(opt.notes.length > 0 || opt.issues.length > 0) && (
         <ul className="space-y-1.5 border-t border-zinc-200 px-5 py-4 text-sm text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
-          {plan.notes.map((n) => (
+          {opt.notes.map((n) => (
             <li key={n}>• {NOTE_TEXT[n]}</li>
           ))}
-          {plan.issues
-            .filter((i) => i.code !== 'chipset-bios' || !plan.notes.includes('bios'))
+          {opt.issues
+            .filter((i) => i.code !== 'chipset-bios' || !opt.notes.includes('bios'))
             .map((i) => (
               <li key={i.code}>• {i.message}</li>
             ))}
@@ -514,11 +548,16 @@ function OptionDetail({ opt, first, n, budget, owned, screen, profile, onToBuild
 
       <div className="flex flex-wrap items-center gap-3 border-t border-zinc-200 p-5 dark:border-zinc-800">
         {hasReference ? (
-          <p className="text-xs text-zinc-500">Algumas peças têm apenas preço histórico. Para levar uma opção com ofertas à montagem, use PC Comprável Agora.</p>
+          <>
+            <button type="button" onClick={onBuyable} className="inline-flex items-center gap-1.5 rounded-lg accent-control px-4 py-2 text-sm font-medium">
+              <RefreshCw aria-hidden="true" className="h-4 w-4" /> Refazer com PC comprável agora
+            </button>
+            <p className="text-xs text-zinc-500">Algumas peças têm apenas preço histórico. Para levar à montagem, refaça só com ofertas de agora.</p>
+          </>
         ) : (
           <>
-            <button onClick={() => onToBuild(planToBuild(plan, owned))} className="inline-flex items-center gap-1.5 rounded-lg accent-control px-4 py-2 text-sm font-medium">
-              Levar para a Montagem <ArrowRight className="h-4 w-4" />
+            <button onClick={() => onToBuild(planToBuild(opt, owned))} className="inline-flex items-center gap-1.5 rounded-lg accent-control px-4 py-2 text-sm font-medium">
+              Levar para a montagem <ArrowRight className="h-4 w-4" />
             </button>
             <p className="text-xs text-zinc-500">Na montagem dá para trocar as peças e conferir a compatibilidade. Os preços são à vista.</p>
           </>

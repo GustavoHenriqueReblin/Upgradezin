@@ -119,17 +119,17 @@ export function FilterPanel({ category, offers, filters: f, onChange, onEditSear
         className="flex w-full items-center justify-center gap-2 rounded-lg border border-accent-600 px-3 py-2 font-medium text-accent-700 hover:bg-accent-50 dark:text-accent-400 dark:hover:bg-accent-950/40"
       >
         <SlidersHorizontal className="h-4 w-4" />
-        Alterar Busca
+        Alterar busca
       </button>
 
       <div className="flex items-center justify-between">
-        <span className="font-semibold">Refinar Resultado</span>
+        <span className="font-semibold">Refinar resultado</span>
         <button className="text-xs text-zinc-500 hover:underline" onClick={() => onChange(resetResultFilters(f, category))}>
           Limpar
         </button>
       </div>
 
-      <Section title="Preço à Vista">
+      <Section title="Preço à vista">
         <div className="flex items-center gap-2">
           <PriceInput placeholder="De R$" value={f.priceMin} onChange={(v) => set({ priceMin: v })} />
           <span className="text-zinc-400">–</span>
@@ -146,7 +146,7 @@ export function FilterPanel({ category, offers, filters: f, onChange, onEditSear
         <>
           <Pills title="Potência" facet={list('watts', (o) => o.specs.watts)} label={(w) => `${w} W`} />
 
-          <Section title="Eficiência Mínima">
+          <Section title="Eficiência mínima">
             <div className="flex flex-wrap gap-1">
               <Pill active={!f.effMin} onClick={() => set({ effMin: undefined })}>
                 Qualquer
@@ -213,28 +213,28 @@ export function FilterPanel({ category, offers, filters: f, onChange, onEditSear
           <Pills title="Geração" facet={list('cpuGens', (o) => o.specs.cpuGen)} />
           <Pills title="Núcleos" facet={list('cores', (o) => o.specs.cores)} />
           <Section title="Recursos">
-            {bool('igpu', 'Com Vídeo Integrado', (o) => o.specs.igpu === true)}
-            {bool('cooler', 'Com Cooler', (o) => o.specs.cooler === true)}
-            {bool('unlocked', 'Desbloqueado para Overclock', (o) => o.specs.unlocked === true)}
+            {bool('igpu', 'Com vídeo integrado', (o) => o.specs.igpu === true)}
+            {bool('cooler', 'Com cooler', (o) => o.specs.cooler === true)}
+            {bool('unlocked', 'Desbloqueado para overclock', (o) => o.specs.unlocked === true)}
           </Section>
         </>
       )}
 
       {category === 'gpu' && (
         <>
-          <Checks title="Fabricante do Chip" facet={list('gpuMakers', (o) => o.specs.gpuMaker, GPU_MAKERS)} label={(v) => GPU_MAKER_LABEL[v]} />
+          <Checks title="Fabricante do chip" facet={list('gpuMakers', (o) => o.specs.gpuMaker, GPU_MAKERS)} label={(v) => GPU_MAKER_LABEL[v]} />
           <Pills title="Série" facet={list('gpuSeries', (o) => o.specs.gpuSeries, GPU_SERIES_ORDER)} />
           <Pills title="Modelo" facet={list('gpuModels', (o) => o.specs.gpuModel)} />
-          <Pills title="Memória de Vídeo" facet={list('vram', (o) => o.specs.vram)} label={(v) => `${v} GB`} />
-          <Checks title="Tipo de Memória" facet={list('vramTypes', (o) => o.specs.vramType)} />
-          <Section title="Formato">{bool('lowProfile', 'Low Profile (Gabinete Fino)', (o) => !!o.specs.lowProfile)}</Section>
+          <Pills title="Memória de vídeo" facet={list('vram', (o) => o.specs.vram)} label={(v) => `${v} GB`} />
+          <Checks title="Tipo de memória" facet={list('vramTypes', (o) => o.specs.vramType)} />
+          <Section title="Formato">{bool('lowProfile', 'Low Profile (Gabinete fino)', (o) => !!o.specs.lowProfile)}</Section>
         </>
       )}
 
       {category === 'ram' && (
         <>
           <Checks title="Tipo" facet={list('memory', (o) => o.specs.memory, MEMORY_TYPES)} label={(v) => MEMORY_LABEL[v]} />
-          <Pills title="Capacidade Total" facet={list('ramCapacity', (o) => o.specs.ramCapacity)} label={(v) => `${v} GB`} />
+          <Pills title="Capacidade total" facet={list('ramCapacity', (o) => o.specs.ramCapacity)} label={(v) => `${v} GB`} />
           <Checks title="Pentes" facet={list('ramModules', (o) => o.specs.ramModules)} label={(n) => (n === 1 ? '1 Pente' : `Kit com ${n}`)} />
           <Pills title="Frequência" facet={list('ramSpeed', (o) => o.specs.ramSpeed)} label={(v) => `${v} MHz`} />
           <Pills title="Latência" facet={list('ramLatency', (o) => o.specs.ramLatency)} label={(v) => `CL${v}`} />
@@ -258,7 +258,7 @@ export function FilterPanel({ category, offers, filters: f, onChange, onEditSear
 
       {category === 'case' && (
         <>
-          <Section title="Placa-Mãe que Cabe">
+          <Section title="Placa-mãe que cabe">
             {FORM_FACTORS.map((ff: FormFactor) => (
               <Check
                 key={ff}
@@ -270,8 +270,8 @@ export function FilterPanel({ category, offers, filters: f, onChange, onEditSear
             ))}
           </Section>
           <Section title="Recursos">
-            {bool('caseGlass', 'Com Vidro', (o) => !!o.specs.caseGlass)}
-            {bool('caseFans', 'Com Fans', (o) => (o.specs.caseFans ?? 0) > 0)}
+            {bool('caseGlass', 'Com vidro', (o) => !!o.specs.caseGlass)}
+            {bool('caseFans', 'Com fans', (o) => (o.specs.caseFans ?? 0) > 0)}
           </Section>
         </>
       )}
@@ -307,14 +307,14 @@ export function FilterPanel({ category, offers, filters: f, onChange, onEditSear
       </Section>
 
       <Section title="Disponibilidade">
-        <Check label="Só em Estoque" checked={f.inStockOnly} onChange={(v) => set({ inStockOnly: v })} />
+        <Check label="Só em estoque" checked={f.inStockOnly} onChange={(v) => set({ inStockOnly: v })} />
         <Check
-          label="Só com Cupom"
+          label="Só com cupom"
           count={base('coupon').filter((o) => effectiveCash(o) < o.priceCash).length}
           checked={f.couponOnly}
           onChange={(v) => set({ couponOnly: v })}
         />
-        <Check label="Só Vendido pela Própria Loja" checked={f.trustedOnly} onChange={(v) => set({ trustedOnly: v })} />
+        <Check label="Só vendido pela própria loja" checked={f.trustedOnly} onChange={(v) => set({ trustedOnly: v })} />
       </Section>
     </div>
   );

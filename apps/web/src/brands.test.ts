@@ -17,7 +17,7 @@ describe('marcas sugeridas na fonte do "Meu PC"', () => {
       onClose: noop, onApply: noop,
       initial: { source: 'cpu-z', drives: [], monitors: [], psu: { title: 'Fonte', brand: 'Marca Local', specs: { watts: 550 } } },
     }));
-    expect(html).toMatch(/<select[^>]+compact-picker[^>]*>[\s\S]*?<option value=":outra" selected="">Outra Marca<\/option>/);
-    expect(html).toMatch(/Nome da Marca<input[^>]+value="Marca Local"/);
+    expect(html).toMatch(/<select[^>]+compact-picker[^>]*>[\s\S]*?<option value=":outra" selected="">Outra marca<\/option>/);
+    expect(html).toMatch(/Nome da marca<input[^>]+value="Marca Local"/);
   });
 });

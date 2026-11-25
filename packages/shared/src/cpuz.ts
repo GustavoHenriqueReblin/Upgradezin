@@ -58,6 +58,8 @@ export interface PcMonitor {
 export interface PcProfile {
   source: 'cpu-z' | 'manual';
   version?: string;
+  /** Quando o relatório foi importado (ms); perfis antigos não têm. */
+  importedAt?: number;
   cpu?: PcPart;
   motherboard?: PcPart;
   ram?: PcRam;

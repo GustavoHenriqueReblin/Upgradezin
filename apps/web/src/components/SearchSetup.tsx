@@ -129,7 +129,7 @@ export function SearchSetup({ category, filters: f, onChange, onSearch, onBack }
         </div>
         {onBack && (
           <button onClick={onBack} className="ml-auto text-sm text-zinc-500 hover:underline">
-            Voltar ao Resultado
+            Voltar ao resultado
           </button>
         )}
       </div>
@@ -137,7 +137,7 @@ export function SearchSetup({ category, filters: f, onChange, onSearch, onBack }
       <div className="space-y-6 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
         <Body f={f} set={set} c={counts} />
 
-        <Section title="Preço à Vista">
+        <Section title="Preço à vista">
           <div className="flex max-w-sm items-center gap-2">
             <PriceInput placeholder="De R$" value={f.priceMin} onChange={(v) => set({ priceMin: v })} />
             <span className="text-zinc-400">–</span>
@@ -174,7 +174,7 @@ function PsuBody({ f, set, c }: BodyProps) {
         </div>
       </Section>
 
-      <Section title="Eficiência Mínima">
+      <Section title="Eficiência mínima">
         <div className="flex flex-wrap gap-2">
           <Pill size="md" active={!f.effMin} onClick={() => set({ effMin: undefined })}>
             Qualquer
@@ -306,9 +306,9 @@ function CpuBody({ f, set, c }: BodyProps) {
 
       <Section title="Extras">
         <div className="flex flex-wrap gap-x-5">
-          <Check label="Com Vídeo Integrado" checked={f.igpu} onChange={(v) => set({ igpu: v })} />
-          <Check label="Com Cooler" checked={f.cooler} onChange={(v) => set({ cooler: v })} />
-          <Check label="Desbloqueado para Overclock" checked={f.unlocked} onChange={(v) => set({ unlocked: v })} />
+          <Check label="Com vídeo integrado" checked={f.igpu} onChange={(v) => set({ igpu: v })} />
+          <Check label="Com cooler" checked={f.cooler} onChange={(v) => set({ cooler: v })} />
+          <Check label="Desbloqueado para overclock" checked={f.unlocked} onChange={(v) => set({ unlocked: v })} />
         </div>
       </Section>
     </>
@@ -319,7 +319,7 @@ function GpuBody({ f, set, c }: BodyProps) {
   const series = GPU_SERIES.filter((s) => f.gpuMakers.includes(s.maker));
   return (
     <>
-      <Section title="Fabricante do Chip" hint="Escolha um ou mais. Cada fabricante é buscado nas três lojas.">
+      <Section title="Fabricante do chip" hint="Escolha um ou mais. Cada fabricante é buscado nas três lojas.">
         <div className="flex flex-wrap gap-2">
           {GPU_MAKERS.map((m) => (
             <Opt
@@ -351,7 +351,7 @@ function GpuBody({ f, set, c }: BodyProps) {
         </Section>
       )}
 
-      <Section title="Memória de Vídeo" hint="Opcional.">
+      <Section title="Memória de vídeo" hint="Opcional.">
         <div className="flex flex-wrap gap-2">
           {numbersOf(c, 'vram', GPU_VRAM, f.vram).map((v) => (
             <Opt key={v} n={countOf(c, 'vram', v)} active={f.vram.includes(v)} onClick={() => set({ vram: toggle(f.vram, v) })}>
@@ -372,7 +372,7 @@ function GpuBody({ f, set, c }: BodyProps) {
       </Section>
 
       <Section title="Extras">
-        <Check label="Low Profile (Gabinete Fino)" checked={f.lowProfile} onChange={(v) => set({ lowProfile: v })} />
+        <Check label="Low Profile (Gabinete fino)" checked={f.lowProfile} onChange={(v) => set({ lowProfile: v })} />
       </Section>
     </>
   );
@@ -402,7 +402,7 @@ function RamBody({ f, set, c }: BodyProps) {
         </div>
       </Section>
 
-      <Section title="Capacidade Total" hint="Escolha uma ou mais. Em kit, é a soma dos pentes (2x 8 GB = 16 GB).">
+      <Section title="Capacidade total" hint="Escolha uma ou mais. Em kit, é a soma dos pentes (2x 8 GB = 16 GB).">
         <div className="flex flex-wrap gap-2">
           {(type ? numbersOf(c, 'capacity', RAM_CAPACITIES, f.ramCapacity, `${type}:`) : RAM_CAPACITIES).map((cap) => (
             <Opt key={cap} n={type ? countOf(c, 'capacity', `${type}:${cap}`) : undefined} active={f.ramCapacity.includes(cap)} onClick={() => set({ ramCapacity: toggle(f.ramCapacity, cap) })}>
@@ -496,7 +496,7 @@ function CoolerBody({ f, set, c }: BodyProps) {
 function CaseBody({ f, set, c }: BodyProps) {
   return (
     <>
-      <Section title="Placa-Mãe" hint="O formato da sua placa-mãe: aparecem os gabinetes onde ela cabe. Opcional.">
+      <Section title="Placa-mãe" hint="O formato da sua placa-mãe: aparecem os gabinetes onde ela cabe. Opcional.">
         <div className="flex flex-wrap gap-2">
           {FORM_FACTORS.map((ff) => (
             <Opt key={ff} n={countOf(c, 'caseFormFactor', ff)} active={f.caseFormFactors.includes(ff)} onClick={() => set({ caseFormFactors: toggle(f.caseFormFactors, ff) })}>
@@ -508,8 +508,8 @@ function CaseBody({ f, set, c }: BodyProps) {
 
       <Section title="Extras">
         <div className="flex flex-wrap gap-x-5">
-          <Check label="Com Vidro" checked={f.caseGlass} onChange={(v) => set({ caseGlass: v })} />
-          <Check label="Com Fans" checked={f.caseFans} onChange={(v) => set({ caseFans: v })} />
+          <Check label="Com vidro" checked={f.caseGlass} onChange={(v) => set({ caseGlass: v })} />
+          <Check label="Com fans" checked={f.caseFans} onChange={(v) => set({ caseFans: v })} />
         </div>
       </Section>
     </>
