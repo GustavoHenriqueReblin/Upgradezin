@@ -270,6 +270,36 @@ const MIGRATIONS: (string | Rebuild)[] = [
     PRIMARY KEY (product_key, asked_at)
   );
   `,
+  // 17: contas, sessões e dados privados do app.
+  `
+  CREATE TABLE accounts (
+    id INTEGER PRIMARY KEY,
+    google_sub TEXT NOT NULL UNIQUE,
+    email TEXT NOT NULL,
+    name TEXT NOT NULL
+  );
+  CREATE TABLE account_sessions (
+    token_hash TEXT PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL
+  );
+  CREATE TABLE account_login_attempts (
+    state_hash TEXT PRIMARY KEY,
+    verifier TEXT NOT NULL,
+    nonce TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+  CREATE TABLE account_data (
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (account_id, key)
+  );
+  `,
+  // 18: CEP opcional para consultas de entrega vinculadas à conta.
+  `
+  ALTER TABLE accounts ADD COLUMN cep TEXT;
+  `,
 ];
 
 export type Db = DatabaseSync;

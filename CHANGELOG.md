@@ -4,6 +4,10 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+- Minha Conta permite salvar, alterar ou remover o CEP de entrega, vinculado ao usuário.
+
+- Login com Google e sessão de usuário no SQLite. Após entrar, o app carrega os dados da conta e sincroniza as mudanças novas, sem copiar os dados de teste do visitante.
+
 - O card Identificar Gargalo exibe o modelo curto do processador sem comprimir a descrição.
 
 - Os botões para informar o PC usam o mesmo visual nas telas de gargalo e orçamento.

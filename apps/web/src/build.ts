@@ -1,3 +1,4 @@
+import { accountStorage } from './account.ts';
 import {
   BUILD_SLOTS,
   checkBuild,
@@ -208,7 +209,7 @@ export function sanitizeBuild(parsed: unknown): SavedBuild {
 
 export function loadBuild(): SavedBuild {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = accountStorage.getItem(KEY);
     return sanitizeBuild(raw ? JSON.parse(raw) : {});
   } catch {
     return {};
@@ -217,7 +218,7 @@ export function loadBuild(): SavedBuild {
 
 export function saveBuild(b: SavedBuild): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(b));
+    accountStorage.setItem(KEY, JSON.stringify(b));
   } catch {
     // navegador sem armazenamento: a montagem vale só enquanto a página estiver aberta
   }

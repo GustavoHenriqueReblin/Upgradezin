@@ -1,3 +1,4 @@
+import { accountStorage } from '../account.ts';
 import { useSyncExternalStore } from 'react';
 import { ChartColumn } from 'lucide-react';
 import { CATEGORIES, type CategoryId } from '@upgradezin/shared';
@@ -16,7 +17,7 @@ function subscribe(listener: () => void) {
 }
 
 function selection(category: CategoryId): string {
-  try { return localStorage.getItem(comparisonSelectionKey(category)) ?? memory[category] ?? ''; }
+  try { return accountStorage.getItem(comparisonSelectionKey(category)) ?? memory[category] ?? ''; }
   catch { return memory[category] ?? ''; }
 }
 
@@ -30,7 +31,7 @@ export function CompareButton({ category, productKey, iconOnly = false }: { cate
     const next = active ? selected.filter((key) => key !== productKey) : [...selected, productKey];
     const raw = compareUrl(next).split('?')[1] ?? '';
     memory[category] = raw;
-    try { localStorage.setItem(comparisonSelectionKey(category), raw); } catch { /* A seleção continua válida na aba. */ }
+    try { accountStorage.setItem(comparisonSelectionKey(category), raw); } catch { /* A seleção continua válida na aba. */ }
     for (const listener of listeners) listener();
   };
   return (

@@ -22,7 +22,7 @@ Buscador de preços de hardware no varejo brasileiro. Uma rotina no servidor aco
 - Comparar hardware: selecione peças pela busca, pela página do produto ou pelas sugestões de upgrade. As abas mostram preços e fichas por categoria. Para CPUs e GPUs, o comparador mostra desempenho estimado e desempenho por real. Com uma CPU atual informada, a aba de processadores também mostra essa referência e a compatibilidade com a plataforma.
 - O filtro de texto pesquisa nos resultados já carregados. A consulta direta por texto nas lojas está desativada na interface.
 - Admin em `/admin` (login fixo do `.env`) para quem opera o servidor: configuração das lojas, rotina por loja (liga e desliga), intervalos de cada loja (um para páginas de lista e outro para páginas de produto, "uma página a cada X a Y s"), busca ao vivo por loja (consultar ou não quando alguém pesquisa no site), fila de cada loja com as buscas do site e da rotina esperando, contagem até a próxima consulta), pausar e tirar pausa, coletar agora, registro de cada consulta e dos bloqueios, cobertura por loja e categoria, modelos sem índice de desempenho, produtos catalogados (lista paginada com filtros, specs, ficha técnica, "Ler ficha") e a rotina de fichas, separada da coleta (ligar, parar, lojas, intervalo de fichas de cada loja, andamento por loja), termos, consultas ao vivo, atividade do site (sem IP), backups e merge de outro banco.
-- Sem cadastro: a montagem fica no seu navegador, e "Compartilhar" gera um link curto para abrir em outro aparelho ou mandar para alguém (quem abre vê os preços mais recentes e pode copiar a montagem). O servidor guarda os preços das lojas e as montagens compartilhadas (SQLite local), nenhum dado de usuário.
+- Como visitante, a montagem fica no navegador. Com login, as alterações são guardadas na conta no SQLite. Compartilhar gera um link curto para abrir ou copiar a montagem com os preços mais recentes.
 
 ## Rodando
 
@@ -50,6 +50,14 @@ Todas as lojas são lidas do mesmo jeito: um Chrome comum por loja (perfil em `d
 A rotina de preços percorre as páginas das categorias e retoma de onde parou. O admin configura dois intervalos por loja, de 2 a 600 segundos, um para listagens e outro para fichas de produto. Uma loja bloqueada fica em pausa enquanto as outras seguem. Consulte a seção de coleta para os valores padrão e as regras de execução.
 
 As lojas são identificadas no código só por ID (`s1`, `s2`, `s3`). Nome, endereço, busca e cor de cada uma ficam no banco e são editados no admin (`/admin`, aba Lojas). Para começar, copie o [.env.example](.env.example) para `.env` e preencha: na primeira vez, o servidor copia as lojas dele para o banco. O mesmo arquivo tem as demais configurações, inclusive o usuário e a senha do admin (`ADMIN_USER`, `ADMIN_PASSWORD`).
+
+## Login com Google
+
+Configure um cliente OAuth do tipo **Aplicativo da Web** no Google Cloud e defina `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` e `GOOGLE_REDIRECT_URI` no `.env`. Cadastre no cliente a URI de redirecionamento exata, como `http://localhost:5173/api/account/google/callback` em desenvolvimento. Em produção, use o domínio público em HTTPS com o mesmo caminho.
+
+Ao entrar, a conta carrega os dados do SQLite. As alterações seguintes são salvas na conta. O que foi preenchido como visitante permanece separado.
+
+Em **Minha Conta**, o usuário pode salvar, alterar ou remover o CEP de entrega. A cotação de frete pelas lojas ainda está planejada.
 
 ## Teste do orçamento
 

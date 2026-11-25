@@ -36,7 +36,7 @@ export function ComparisonPage() {
   const [sorts, setSorts] = useState<Partial<Record<CategoryId, ComparisonSort>>>({});
   useEffect(() => {
     const onSelection = (event: StorageEvent) => {
-      if (event.storageArea !== localStorage || !CATEGORIES.some((category) => comparisonSelectionKey(category) === event.key)) return;
+      if ((event.storageArea && event.storageArea !== localStorage) || !CATEGORIES.some((category) => comparisonSelectionKey(category) === event.key)) return;
       setKeys((current) => applyComparisonSelection(current, event.oldValue, event.newValue));
     };
     window.addEventListener('storage', onSelection);

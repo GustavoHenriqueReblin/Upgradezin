@@ -310,12 +310,13 @@ Para categorias com specs que o título não traz (ex. nº de M.2 numa placa-mã
 
 ## 8. Persistência
 
-**Preços em SQLite.** O banco guarda os anúncios e preços coletados das lojas, com histórico ([ADR-006](#adr-006-preços-no-banco-coletados-por-rotina)), e as montagens compartilhadas por link. Nenhum dado de usuário vai para disco: a busca continua anônima. (Um catálogo de peças importado do OpenDB chegou a ficar no banco; saiu, ver [ADR-005](#adr-005-catálogo-de-peças-em-sqlite-importado-uma-vez-do-opendb).)
+**Preços em SQLite.** O banco guarda os anúncios e preços coletados das lojas, com histórico ([ADR-006](#adr-006-preços-no-banco-coletados-por-rotina)), as montagens compartilhadas por link e os dados privados das contas autenticadas. A busca pública continua disponível sem login. (Um catálogo de peças importado do OpenDB chegou a ficar no banco; saiu, ver [ADR-005](#adr-005-catálogo-de-peças-em-sqlite-importado-uma-vez-do-opendb).)
 
 | Onde | O quê | Por quê |
 |---|---|---|
 | `data/upgradezin.db` | Anúncios, histórico de preço e montagens compartilhadas (SQLite, `node:sqlite` embutido no Node) | Responder a busca sem consultar as lojas a cada vez; histórico de preço; links de montagem. Gitignored; criado na primeira execução. |
-| Navegador (`localStorage`) | A montagem do usuário | Fica com quem montou. O servidor só guarda uma cópia quando a pessoa clica em "Compartilhar" (`shared_builds`). |
+| Navegador (`localStorage`) | Dados do visitante e alterações de conta que ainda precisam sincronizar | Os dados de visitante ficam separados. A fila de alterações do usuário autenticado é isolada por conta. |
+| Contas (`accounts`, `account_sessions`, `account_data`) | Identidade, sessões e dados sincronizados | O navegador carrega os dados da conta após validar a sessão. Compartilhar cria uma cópia separada em `shared_builds`. |
 | `data/debug/` | HTML + screenshot de falhas | Só com `DEBUG_DUMPS=1`, para consertar adapters. |
 
 ### 8.1 Banco (`apps/server/src/db/`)
@@ -486,7 +487,7 @@ Tela de quem opera o servidor, em pacote separado do app (carregado só em `/adm
 - Fixtures de teste são recortes mínimos de páginas públicas de busca: poucos itens, só os campos lidos, sem scripts, cookies, tokens ou metadados de sessão.
 - Servidor escuta em `127.0.0.1` por padrão, sem abrir portas. Acesso de fora pelo link temporário do `cloudflared` (serviço do túnel no servidor) ou por VPN mesh.
 - Admin: login fixo do `.env`, sessão em cookie protegido, limite de tentativas e cabeçalho obrigatório contra requisição forjada ([§9.3](#93-admin-admin)).
-- Contas de usuário: pendente (necessária antes de expor para outros usuários).
+- Contas de usuário: login opcional com Google e sessão separada do admin. A configuração OAuth e a validação com um cliente real ainda são necessárias.
 
 ## 11. Stack e estrutura
 
@@ -649,8 +650,14 @@ Variáveis em `.env.example`.
 1. **Montar pelo orçamento.** Feito em nov/2026 ([§17.4](#174-montar-pelo-orçamento)): um ponto de entrada ("quanto quer gastar?") para o PC completo e o upgrade do PC atual, só com peças compatíveis pela ficha, e o resultado vai para a montagem. Falta: as "melhores ofertas" de cada dica do gargalo (`picks.ts`, §17.3) ainda têm ranking próprio; passar a usar o mesmo motor.
 2. **Comparador de hardware.** Disponível pelo ícone no cabeçalho, com a contagem total das peças. A seleção vem da busca, da página do produto ou das sugestões de upgrade. A URL `/comparar` carrega as chaves do catálogo e a tela reutiliza a API dos produtos para mostrar ficha e preço em tabelas separadas por categoria, com rolagem horizontal quando as colunas ocupam mais espaço. Para CPU e GPU, mostra desempenho relativo em jogos, diferença sobre a primeira peça e pontos por R$ 1.000. Com o PC atual informado, também estima ganho sobre a peça atual e equilíbrio com a outra peça.
 3. **Mais de um disco na montagem.** Implementado. A montagem aceita NVMe e SATA e importa os discos do CPU-Z como "Atual". Total, compartilhamento e validação incluem todos os discos. O orçamento inclui os discos existentes ao validar upgrades e continua selecionando um SSD nos PCs completos.
+4. **Login com Google.** Implementado, com configuração e validação real pendentes. A conta abre com os dados do SQLite e registra as alterações feitas após o login. O que já estiver salvo como visitante fica separado. A sincronização cobre Meu PC, montagem atual, filtros e categoria das buscas, preferências de orçamento e seleção do comparador. Guardar montagens separadas e resultados completos das buscas e do orçamento com data e orientação de atualização continua no escopo da v1.
+5. **Alertas de preço.** Pendentes. A pessoa acompanha um produto e recebe um e-mail quando o preço atingir um valor definido ou o menor preço em 30 dias. A função depende do login e usa o histórico já guardado.
 
-Os recursos planejados da 1ª versão estão implementados. Falta validar as mudanças com o catálogo de produção antes de lançar. A calibração do orçamento fica pausada enquanto as fichas são complementadas. Depois, a matriz ampliada deve ser executada com um dump atualizado e comparada ao JSON de referência.
+Antes de lançar a 1ª versão, falta validar o login configurado, completar o histórico da conta, implementar alertas e conferir os fluxos com o catálogo de produção. A calibração do orçamento fica pausada enquanto as fichas são complementadas. Depois, a matriz ampliada deve ser executada com um dump atualizado e comparada ao JSON de referência.
+
+**Sessão da conta.** O servidor troca o código de autorização com o Google, valida a identidade pelo ID token e usa o identificador estável do Google para localizar a conta. A migração 17 cria as tabelas de contas, sessões, tentativas de login e dados da conta. A sessão usa cookie HttpOnly e Secure e o servidor guarda o hash do identificador. O admin tem sua própria sessão. O navegador mantém uma fila isolada por conta para alterações que ainda não chegaram à base. O arquivo do CPU-Z continua sendo lido no navegador.
+
+**CEP de entrega.** A migração 18 adiciona um CEP opcional à conta. Minha Conta consulta o CEP pela sessão e salva ou remove o valor via `PUT /api/account/cep`. O servidor guarda oito dígitos, preservando zeros à esquerda. A cotação de frete por loja continua planejada.
 
 Comparações de GPU exibem separadamente o modelo comercial, a arquitetura e o código do chip quando a ficha os informa. O leitor reconhece NVIDIA Kepler a partir de GK208/GK208B ou de uma declaração explícita de arquitetura e guarda a contagem CUDA quando consta no texto.
 
@@ -674,15 +681,10 @@ Links para a busca usam `?categoria=…` para escolher a categoria inicial. O ap
 
 Abas ativas e botões em destaque do app e do admin usam a classe compartilhada `accent-control`, com borda laranja e fundo suave.
 
-#### Depois do lançamento, nesta ordem
-
-4. **Login e contas de usuário.** Entrar com a conta Google (o Google Sign-In é gratuito; só pede o projeto no Google Cloud e a tela de consentimento). Na conta ficam o PC importado, as montagens e os alertas. Hoje o PC importado (as peças lidas do CPU-Z, nunca o arquivo) e a montagem ficam só no navegador (`localStorage`: `upgradezin.pc.v1`, `upgradezin.build.v1` e as últimas buscas por orçamento, `upgradezin.budget.v1`). Com a conta, vão para o banco ligados ao usuário: no primeiro login, o que estiver no navegador sobe para a conta, e depois a conta vale em qualquer aparelho, com o navegador como cache.
-5. **Alerta de preço.** Acompanhar um produto (ou uma peça da montagem) e avisar quando cair abaixo de um valor ou atingir o menor preço em 30 dias. O histórico já está no banco; falta a conta (item 4) e o canal de aviso (e-mail, para começar).
-
 #### Melhorias
 
 - **Cupons da S2 e S3:** hoje só a % do anúncio. A página de cupons da S3 lista código e condições; ler uma vez por dia, como na S1 ([§6.3](#63-cupons)).
-- **Frete por CEP:** depois do login, com o CEP da conta ([§16](#16-questões-em-aberto)).
+- **Frete por CEP:** cotar por loja com o CEP já disponível na conta ([§16](#16-questões-em-aberto)).
 - **Variantes do mesmo modelo** separadas por part number, quando importa (cor, versão OC).
 
 #### Decidido

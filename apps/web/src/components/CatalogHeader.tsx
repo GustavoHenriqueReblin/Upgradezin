@@ -1,6 +1,7 @@
 import { ArrowLeft } from 'lucide-react';
 import type { CategoryId } from '@upgradezin/shared';
 import { CompareLink } from './CompareControls.tsx';
+import { AccountControl } from './AccountControl.tsx';
 import { searchCategoryHref } from '../uiState.ts';
 
 export function CatalogHeader({ maxWidth, title, category = 'gpu' }: { maxWidth?: string; title?: string; category?: CategoryId }) {
@@ -19,7 +20,10 @@ export function CatalogHeader({ maxWidth, title, category = 'gpu' }: { maxWidth?
           </a>
         </div>
         {title && <h1 className="col-span-2 row-start-2 text-center text-xl font-bold md:col-span-1 md:col-start-2 md:row-start-1">{title}</h1>}
-        <div className={title ? 'col-start-2 row-start-1 justify-self-end md:col-start-3' : undefined}><CompareLink /></div>
+        <div className={`flex items-center gap-2 ${title ? 'col-start-2 row-start-1 justify-self-end md:col-start-3' : ''}`}>
+          <CompareLink />
+          <AccountControl />
+        </div>
       </div>
     </header>
   );

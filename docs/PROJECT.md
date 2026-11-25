@@ -25,7 +25,7 @@ Fora do escopo: marketplaces abertos, usado/recondicionado, checkout, afiliados,
 - **Em produção** num servidor Ubuntu doméstico, com acesso público por túnel. A rotina de coleta, a varredura completa da madrugada e a rotina de fichas rodam lá. O servidor pode estar alguns commits atrás do `main`: o deploy é manual (seção 12).
 - **Catálogo** (snapshot local de 25/11/2026) com 19.067 anúncios catalogados e 14.456 páginas de produto lidas.
 - **Versão 0.3.0.** O `[Não lançado]` do CHANGELOG lista o que já está no código e ainda não virou versão.
-- **Próximo marco:** validar e lançar a 1ª versão, com o comparador e a montagem com vários discos implementados (seção 11).
+- **Próximo marco:** configurar e validar o login com Google, completar o histórico da conta e implementar alertas de preço para a 1ª versão (seção 11).
 
 ---
 
@@ -111,7 +111,7 @@ Migrações por `PRAGMA user_version` em `apps/server/src/db/db.ts`: só acresce
 
 Tabelas antigas (`search_terms`, `term_runs`, `listing_terms`, `parts`, `part_codes`, `product_sheets`) foram removidas por migrações.
 
-**No navegador** (localStorage, só da pessoa): montagem e marcações Já Tenho (`upgradezin.build.v1`), perfil lido do CPU-Z (`upgradezin.pc.v1`, só os dados tratados, nunca o arquivo), categoria e filtros (`upgradezin.ui.v1`), últimas buscas por orçamento (`upgradezin.budget.v1`). Com o login planejado, o PC atual e as montagens vão para a conta.
+**No navegador** (localStorage, só da pessoa): montagem e marcações Já Tenho (`upgradezin.build.v1`), perfil lido do CPU-Z (`upgradezin.pc.v1`, só os dados tratados, nunca o arquivo), categoria e filtros (`upgradezin.ui.v1`), preferências do orçamento (`upgradezin.budget.v1`) e peças selecionadas para comparar (`upgradezin.compare.<categoria>`). O plano de sincronização está na seção 11.
 
 ---
 
@@ -196,7 +196,7 @@ ADRs completos em ARCHITECTURE §15. As principais:
 | Cooler sem altura fica com a web | Produto que nem a ficha nem a web informam é de procedência duvidosa |
 | Marca com prioridade, não exclusividade | Evitar peça "bomba" sem esconder oferta boa de verdade |
 | CPU-Z lido só no navegador | Privacidade: o relatório nunca vai ao servidor |
-| Sem cadastro (por enquanto) | Montagem e PC no navegador; login com Google planejado |
+| Conta opcional com Google | Visitantes usam o navegador. Após o login, o app lê e salva os dados da conta no SQLite |
 
 ---
 
@@ -238,6 +238,18 @@ ADRs completos em ARCHITECTURE §15. As principais:
 1. ~~Montar pelo orçamento~~ (disponível na tela inicial e no diagnóstico de gargalo).
 2. ~~Comparador de hardware~~ (seleção por categoria, com desempenho estimado para processadores e placas de vídeo).
 3. ~~Mais de um disco na montagem~~ (NVMe, SATA e discos importados do CPU-Z).
+4. **Login com Google e sincronização da conta:** autenticação e sessão implementadas, assim como a gravação dos dados que o app já persistia. Resta configurar o cliente OAuth e validar o login real, além de ampliar o histórico registrado conforme a lista abaixo.
+5. **Alertas de preço:** acompanhar produtos e enviar e-mail quando o preço atingir um valor definido ou o menor preço em 30 dias.
+
+No primeiro login, os dados vêm da conta no SQLite. Os dados antigos do visitante ficam no navegador. A partir do login, sincronizar entre dispositivos:
+
+- **Meu PC**, com as peças marcadas Já Tenho e os dados tratados do CPU-Z.
+- **Montagens feitas**, incluindo as peças, quantidades e indicações de peças atuais.
+- **Última busca de cada categoria de hardware**, com categoria, filtros, ordenação, resultado e data da consulta.
+- **Último Montar pelo Orçamento**, incluindo o valor informado, as opções usadas, os preços e as recomendações mostradas, com a data do cálculo.
+- **Peças adicionadas ao comparador**, organizadas por categoria.
+
+Ao reabrir uma busca ou um orçamento antigo, mostrar quando foi feito, avisar que preços e disponibilidade podem ter mudado e orientar a atualizar a busca ou refazer o cálculo. Antes do login, o armazenamento continua local.
 
 ### Próximos passos
 
@@ -245,13 +257,9 @@ ADRs completos em ARCHITECTURE §15. As principais:
 2. Validar com o catálogo de produção os fluxos de comparação, busca e montagem com vários discos. Corrigir o que aparecer nessa validação antes de fechar a 1ª versão.
 3. Quando a complementação das fichas terminar, rodar a matriz ampliada de orçamento com um dump atualizado. Comparar com o JSON de referência antes de retomar a calibração.
 
-### Depois do lançamento
-4. **Login com Google** (gratuito; projeto no Google Cloud e tela de consentimento): PC importado, montagens, buscas por orçamento e alertas na conta; o que está no navegador sobe no primeiro login.
-5. **Alerta de preço** (abaixo de um valor ou menor preço em 30 dias; e-mail para começar).
-
 ### Melhorias
 - Cupons da S2 e da S3 (hoje só a S1).
-- Frete por CEP, depois do login.
+- Cotação de frete por loja usando o CEP de entrega já disponível em Minha Conta.
 - Variantes do mesmo modelo por part number (cor, versão OC).
 - Detectar queda de rede na rotina de fichas (seção 10).
 - Marcar "preço acima do normal" pelo histórico de 30 dias (já está no banco).

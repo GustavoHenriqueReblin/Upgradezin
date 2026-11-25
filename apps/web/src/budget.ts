@@ -1,3 +1,4 @@
+import { accountStorage } from './account.ts';
 import { BUILD_SLOTS, groupOffers, type BudgetMode as PriceMode, type BudgetNote, type BudgetOption, type BudgetPlan, type BudgetProfile, type BudgetRequest, type PcProfile, type Resolution } from '@upgradezin/shared';
 import { itemFromGroup, toBuild, type BuildItem, type SavedBuild } from './build.ts';
 import { applyPc } from './pc.ts';
@@ -72,7 +73,7 @@ export function lastBudgetMode(pc: PcProfile | null, saved: SavedBudget = loadBu
 
 export function loadBudgetUi(): SavedBudget {
   try {
-    const raw = localStorage.getItem(BUDGET_KEY);
+    const raw = accountStorage.getItem(BUDGET_KEY);
     return sanitizeBudgetUi(raw ? JSON.parse(raw) : {});
   } catch {
     return defaultBudgetUi();
@@ -81,7 +82,7 @@ export function loadBudgetUi(): SavedBudget {
 
 export function saveBudgetUi(s: SavedBudget): void {
   try {
-    localStorage.setItem(BUDGET_KEY, JSON.stringify(s));
+    accountStorage.setItem(BUDGET_KEY, JSON.stringify(s));
   } catch {
     // sem armazenamento: vale só enquanto a página estiver aberta
   }

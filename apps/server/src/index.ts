@@ -21,6 +21,7 @@ import { SystemMonitor } from './admin/system.ts';
 import { browserOpen, closeBrowser } from './browser.ts';
 import { BUILD_ID, findSharedBuild, getSharedBuild, saveSharedBuild, SharedBuildSchema } from './builds/builds.ts';
 import { config } from './config.ts';
+import { configureGoogleLogin, registerAccountRoutes } from './account.ts';
 import { emitChange } from './changes.ts';
 import { closeServer } from './shutdown.ts';
 import { deleteMeta, getMeta, metaByPrefix, setMeta } from './db/db.ts';
@@ -42,7 +43,13 @@ import { ACTIVE_STORES, adminStores, publicStores, saveStoreConfig, storeConfig,
 /** Versão do app (package.json da raiz; ver CHANGELOG.md). */
 const VERSION: string = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')).version;
 
-const app = Fastify({ logger: { level: 'info' } });
+const app = Fastify({ logger: { level: 'info', serializers: {
+  req: (req) => ({
+    method: req.method,
+    url: req.url?.startsWith('/api/account/google/callback') ? '/api/account/google/callback' : req.url,
+    hostname: req.hostname, remoteAddress: req.ip, remotePort: req.socket?.remotePort,
+  }),
+} } });
 registerSecurity(app);
 
 const SearchQuery = z.object({
@@ -120,6 +127,12 @@ function sheetStatus(): SheetRoutineStatus {
 }
 
 app.get('/api/version', async () => ({ version: VERSION }));
+
+const googleLogin = configureGoogleLogin(config.GOOGLE_CLIENT_ID, config.GOOGLE_CLIENT_SECRET, config.GOOGLE_REDIRECT_URI);
+if (!googleLogin && (config.GOOGLE_CLIENT_ID || config.GOOGLE_CLIENT_SECRET || config.GOOGLE_REDIRECT_URI)) {
+  app.log.warn('Login com Google desligado: confira o cliente OAuth e a URI de redirecionamento.');
+}
+registerAccountRoutes(app, getDb, googleLogin);
 
 /** Últimas buscas do site, para a atividade do admin (sem IP). */
 const activity = new ActivityLog();

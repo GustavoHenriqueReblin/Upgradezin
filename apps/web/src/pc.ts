@@ -1,3 +1,4 @@
+import { accountStorage } from './account.ts';
 import { BUILD_SLOTS, MAX_BUILD_DRIVES, parseCpuzReport, PC_LIMITS, type BuildSlot, type PcPart, type PcProfile } from '@upgradezin/shared';
 import { buildDrives, itemFromPc, qtyOf, withDrives, type BuildItem, type SavedBuild } from './build.ts';
 
@@ -128,7 +129,7 @@ export function validPc(v: unknown): PcProfile | null {
 
 export function loadPc(): PcProfile | null {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = accountStorage.getItem(KEY);
     return raw ? validPc(JSON.parse(raw)) : null;
   } catch {
     return null;
@@ -137,7 +138,7 @@ export function loadPc(): PcProfile | null {
 
 export function clearPc(): void {
   try {
-    localStorage.removeItem(KEY);
+    accountStorage.removeItem(KEY);
   } catch {
     // nada guardado
   }
@@ -145,7 +146,7 @@ export function clearPc(): void {
 
 export function savePc(pc: PcProfile): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(pc));
+    accountStorage.setItem(KEY, JSON.stringify(pc));
   } catch {
     // sem armazenamento: o PC vale só enquanto a página estiver aberta
   }

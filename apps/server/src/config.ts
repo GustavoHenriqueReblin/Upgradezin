@@ -60,6 +60,9 @@ const Env = z.object({
    * o admin fica desligado e /api/admin responde 404.
    */
   ADMIN_USER: z.string().optional(),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REDIRECT_URI: z.string().optional(),
   ADMIN_PASSWORD: z.string().optional(),
   /** Duração da sessão do admin (horas); reiniciar o servidor também desloga. */
   ADMIN_SESSION_H: z.coerce.number().default(12),

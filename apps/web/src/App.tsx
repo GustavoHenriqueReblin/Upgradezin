@@ -23,6 +23,7 @@ import { loadUi, saveUi, searchCategoryFromUrl, withoutSearchCategory } from './
 import { applyPc, clearPc, currentPc, fillPc, forgetPcBuild, loadPc, savePc } from './pc.ts';
 import { PcAnalysis } from './components/PcAnalysis.tsx';
 import { CompareLink } from './components/CompareControls.tsx';
+import { AccountControl } from './components/AccountControl.tsx';
 import { BudgetView } from './components/BudgetView.tsx';
 import { BUDGET_VISIBLE, lastBudgetMode, type BudgetMode } from './budget.ts';
 import { CategoryPicker } from './components/CategoryPicker.tsx';
@@ -445,7 +446,10 @@ export function App() {
         <div className="w-full max-w-3xl">
           <div className="flex items-center justify-between gap-2">
             <h1 className="text-3xl font-bold tracking-tight">Upgradezin<span className="text-accent-500">.</span></h1>
-            <CompareLink showLabel />
+            <div className="flex flex-wrap justify-end gap-2">
+              <CompareLink showLabel />
+              <AccountControl showLabel />
+            </div>
           </div>
           <p className="mb-8 mt-1 text-zinc-500">Qual peça você quer trocar?</p>
           <CategoryPicker variant="grid" value={null} onChange={pickCategory} />
@@ -508,6 +512,7 @@ export function App() {
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <CompareLink />
             {buildButton}
+            <AccountControl />
           </div>
         </div>
         {choosing && !buildOpen && (

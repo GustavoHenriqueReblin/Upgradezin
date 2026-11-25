@@ -1,3 +1,4 @@
+import { accountStorage } from './account.ts';
 import { ENABLED_CATEGORIES, type CategoryId } from '@upgradezin/shared';
 import { DEFAULT_FILTERS, type Filters } from './filters.ts';
 
@@ -53,7 +54,7 @@ function sanitizeFilters(raw: unknown): Filters {
 
 export function loadUi(): SavedUi {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<SavedUi>;
+    const raw = JSON.parse(accountStorage.getItem(KEY) ?? '{}') as Partial<SavedUi>;
     const valid = (c: unknown): c is CategoryId => (ENABLED_CATEGORIES as readonly unknown[]).includes(c);
     const byCategory: SavedUi['byCategory'] = {};
     for (const [c, v] of Object.entries(raw.byCategory ?? {})) {
@@ -67,7 +68,7 @@ export function loadUi(): SavedUi {
 
 export function saveUi(ui: SavedUi): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(ui));
+    accountStorage.setItem(KEY, JSON.stringify(ui));
   } catch {
     // navegador sem armazenamento: vale enquanto a página estiver aberta
   }
