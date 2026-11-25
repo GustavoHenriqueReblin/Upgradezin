@@ -11,7 +11,7 @@ import type { SheetValues } from './fields.ts';
 
 /** Campos de Specs que vêm da ficha, por categoria. */
 export const SHEET_SPEC_KEYS: Record<CategoryId, (keyof Specs)[]> = {
-  motherboard: ['socket', 'chipset', 'formFactor', 'memory', 'memorySlots', 'wifi', 'bluetooth', 'm2Slots', 'm2Pcie', 'pcieGen', 'sataPorts', 'memoryMaxGb', 'memoryMaxMhz'],
+  motherboard: ['socket', 'chipset', 'formFactor', 'memory', 'memorySlots', 'wifi', 'bluetooth', 'm2Slots', 'm2Pcie', 'pcieGen', 'sataPorts', 'm2SharesSata', 'm2SharesGpu', 'memoryMaxGb', 'memoryMaxMhz'],
   cpu: ['socket', 'cores', 'threads', 'tdp', 'igpu'],
   gpu: ['gpuModel', 'vram', 'vramType', 'gpuLength', 'gpu16Pin', 'gpuTdp', 'gpuPsu', 'gpuPcieGen', 'gpuPcieLanes'],
   ram: ['memory', 'ramCapacity', 'ramModules', 'ramSpeed', 'ramLatency'],
@@ -70,6 +70,8 @@ export function sheetSpecs(category: CategoryId, v: SheetValues): Specs {
         m2Pcie: pcieGenOf(v.m2Pcie),
         pcieGen: pcieGenOf(v.pcieX16),
         sataPorts: num(v.sataPorts),
+        m2SharesSata: v.m2SharesSata === true ? true : undefined,
+        m2SharesGpu: v.m2SharesGpu === true ? true : undefined,
         memoryMaxGb: num(v.ramMaxGb),
         memoryMaxMhz: num(v.ramMaxMhz),
         ...(str(v.wifi) && { wifi: true }),

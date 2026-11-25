@@ -58,7 +58,7 @@ export function LocalSearch({ value, onChange, suggestions, onSearchStores }: Pr
                 onClick={() => toggle(w)}
                 aria-pressed={active}
                 className={`rounded-full border px-2.5 py-0.5 text-xs transition ${
-                  active ? 'border-accent-500 bg-accent-500 text-accent-950' : 'border-zinc-300 text-zinc-600 hover:border-accent-500 dark:border-zinc-700 dark:text-zinc-300'
+                  active ? 'accent-control' : 'border-zinc-300 text-zinc-600 hover:border-accent-500 dark:border-zinc-700 dark:text-zinc-300'
                 }`}
               >
                 {titleCase(w)}

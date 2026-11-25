@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
-import { BUILD_SLOTS, STORES, type Offer } from '@upgradezin/shared';
+import { BUILD_SLOTS, MAX_BUILD_DRIVES, STORES, type Offer } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
 
 /**
@@ -40,7 +40,8 @@ const ItemSchema = z.object({
 
 export const SharedBuildSchema = z
   .object(Object.fromEntries(BUILD_SLOTS.map((s) => [s, ItemSchema.optional()])) as Record<(typeof BUILD_SLOTS)[number], z.ZodOptional<typeof ItemSchema>>)
-  .refine((b) => Object.values(b).some(Boolean), 'Montagem vazia');
+  .extend({ extraDrives: z.array(ItemSchema).max(MAX_BUILD_DRIVES - 1).optional() })
+  .refine(({ extraDrives, ...parts }) => !!extraDrives?.length || Object.values(parts).some(Boolean), 'Montagem vazia');
 
 export type SharedBuildData = z.infer<typeof SharedBuildSchema>;
 
@@ -86,7 +87,8 @@ export function getSharedBuild(db: Db, id: string): { build: SharedBuildData; cr
   if (!row) return null;
   const build = JSON.parse(row.data) as SharedBuildData;
   const latest = db.prepare('SELECT offer FROM listings WHERE store = ? AND store_sku = ?');
-  for (const item of Object.values(build)) {
+  const { extraDrives, ...parts } = build;
+  for (const item of [...Object.values(parts), ...(extraDrives ?? [])]) {
     if (!item) continue;
     item.offers = item.offers.map((o) => {
       const r = latest.get(o.store, o.storeSku) as { offer: string } | undefined;

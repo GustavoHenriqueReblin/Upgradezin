@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { ChartLine, Check, Clock, Plus, Ticket, TrendingDown } from 'lucide-react';
 import { couponApplies, effectiveCash, ssdCapacityLabel, type Offer, type ProductGroup } from '@upgradezin/shared';
 import type { CandidateCheck } from '../build.ts';
-import { productHref } from '../product.ts';
+import { productHref, productKeyOf } from '../product.ts';
+import type { CategoryId } from '@upgradezin/shared';
+import { CompareButton } from './CompareControls.tsx';
 import { CompatBadge, IssueList } from './Compat.tsx';
 import { PriceHistory } from './PriceHistory.tsx';
 import { storeName } from '../stores.ts';
@@ -24,6 +26,7 @@ import {
 
 interface Props {
   group: ProductGroup;
+  compareCategory?: CategoryId;
   /** Escolhendo peça para a montagem: como este produto ficaria nela. */
   compat?: CandidateCheck;
   onPick?: () => void;
@@ -33,7 +36,7 @@ interface Props {
   replacing?: boolean;
 }
 
-export function ProductCard({ group, compat, onPick, picked, replacing }: Props) {
+export function ProductCard({ group, compareCategory, compat, onPick, picked, replacing }: Props) {
   const { specs, best } = group;
   const chips: { label: string; cls?: string }[] = [];
   const HIGHLIGHT = 'bg-accent-100 text-accent-900 dark:bg-accent-900/50 dark:text-accent-100';
@@ -96,6 +99,7 @@ export function ProductCard({ group, compat, onPick, picked, replacing }: Props)
   const [historyOpen, setHistoryOpen] = useState(false);
   const discount = Math.round(discountOf(best) * 100);
   const href = productHref(group);
+  const compareKey = compareCategory ? productKeyOf(group) : undefined;
 
   return (
     <article className="relative flex flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
@@ -183,24 +187,25 @@ export function ProductCard({ group, compat, onPick, picked, replacing }: Props)
         <span>preço visto {ago(best.collectedAt)}</span>
       </div>
       {historyOpen && <PriceHistory title={group.title} offers={group.offers} onClose={() => setHistoryOpen(false)} />}
-      {onPick && (
-        <div className="border-t border-zinc-100 p-3 dark:border-zinc-800">
-          {picked ? (
-            <div className="flex items-center justify-center gap-1.5 py-1.5 text-sm font-medium text-accent-600 dark:text-accent-400">
+      {(onPick || compareKey) && (
+        <div className="flex items-center justify-end gap-2 border-t border-zinc-100 p-3 dark:border-zinc-800">
+          {onPick && (picked ? (
+            <div className="flex flex-1 items-center justify-center gap-1.5 py-1.5 text-sm font-medium text-accent-600 dark:text-accent-400">
               <Check className="h-4 w-4" /> Na Montagem
             </div>
           ) : (
             <button
               onClick={onPick}
-              className={`flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${
+              className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium ${
                 compat?.status === 'error'
                   ? 'border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40'
-                  : 'bg-accent-500 text-accent-950 hover:bg-accent-400'
+                  : 'accent-control'
               }`}
             >
               <Plus className="h-4 w-4" /> {compat?.status === 'error' ? 'Escolher Mesmo Assim' : replacing ? 'Trocar na Montagem' : 'Adicionar à Montagem'}
             </button>
-          )}
+          ))}
+          {compareCategory && compareKey && <CompareButton category={compareCategory} productKey={compareKey} iconOnly />}
         </div>
       )}
     </article>

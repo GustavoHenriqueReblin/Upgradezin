@@ -134,7 +134,7 @@ export function PriceHistoryBody({ offers }: { offers: Offer[] }) {
                 key={r.id}
                 onClick={() => setRange(r.id)}
                 className={`rounded-full px-3 py-1 text-xs font-medium ${
-                  range === r.id ? 'bg-accent-500 text-accent-950' : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
+                  range === r.id ? 'accent-control' : 'border border-transparent bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
                 }`}
               >
                 {r.label}

@@ -140,7 +140,7 @@ export function ImportPc({ onClose, onApply, replacing = [], applyLabel = 'Usar 
                   const { psu: _old, ...rest } = pc;
                   onApply(part ? { ...rest, psu: part } : rest);
                 }}
-                className="rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-accent-950 hover:bg-accent-400"
+                className="rounded-lg accent-control px-4 py-2 text-sm font-medium"
               >
                 {applyLabel}
               </button>
@@ -216,11 +216,15 @@ function psuPart(f: PsuForm): PcPart | undefined {
   };
 }
 
-const field = 'w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950';
+const field = 'min-h-9 w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950';
+const OTHER_BRAND = ':outra';
 
 function PsuFields({ value, onChange }: { value: PsuForm; onChange: (f: PsuForm) => void }) {
   const set = (patch: Partial<PsuForm>) => onChange({ ...value, ...patch });
   const brands = usePsuBrands();
+  const [manualBrand, setManualBrand] = useState(false);
+  const knownBrand = brands.find((brand) => brand.toLowerCase() === value.brand.trim().toLowerCase());
+  const otherBrand = manualBrand || (!!value.brand && !knownBrand);
   const Icon = CATEGORY_ICONS.psu;
   return (
     <div className="mt-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
@@ -243,12 +247,17 @@ function PsuFields({ value, onChange }: { value: PsuForm; onChange: (f: PsuForm)
         </label>
         <label className="text-xs text-zinc-500">
           Marca
-          <input className={`${field} mt-1`} list="psu-brands" placeholder="Ex.: Corsair" value={value.brand} onChange={(e) => set({ brand: e.target.value })} />
-          <datalist id="psu-brands">
+          <select className={`${field} mt-1 compact-picker`} value={otherBrand ? OTHER_BRAND : knownBrand ?? ''} onChange={(e) => {
+            const next = e.target.value;
+            setManualBrand(next === OTHER_BRAND);
+            set({ brand: next === OTHER_BRAND ? '' : next });
+          }}>
+            <option value="">Não sei</option>
+            <option value={OTHER_BRAND}>Outra Marca</option>
             {brands.map((b) => (
-              <option key={b} value={b} />
+              <option key={b} value={b}>{b}</option>
             ))}
-          </datalist>
+          </select>
         </label>
         <label className="text-xs text-zinc-500">
           PFC Ativo
@@ -270,6 +279,15 @@ function PsuFields({ value, onChange }: { value: PsuForm; onChange: (f: PsuForm)
             ))}
           </select>
         </label>
+        {otherBrand && (
+          <label className="col-span-full text-xs text-zinc-500">
+            Nome da Marca
+            <input className={`${field} mt-1`} value={value.brand} onChange={(e) => {
+              setManualBrand(true);
+              set({ brand: e.target.value });
+            }} />
+          </label>
+        )}
       </div>
     </div>
   );

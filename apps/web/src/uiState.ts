@@ -13,6 +13,20 @@ export interface SavedUi {
 
 const KEY = 'upgradezin.ui.v1';
 
+export const searchCategoryHref = (category: CategoryId) => `/?categoria=${category}`;
+
+export function searchCategoryFromUrl(search: string): CategoryId | undefined {
+  const category = new URLSearchParams(search).get('categoria');
+  return ENABLED_CATEGORIES.find((id) => id === category);
+}
+
+export function withoutSearchCategory({ pathname, search, hash }: Pick<Location, 'pathname' | 'search' | 'hash'>): string | undefined {
+  const params = new URLSearchParams(search);
+  if (!params.has('categoria')) return undefined;
+  params.delete('categoria');
+  return `${pathname}${params.size ? `?${params}` : ''}${hash}`;
+}
+
 /** Filtros salvos por uma versão antiga podem não ter campos novos: completa com o padrão e descarta tipos errados. */
 function sanitizeFilters(raw: unknown): Filters {
   const src = (raw ?? {}) as Record<string, unknown>;

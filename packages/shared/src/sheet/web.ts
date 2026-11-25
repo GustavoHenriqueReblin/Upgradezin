@@ -121,7 +121,7 @@ const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>
     pcie: { key: 'pcie' },
     power16Pin: { key: 'conector_16_pinos' },
     fans: { key: 'ventoinhas', min: 0, max: 4 },
-    architecture: { key: 'arquitetura', options: opts('Blackwell', 'Ada Lovelace', 'Ampere', 'Turing', 'Pascal', 'RDNA 4', 'RDNA 3', 'RDNA 2', 'RDNA', 'Polaris', 'Battlemage', 'Alchemist') },
+    architecture: { key: 'arquitetura', options: opts('Blackwell', 'Ada Lovelace', 'Ampere', 'Turing', 'Pascal', 'NVIDIA Kepler', 'RDNA 4', 'RDNA 3', 'RDNA 2', 'RDNA', 'Polaris', 'Battlemage', 'Alchemist') },
     shaders: { key: 'nucleos_cuda_ou_stream', min: 128, max: 32768 },
     bandwidthGbs: { key: 'largura_banda_gbs' },
     powerConnectors: { key: 'conectores_alimentacao', item: powerItem },

@@ -20,7 +20,7 @@ it('mantém as ações principais da montagem manual e da identificação de gar
   const build = renderToStaticMarkup(createElement(BuildView, { build: {}, edit }));
   expect(build).toContain('>Montar Peça por Peça</h2>');
   expect(build).toContain('aria-label="Escolher Processador"');
-  expect(build).toMatch(/<button[^>]+aria-label="Escolher Processador"[^>]+class="[^"]*bg-accent-500/);
+  expect(build).toMatch(/<button[^>]+aria-label="Escolher Processador"[^>]+class="[^"]*accent-control/);
   expect(build).toContain('Importar Meu PC');
   const analysis = renderToStaticMarkup(createElement(PcAnalysis, { pc: null, onImport: noop, onUpgrade: noop, onToBuild: noop, onForget: noop }));
   expect(analysis).toContain('>Identificar Gargalo</h2>');
@@ -120,6 +120,7 @@ it('usa o mesmo estilo nos três atalhos da tela inicial', () => {
   vi.stubGlobal('__APP_VERSION__', '0.0.0');
   try {
     const html = renderToStaticMarkup(createElement(App));
+    expect(html).toContain('<span>Comparar</span>');
     const buttons = [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)].map(([button]) => button);
     const classes = (label: string) => {
       const button = buttons.find((item) => item.includes(`>${label}</span>`));

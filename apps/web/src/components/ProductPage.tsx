@@ -7,6 +7,9 @@ import { storeName } from '../stores.ts';
 import { PriceHistoryBody } from './PriceHistory.tsx';
 import { CouponLine, lowBadge, PromoLine } from './ProductCard.tsx';
 import { StoreDot } from './StoreDot.tsx';
+import { fetchProduct } from '../compare.ts';
+import { CompareButton } from './CompareControls.tsx';
+import { CatalogHeader } from './CatalogHeader.tsx';
 
 /**
  * Página do produto: ofertas de cada loja, ficha técnica (todos os campos da categoria; o que a
@@ -17,24 +20,19 @@ export function ProductPage({ productKey }: { productKey: string }) {
   const [error, setError] = useState<'not-found' | 'failed' | null>(null);
 
   useEffect(() => {
-    fetch(`/api/products/${encodeURIComponent(productKey)}`)
-      .then((r) => (r.ok ? (r.json() as Promise<ProductPageData>) : Promise.reject(new Error(r.status === 404 ? 'not-found' : 'failed'))))
+    const controller = new AbortController();
+    fetchProduct(productKey, controller.signal)
       .then((p) => {
         setPage(p);
         document.title = `${p.title} · Upgradezin`;
       })
-      .catch((e: Error) => setError(e.message === 'not-found' ? 'not-found' : 'failed'));
+      .catch((e: Error) => { if (!controller.signal.aborted) setError(e.message === 'not-found' ? 'not-found' : 'failed'); });
+    return () => controller.abort();
   }, [productKey]);
 
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-      <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto max-w-5xl px-4 py-3">
-          <a href="/" className="text-lg font-bold tracking-tight">
-            Upgradezin<span className="text-accent-500">.</span>
-          </a>
-        </div>
-      </header>
+      <CatalogHeader category={page?.category} />
       <main className="mx-auto max-w-5xl space-y-4 px-4 py-6">
         {error ? (
           <p className="py-16 text-center text-zinc-500">{error === 'not-found' ? 'Produto não encontrado.' : 'Não foi possível carregar agora.'}</p>
@@ -82,14 +80,17 @@ function Content({ page }: { page: ProductPageData }) {
                 {best.promo && <PromoLine promo={best.promo} />}
                 {best.priceCard && best.priceCard > best.priceCash + 1 && <div className="text-xs text-zinc-400">{brl(best.priceCard)} no cartão</div>}
               </div>
-              <a
-                href={best.url}
-                target="_blank"
-                rel="noreferrer"
-                className="button-link flex items-center gap-1.5 rounded-lg bg-accent-500 px-4 font-medium text-accent-950 hover:bg-accent-400"
-              >
-                Ver na Loja <ExternalLink className="h-4 w-4" />
-              </a>
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href={best.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="button-link flex items-center gap-1.5 rounded-lg accent-control px-4 font-medium"
+                >
+                  Ver na Loja <ExternalLink className="h-4 w-4" />
+                </a>
+                <CompareButton category={page.category} productKey={page.key} />
+              </div>
             </div>
           ) : (
             <div className="mt-3 text-sm">
@@ -99,6 +100,7 @@ function Content({ page }: { page: ProductPageData }) {
                   {othersInStock === 1 ? 'Há 1 oferta' : `Há ${othersInStock} ofertas`} de produto aberto ou de outros vendedores abaixo.
                 </div>
               )}
+              <div className="mt-2"><CompareButton category={page.category} productKey={page.key} /></div>
             </div>
           )}
         </div>

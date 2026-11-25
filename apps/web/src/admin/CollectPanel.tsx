@@ -360,7 +360,7 @@ function Btn({ children, subtle, ...rest }: { children: ReactNode; subtle?: bool
       type="button"
       {...rest}
       className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium disabled:opacity-40 ${
-        subtle ? 'border border-zinc-300 hover:border-accent-500 dark:border-zinc-700' : 'bg-accent-500 text-accent-950 hover:bg-accent-400'
+        subtle ? 'border border-zinc-300 hover:border-accent-500 dark:border-zinc-700' : 'accent-control'
       }`}
     >
       {children}

@@ -64,6 +64,8 @@ export const SHEET_FIELDS: Record<CategoryId, SheetField[]> = {
     f('m2Slots', 'Slots M.2', 'int', undefined, M),
     f('m2Pcie', 'M.2 até', 'text'),
     f('sataPorts', 'Portas SATA', 'int', undefined, M),
+    f('m2SharesSata', 'M.2 compartilha portas SATA', 'bool'),
+    f('m2SharesGpu', 'M.2 compartilha linhas com a placa de vídeo', 'bool'),
     f('lan', 'Rede', 'text', undefined, M),
     f('wifi', 'Wi-Fi', 'text', undefined, undefined, NO_TEXT),
     f('bluetooth', 'Bluetooth', 'text', undefined, undefined, NO_TEXT),
@@ -86,6 +88,7 @@ export const SHEET_FIELDS: Record<CategoryId, SheetField[]> = {
   ],
   gpu: [
     f('chip', 'Chip', 'text', undefined, M),
+    f('silicon', 'Código do chip', 'text'),
     f('vramGb', 'VRAM', 'int', 'GB', M),
     f('memType', 'Tipo de memória', 'text', undefined, M),
     f('busBits', 'Barramento', 'int', 'bits', M),

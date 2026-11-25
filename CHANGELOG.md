@@ -4,6 +4,49 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+- A marca da fonte no formulário do CPU-Z usa o select do sistema, com menu compacto e opção para digitar outra marca.
+
+- A tela inicial exibe o texto Comparar junto ao ícone. Na busca, o atalho de montagem fica compacto, com ícone e contagem.
+
+- A comparação de CPUs com um PC importado informa a compatibilidade direta e a necessidade de trocar placa-mãe ou memória.
+
+- A comparação de processadores mostra a CPU do PC importado na última coluna, como referência fora do ranking.
+
+- A busca remove o parâmetro de categoria ao abrir, evitando reabrir a busca depois de voltar ao início e recarregar.
+
+- Voltar à Busca abre a categoria do produto ou da aba ativa no comparador.
+
+- Categorias ativas e ações em destaque do app e do admin adotam borda laranja com fundo suave, seguindo as abas do comparador.
+
+- O comparador tem um atalho para adicionar hardware pela busca em outra guia e posiciona a ordenação junto das abas.
+
+- Produto e comparador mantêm o cabeçalho no topo ao rolar e têm Voltar à Busca. O comparador separa as categorias em abas na mesma rota.
+
+- As sugestões de upgrade têm um atalho para comparar suas alternativas. O comparador mostra a VRAM no nome curto da GPU e estima o ganho em jogos no PC além do ganho isolado.
+
+- O título Comparar Peças fica centralizado no cabeçalho do comparador.
+
+- Alinha o cabeçalho à largura do comparador e centraliza o texto nos selects personalizáveis.
+
+- Os menus de seleção usam a paleta do app em navegadores com suporte a menus personalizáveis. Voltar à Busca fica ao lado da marca no comparador.
+
+- O comparador usa o mesmo cabeçalho com a marca Upgradezin da página de produto.
+
+- Voltar do comparador retoma a busca. O comparador usa nomes curtos, ordenação por critério, ganho estimado sobre a peça atual e ficha técnica recolhida por padrão.
+
+- O comparador ordena CPUs e GPUs pela nota ponderada, destaca as líderes por desempenho, preço e custo-benefício e amplia a tabela conforme a seleção.
+
+- A comparação aceita qualquer quantidade de peças por categoria, com rolagem horizontal dentro da tabela.
+
+- O comparador fica acessível no cabeçalho e aceita peças de várias categorias na mesma seleção, com tabelas separadas por categoria.
+
+- Trocar a categoria em Fichas por Produto mantém os outros filtros e volta à primeira página.
+
+- A ficha de GPU reconhece NVIDIA Kepler e exibe o código GK208 quando informado.
+
+- Comparador de dois ou três processadores ou placas de vídeo pela busca, página de produto e sugestões de upgrade. Mostra ficha, preço em estoque, desempenho estimado e, com PC importado, o ganho e o equilíbrio estimados.
+- A montagem aceita vários discos NVMe e SATA. Soma os discos comprados, importa os discos do CPU-Z como atuais, valida as conexões da placa-mãe e inclui todos os discos no compartilhamento.
+
 - A lista Fichas por Produto pode ser filtrada por estoque e vendedor. Os campos de texto e selects do admin seguem a mesma altura mínima.
 
 - O admin aproveita toda a largura disponível em desktop, tablet e celular, com as abas abaixo do cabeçalho em telas estreitas.

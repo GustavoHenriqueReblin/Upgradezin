@@ -137,7 +137,7 @@ function StoreForm({ store, onSaved, onUnauthorized }: { store: AdminStoreConfig
         <button
           onClick={save}
           disabled={busy || !dirty}
-          className="flex items-center gap-1.5 rounded-lg bg-accent-500 px-3 py-1.5 text-sm font-semibold text-accent-950 hover:bg-accent-400 disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-lg accent-control px-3 py-1.5 text-sm font-semibold disabled:opacity-50"
         >
           <Save className="h-4 w-4" />
           {busy ? 'Salvando…' : 'Salvar'}

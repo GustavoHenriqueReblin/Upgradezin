@@ -13,7 +13,7 @@ import { dec, firstInt, isNo, isYes, numberWith, pick, sheetDoc, thousands, type
  *
  * READER_VERSION: mudou o leitor ou os campos, sobe o número: o servidor relê as fichas guardadas.
  */
-export const READER_VERSION = 15;
+export const READER_VERSION = 17;
 
 type Reader = (doc: SheetDoc) => SheetValues;
 
@@ -219,6 +219,12 @@ const motherboard: Reader = (doc) => {
     ...doc.all.matchAll(/(\d)\s*[x*]?\s*(?:portas?|conectores?|slots?)?\s*sata|sata[^:\n]{0,25}:\s*(\d{1,2})\b(?!\s*(?:[.,]\d)?\s*gb?)|(\d)\s*interfaces?[^\n]{0,30}?sata/g),
   ].map((m) => Number(m[1] ?? m[2] ?? m[3]));
   const sataPorts = inRange(sataM.length ? Math.max(...sataM) : undefined, 0, 12);
+  // Confirmações explícitas da ficha. A posição física do disco ainda cabe a quem monta.
+  const sharing = doc.lines.filter((line) => /\bm\.?2(?=\b|_)/.test(line) &&
+    /(?:compartilh\w+|shar(?:e[ds]?|ing)|desabilitad[ao]s?|disabled?|reduz\w*|drops? to)/.test(line) &&
+    !/\b(?:nao|not|without|sem)\b/.test(line));
+  const m2SharesSata = sharing.some((line) => /\bsata(?:\b|\d|_)/.test(line)) || undefined;
+  const m2SharesGpu = sharing.some((line) => /\b(?:gpu|placa de video|graphics card|pcie\s*x16|pciex16\w*)\b/.test(line)) || undefined;
   const lanM = doc.all.match(/(10|5|2[.,]5|1)\s*g(?:b|bps|be)?\b[^\n]{0,20}?(?:lan|ethernet)|(?:lan|ethernet|rede)[^\n]{0,50}?\b(10|5|2[.,]5|1)\s*g(?:b|bps|be)?\b/);
   // Pelo chip ("Intel I219V", "Realtek 8125") ou pela velocidade ("10/100/1000", "GbE").
   const lan = lanM
@@ -255,6 +261,8 @@ const motherboard: Reader = (doc) => {
     m2Slots,
     m2Pcie,
     sataPorts,
+    m2SharesSata,
+    m2SharesGpu,
     lan,
     wifi: wifi ?? (noWifi ? 'Não' : undefined),
     bluetooth: bt ?? (noBt ? 'Não' : undefined),
@@ -285,6 +293,8 @@ export function gpuArchitecture(chip: string | undefined): string | undefined {
 }
 
 const gpu: Reader = (doc) => {
+  const silicon = doc.all.match(/\bgk208b?\b/)?.[0]?.toUpperCase();
+  const kepler = silicon !== undefined || doc.lines.some((line) => /^(?:arquitetura|architecture)\s*:\s*(?:nvidia\s+)?kepler\b/.test(line));
   const chip =
     pick(doc, [/^gpu$|^chip|processador grafico|^chipset$|^gpu \/|^modelo da gpu|^graphics/], (v) => extractGpuModel(v)?.model) ??
     doc.lines.map((l) => extractGpuModel(l)?.model).find(Boolean);
@@ -367,6 +377,7 @@ const gpu: Reader = (doc) => {
     (/nao (requer|precisa de) (alimentacao|conector)|sem conector de (alimentacao|energia)|alimentad[ao] (apenas |somente )?pelo slot/.test(doc.all) ? 'Não' : undefined);
   return clean({
     chip,
+    silicon,
     vramGb,
     memType,
     busBits,
@@ -378,7 +389,7 @@ const gpu: Reader = (doc) => {
     pcie,
     power16Pin,
     fans: inRange(fans, 1, 4),
-    architecture: gpuArchitecture(chip),
+    architecture: gpuArchitecture(chip) ?? (kepler ? 'NVIDIA Kepler' : undefined),
     shaders,
     bandwidthGbs,
     powerConnectors,

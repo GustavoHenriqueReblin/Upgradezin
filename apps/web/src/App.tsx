@@ -11,7 +11,7 @@ import {
   type Offer,
   type UpgradeAction,
 } from '@upgradezin/shared';
-import { checkCandidate, itemFromGroup, loadBuild, MAX_QTY, sanitizeBuild, saveBuild, slotFilters, type SavedBuild } from './build.ts';
+import { buildDrives, checkCandidate, editDrive, itemFromGroup, loadBuild, MAX_QTY, sanitizeBuild, saveBuild, slotFilters, type SavedBuild } from './build.ts';
 import { discountOf, SORT_LABEL } from './format.ts';
 import { applyFilters, CATEGORY_SORTS, commonWords, DEFAULT_FILTERS, resetResultFilters, type Filters } from './filters.ts';
 import { MAX_TERMS, planSearch } from './searchPlan.ts';
@@ -19,9 +19,10 @@ import { storeIds, storeName } from './stores.ts';
 import { settleStatus, useSearch, type Fresh, type SearchSnapshot } from './useSearch.ts';
 import { BuildView } from './components/BuildView.tsx';
 import { loadSharedBuild, sharedIdFromUrl, type SharedBuild } from './share.ts';
-import { loadUi, saveUi } from './uiState.ts';
+import { loadUi, saveUi, searchCategoryFromUrl, withoutSearchCategory } from './uiState.ts';
 import { applyPc, clearPc, fillPc, loadPc, savePc } from './pc.ts';
 import { PcAnalysis } from './components/PcAnalysis.tsx';
+import { CompareLink } from './components/CompareControls.tsx';
 import { BudgetView } from './components/BudgetView.tsx';
 import { BUDGET_VISIBLE, lastBudgetMode, type BudgetMode } from './budget.ts';
 import { CategoryPicker } from './components/CategoryPicker.tsx';
@@ -69,8 +70,17 @@ interface CategoryState extends SearchSnapshot {
 export function App() {
   const { offers, status, running, lastTerms, fresh, search, cancel, restore } = useSearch();
   /** Categoria e filtros da última visita (navegador): o app reabre onde estava. */
-  const [initialUi] = useState(loadUi);
+  const [initialUi] = useState(() => {
+    const saved = loadUi();
+    const category = searchCategoryFromUrl(location.search);
+    return category ? { ...saved, category } : saved;
+  });
   const uiRef = useRef(initialUi);
+  // O link escolhe a categoria uma vez. A partir daí, a navegação usa o estado da tela.
+  useEffect(() => {
+    const url = withoutSearchCategory(location);
+    if (url) history.replaceState(history.state, '', url);
+  }, []);
   /** Busca a refazer ao abrir (lida antes de qualquer gravação desta visita). */
   const [resumeAtStart] = useState(() => {
     const c = initialUi.category;
@@ -95,6 +105,7 @@ export function App() {
   /** Montar pelo Orçamento aberto, e em que modo (PC inteiro ou upgrade do PC importado). */
   const [budgetOpen, setBudgetOpen] = useState<BudgetMode | null>(null);
   const [buildSlot, setBuildSlot] = useState<BuildSlot | null>(null);
+  const [driveIndex, setDriveIndex] = useState(0);
   const [onlyCompatible, setOnlyCompatible] = useState(true);
   useEffect(() => saveBuild(build), [build]);
 
@@ -143,10 +154,9 @@ export function App() {
   };
 
   // Ao abrir o app: se a última visita estava num resultado, volta nele.
-  const resumed = useRef(false);
   useEffect(() => {
-    if (resumed.current || shared) return;
-    resumed.current = true;
+    // A limpeza de useSearch também fecha a conexão quando o StrictMode repete a montagem.
+    if (shared) return;
     if (resumeAtStart) resumeSearch(resumeAtStart.c, resumeAtStart.filters);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -185,9 +195,10 @@ export function App() {
   };
 
   /** Escolher/trocar uma peça da montagem: a busca já vem filtrada pelas outras peças. */
-  const openSlot = (slot: BuildSlot) => {
+  const openSlot = (slot: BuildSlot, index = 0) => {
     const base = slot === category ? filters : (cacheRef.current.get(slot)?.filters ?? DEFAULT_FILTERS);
     setBuildSlot(slot);
+    setDriveIndex(index);
     setOnlyCompatible(true);
     openCategory(slot, slotFilters(slot, build, base));
   };
@@ -215,7 +226,7 @@ export function App() {
 
   /** O plano do orçamento vai para a montagem (substitui a atual; pede confirmação se ela tinha peças compradas). */
   const budgetToBuild = (next: SavedBuild) => {
-    const hasOwn = BUILD_SLOTS.some((s) => build[s] && !build[s]!.current);
+    const hasOwn = BUILD_SLOTS.some((s) => build[s] && !build[s]!.current) || build.extraDrives?.some((disk) => !disk.current);
     if (hasOwn && !window.confirm('Trocar a sua montagem atual por esta?')) return;
     setBuild(next);
     openBuild();
@@ -231,6 +242,7 @@ export function App() {
     setBuild(next);
     const f: Filters = { ...slotFilters(action.slot, next, DEFAULT_FILTERS), ...action.filters };
     setBuildSlot(action.slot);
+    setDriveIndex(action.slot === 'ssd' ? buildDrives(next).length : 0);
     setOnlyCompatible(true);
     openCategory(action.slot, f);
     const plan = planSearch(action.slot, f);
@@ -332,15 +344,17 @@ export function App() {
   const pickSlot = category && (BUILD_SLOTS as readonly string[]).includes(category) ? (category as BuildSlot) : null;
   const hasOthers = !!pickSlot && BUILD_SLOTS.some((s) => s !== pickSlot && build[s]);
   const slot = choosing ?? (hasOthers ? pickSlot : null);
-  const compat = useMemo(() => (slot ? new Map(groups.map((g) => [g.key, checkCandidate(build, slot, g.specs)])) : null), [groups, build, slot]);
+  const activeDrive = choosing === 'ssd' ? driveIndex : 0;
+  const compat = useMemo(() => (slot ? new Map(groups.map((g) => [g.key, checkCandidate(build, slot, g.specs, activeDrive)])) : null), [groups, build, slot, activeDrive]);
   const shown = compat && onlyCompatible ? groups.filter((g) => compat.get(g.key)!.status !== 'error') : groups;
   const hiddenIncompatible = groups.length - shown.length;
-  const buildCount = BUILD_SLOTS.filter((s) => build[s]).length;
+  const buildCount = BUILD_SLOTS.filter((s) => build[s]).length + (build.extraDrives?.length ?? 0);
+  const pickedItem = pickSlot === 'ssd' ? buildDrives(build)[activeDrive] : pickSlot ? build[pickSlot] : undefined;
 
   const pickPart = (g: Group) => {
     if (!pickSlot) return;
     // Trocar a memória mantém a quantidade escolhida.
-    setBuild((b) => ({ ...b, [pickSlot]: { ...itemFromGroup(g), qty: b[pickSlot]?.qty } }));
+    setBuild((b) => pickSlot === 'ssd' ? editDrive(b, activeDrive, itemFromGroup(g)) : ({ ...b, [pickSlot]: { ...itemFromGroup(g), qty: b[pickSlot]?.qty } }));
     // Vindo da montagem, volta para ela; na busca comum, fica no resultado (o card mostra "Na Montagem").
     if (choosing) {
       setBuildSlot(null);
@@ -351,15 +365,17 @@ export function App() {
   const buildButton = (
     <button
       onClick={openBuild}
+      aria-label={buildCount ? `Montagem (${buildCount})` : 'Montagem'}
+      title="Montagem"
       className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm transition ${
-        buildOpen ? 'bg-accent-500 text-accent-950' : 'border border-zinc-300 hover:border-accent-500 dark:border-zinc-700'
+        buildOpen ? 'accent-control' : 'border border-zinc-300 hover:border-accent-500 dark:border-zinc-700'
       }`}
     >
       <Wrench className="h-4 w-4" strokeWidth={1.75} />
-      <span className="hidden sm:inline">Montagem</span>
+      {(!category || buildOpen || pcOpen || budgetOpen) && <span className="hidden sm:inline">Montagem</span>}
       {buildCount > 0 && (
         <span className="tabular-nums">
-          {buildCount}/{BUILD_SLOTS.length}
+          {buildCount}
         </span>
       )}
     </button>
@@ -393,7 +409,7 @@ export function App() {
                     </button>
                     <button
                       onClick={() => leaveShared(true)}
-                      className="rounded-lg bg-accent-500 px-3 py-1.5 text-sm font-medium text-accent-950 hover:bg-accent-400"
+                      className="rounded-lg accent-control px-3 py-1.5 text-sm font-medium"
                     >
                       Usar Esta Montagem
                     </button>
@@ -420,9 +436,10 @@ export function App() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 px-4 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
         <div className="w-full max-w-3xl">
-          <h1 className="text-3xl font-bold tracking-tight">
-            Upgradezin<span className="text-accent-500">.</span>
-          </h1>
+          <div className="flex items-center justify-between gap-2">
+            <h1 className="text-3xl font-bold tracking-tight">Upgradezin<span className="text-accent-500">.</span></h1>
+            <CompareLink showLabel />
+          </div>
           <p className="mb-8 mt-1 text-zinc-500">Qual peça você quer trocar?</p>
           <CategoryPicker variant="grid" value={null} onChange={pickCategory} />
           {BUDGET_VISIBLE && (
@@ -450,7 +467,7 @@ export function App() {
             </span>
             {buildCount > 0 && (
               <span className="text-sm tabular-nums text-zinc-500">
-                {buildCount}/{BUILD_SLOTS.length} Peças
+                {buildCount} {buildCount === 1 ? 'Peça' : 'Peças'}
               </span>
             )}
           </button>
@@ -481,6 +498,7 @@ export function App() {
           </button>
           <CategoryPicker variant="bar" value={buildOpen || budgetOpen || pcOpen ? null : category} onChange={pickCategory} />
           <div className="ml-auto flex shrink-0 items-center gap-2">
+            <CompareLink />
             {buildButton}
           </div>
         </div>
@@ -538,8 +556,9 @@ export function App() {
             build={build}
             edit={{
               onOpen: openSlot,
-              onRemove: (s) =>
+              onRemove: (s, index = 0) =>
                 setBuild((b) => {
+                  if (s === 'ssd') return editDrive(b, index);
                   const next = { ...b };
                   delete next[s];
                   return next;
@@ -551,11 +570,13 @@ export function App() {
                 setPc(pc);
                 setBuild((b) => applyPc(b, pc));
               },
-              onOwned: (s, owned) =>
+              onOwned: (s, owned, index = 0) =>
                 setBuild((b) => {
-                  if (!b[s]) return b;
-                  const { current: _, ...item } = b[s]!;
-                  return { ...b, [s]: owned ? { ...item, current: true } : item };
+                  const selected = s === 'ssd' ? buildDrives(b)[index] : b[s];
+                  if (!selected) return b;
+                  const { current: _, ...item } = selected;
+                  const next = owned ? { ...item, current: true as const } : item;
+                  return s === 'ssd' ? editDrive(b, index, next) : { ...b, [s]: next };
                 }),
             }}
           />
@@ -668,12 +689,13 @@ export function App() {
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {shown.map((g) => (
                 <ProductCard
+                  compareCategory={category ?? undefined}
                   key={g.key}
                   group={g}
                   compat={compat?.get(g.key)}
                   onPick={pickSlot ? () => pickPart(g) : undefined}
-                  picked={!!pickSlot && build[pickSlot]?.key === g.key}
-                  replacing={!!pickSlot && !!build[pickSlot] && build[pickSlot]?.key !== g.key}
+                  picked={pickedItem?.key === g.key}
+                  replacing={!!pickedItem && pickedItem.key !== g.key}
                 />
               ))}
               {running && shown.length < 6 && Array.from({ length: 6 - shown.length }, (_, i) => <SkeletonCard key={`sk${i}`} />)}

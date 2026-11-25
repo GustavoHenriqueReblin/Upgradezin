@@ -23,6 +23,17 @@ const offer = (priceCash: number, collectedAt: string, patch: Partial<Offer> = {
 const build = (o: Offer) => ({ ram: { key: 'ram:teste', title: o.title, specs: o.specs, offers: [o], qty: 2 } });
 
 describe('montagem compartilhada', () => {
+  it('grava e carrega todos os discos, incluindo os que a pessoa já tem', () => {
+    const db = openDb(':memory:');
+    const at = '2026-11-19T10:00:00.000Z';
+    const disk = { ...build(offer(200, at)).ram, qty: undefined, key: 'ssd:teste', specs: { ssdInterface: 'sata' } };
+    const id = saveSharedBuild(db, SharedBuildSchema.parse({
+      ssd: disk, extraDrives: [{ ...disk, key: 'pc:ssd:0', current: true, offers: [] }],
+    }));
+    expect(getSharedBuild(db, id)?.build).toMatchObject({ ssd: { key: 'ssd:teste' }, extraDrives: [{ key: 'pc:ssd:0', current: true }] });
+    expect(SharedBuildSchema.safeParse({ extraDrives: [] }).success).toBe(false);
+    db.close();
+  });
   it('código curto, só letras e números', () => {
     const id = newBuildId();
     expect(id).toHaveLength(8);

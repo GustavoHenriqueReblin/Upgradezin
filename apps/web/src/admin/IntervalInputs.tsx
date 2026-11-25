@@ -29,7 +29,7 @@ export function IntervalInputs({ interval, label, title, onSave }: { interval: S
         s
       </label>
       {changed && (
-        <button type="submit" disabled={!valid} className="rounded-lg bg-accent-500 px-2.5 py-1 text-xs font-medium text-accent-950 disabled:opacity-40">
+        <button type="submit" disabled={!valid} className="rounded-lg accent-control px-2.5 py-1 text-xs font-medium disabled:opacity-40">
           Salvar
         </button>
       )}

@@ -148,7 +148,7 @@ export function SearchSetup({ category, filters: f, onChange, onSearch, onBack }
         <button
           onClick={onSearch}
           disabled={!plan.ready}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent-500 px-4 py-3 text-base font-semibold text-accent-950 shadow-sm transition hover:bg-accent-400 disabled:bg-zinc-300 disabled:text-zinc-500 dark:disabled:bg-zinc-800"
+          className="flex w-full items-center justify-center gap-2 rounded-xl accent-control px-4 py-3 text-base font-semibold shadow-sm transition disabled:bg-zinc-300 disabled:text-zinc-500 dark:disabled:bg-zinc-800"
         >
           <Search className="h-5 w-5" />
           {plan.label}

@@ -51,9 +51,9 @@ describe('relatório do CPU-Z: AMD AM4, DDR4, Radeon', () => {
 
   it('discos, monitor e erros WHEA', () => {
     expect(pc.drives).toEqual([
-      { name: 'TOSHIBA DT01ACA050', kind: 'hdd', capacityGb: 466, system: false, freePercent: 100 },
-      { name: 'KINGSTON SA400S37240G', kind: 'ssd', capacityGb: 224, system: true, freePercent: 15.7 },
-      { name: 'KINGSTON SNV3S1000G', kind: 'nvme', capacityGb: 932, system: false, freePercent: 37.7 },
+      { name: 'TOSHIBA DT01ACA050', kind: 'hdd', interface: 'sata', capacityGb: 466, system: false, freePercent: 100 },
+      { name: 'KINGSTON SA400S37240G', kind: 'ssd', interface: 'sata', capacityGb: 224, system: true, freePercent: 15.7 },
+      { name: 'KINGSTON SNV3S1000G', kind: 'nvme', interface: 'nvme', capacityGb: 932, system: false, freePercent: 37.7 },
     ]);
     expect(pc.monitors).toEqual([{ name: 'Monitor Exemplo', width: 1920, height: 1080, maxHz: 144, inches: 23.8 }]);
     expect(pc.wheaErrors).toBe(7);

@@ -8,6 +8,12 @@ import { norm, numberWith, pick, sheetDoc, sheetText, thousands } from './text.t
 /** Fichas no formato das lojas (texto como a página traz, nov/2026). */
 const lines = (...l: string[]) => l.join('\n');
 
+it('lê arquitetura, código do silício e núcleos CUDA da descrição do GK208', () => {
+  expect(readSheet('gpu', 'Arquitetura: NVIDIA Kepler (chip GK208, equipado com 384 núcleos CUDA)'))
+    .toMatchObject({ architecture: 'NVIDIA Kepler', silicon: 'GK208', shaders: 384 });
+  expect(readSheet('gpu', 'Chip: GK208').shaders).toBeUndefined();
+});
+
 describe('texto da ficha', () => {
   it('HTML vira linhas legíveis: parágrafos, itens, quebras e entidades; sem marcas registradas', () => {
     expect(sheetText('<p>Marca: <b>AMD</b></p><ul><li>Soquete: AM5</li></ul>Núcleos:&nbsp;8<br>Gr&aacute;ficos&#58; Radeon&trade;')).toBe(

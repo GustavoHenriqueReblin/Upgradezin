@@ -453,7 +453,7 @@ Tela de quem opera o servidor, em pacote separado do app (carregado só em `/adm
 | `GET` | `/api/admin/products` | Catálogo paginado (`AdminProductPage`, 50 por página, até 200), do visto há menos tempo: loja, categoria, título, preço à vista com cupom, estoque, specs do título, índice de desempenho e os outros anúncios do mesmo produto. Filtros `store`, `category`, `inStock` (`1`/`0`), `q` (título ou código, `%` e `_` literais), `page`, `pageSize`. |
 | `GET`/`PUT` | `/api/admin/sheets` | Rotina de fichas (separada da coleta): ligada e lojas (guardadas em `meta` `sheet-routine`). O intervalo de fichas é configurado por loja e, por loja, páginas lidas, fila, lidas na última hora e a próxima (`SheetRoutineStatus`). |
 | `GET` | `/api/admin/sheets/coverage` | Cobertura das fichas por categoria (produtos vistos nos últimos 14 dias): completas, incompletas, não lidas, as que só a web completaria (todas as lojas lidas) e quantos produtos não têm cada campo principal. |
-| `GET` | `/api/admin/sheets/products` | Fichas paginadas por produto. Categoria e situação filtram a ficha; estoque (`inStock`), venda própria (`ownRetail`) e busca por título ou código devem corresponder ao mesmo anúncio. Os dois filtros de oferta aceitam `1`, `0` ou podem ser omitidos. Venda própria segue a busca pública e inclui apenas anúncios novos fora de marketplace. |
+| `GET` | `/api/admin/sheets/products` | Fichas paginadas por produto. Categoria e situação filtram a ficha; estoque (`inStock`), venda própria (`ownRetail`) e busca por título ou código devem corresponder ao mesmo anúncio. Os dois filtros de oferta aceitam `1`, `0` ou podem ser omitidos. Venda própria segue a busca pública e inclui apenas anúncios novos fora de marketplace. Na tela, mudar um filtro preserva os demais e volta à primeira página. |
 | `GET` | `/api/admin/sheets/products?category=cpu` | Produtos de uma categoria com a ficha juntada (`SheetProductPage`): situação, campos, de onde veio cada um, campos principais que faltam e os anúncios (página lida ou não). Filtros `state` (`complete`, `incomplete`, `unread`, `exhausted`, `manual`), `q`, `page`, `pageSize`. |
 | `PUT` | `/api/admin/sheets/completion` | Marca ou reabre a conclusão manual por categoria e produto. Os campos da ficha são preservados. |
 | `GET` | `/api/admin/sheets/page?store=s1&sku=123` | Texto guardado da ficha de uma página, para conferir o que o leitor leu. |
@@ -647,10 +647,32 @@ Variáveis em `.env.example`.
 #### Para lançar a 1ª versão, nesta ordem
 
 1. **Montar pelo orçamento.** Feito em nov/2026 ([§17.4](#174-montar-pelo-orçamento)): um ponto de entrada ("quanto quer gastar?") para o PC completo e o upgrade do PC importado, só com peças compatíveis pela ficha, e o resultado vai para a montagem. Falta: as "melhores ofertas" de cada dica do gargalo (`picks.ts`, §17.3) ainda têm ranking próprio; passar a usar o mesmo motor.
-2. **Comparador de hardware**, para começar placa de vídeo e processador. A pessoa escolhe 2 ou 3 modelos (da busca, da página do produto ou de uma sugestão) e vê lado a lado: desempenho em jogos na escala do app (processador pela ficha, `cpuScore`; placa de vídeo pela tabela do chip), quanto um rende a mais que o outro, as specs da ficha (núcleos, threads, clock, cache, TDP e encaixe; memória de vídeo, consumo, comprimento e linhas PCIe), o menor preço de agora e o desempenho por real. Com um PC importado, mostra também o ganho sobre a peça atual e se cada um tem gargalo com a outra peça.
-3. **Mais de um disco na montagem.** Hoje a montagem tem um SSD só. Poder colocar mais de um, NVMe ou SATA, misturados (ex. NVMe de 1 TB para o sistema e jogos + SATA de 2 TB para arquivos), cada um com a sua oferta, no total e na compatibilidade: slots M.2 e portas SATA da placa-mãe contados contra os discos (`m2Slots`, `sataPorts` da ficha), M.2 que divide linhas com SATA ou com o slot da placa de vídeo, quando a ficha disser. O PC importado já lê todos os discos do CPU-Z (`drives`); eles entram como "Atual". Mexe no modelo da montagem (`BuildSlot` com uma peça por categoria), no link compartilhado e no motor do orçamento (que compra um SSD).
+2. **Comparador de hardware.** Disponível pelo ícone no cabeçalho, com a contagem total das peças. A seleção vem da busca, da página do produto ou das sugestões de upgrade. A URL `/comparar` carrega as chaves do catálogo e a tela reutiliza a API dos produtos para mostrar ficha e preço em tabelas separadas por categoria, com rolagem horizontal quando as colunas ocupam mais espaço. Para CPU e GPU, mostra desempenho relativo em jogos, diferença sobre a primeira peça e pontos por R$ 1.000. Com o PC importado, também estima ganho sobre a peça atual e equilíbrio com a outra peça.
+3. **Mais de um disco na montagem.** Implementado. A montagem aceita NVMe e SATA e importa os discos do CPU-Z como "Atual". Total, compartilhamento e validação incluem todos os discos. O orçamento inclui os discos existentes ao validar upgrades e continua selecionando um SSD nos PCs completos.
 
 Com o comparador e os discos, a 1ª versão pode ser lançada.
+
+Comparações de GPU exibem separadamente o modelo comercial, a arquitetura e o código do chip quando a ficha os informa. O leitor reconhece NVIDIA Kepler a partir de GK208/GK208B ou de uma declaração explícita de arquitetura e guarda a contagem CUDA quando consta no texto.
+
+Na comparação, a nota de CPU e GPU soma 75% do índice de jogos e 25% dos pontos por R$ 1.000, cada um dividido pelo maior valor do grupo. Peças sem índice ou preço em estoque ficam sem nota. As demais categorias são ordenadas pelo preço em estoque. As tabelas partem da largura padrão de 64 rem e crescem com as colunas até a largura da tela.
+
+Na tela, CPUs e GPUs podem ser ordenadas por nota, preço, desempenho bruto ou custo-benefício. Os modelos identificados aparecem com nomes curtos e a ficha técnica abre em um card recolhido por padrão. O ganho estimado usa como referência a peça atual do PC importado. Voltar à Busca abre a categoria do produto ou da aba ativa e retoma os filtros e resultados salvos daquela categoria quando disponíveis.
+
+As páginas de produto e comparação compartilham o cabeçalho fixo no topo ao rolar, com a marca Upgradezin, Voltar à Busca e o contador da comparação. No comparador, o título fica centralizado e as categorias ficam em abas com contagem, sem trocar de rota. A folha global aplica a paleta do app ao menu aberto dos selects em navegadores com suporte a `base-select`.
+
+Em Identificar Gargalo, Comparar Alternativas abre o comparador com os produtos daquela dica. O nome curto da GPU inclui VRAM quando disponível. O ganho no PC compara o índice de jogos combinado antes e depois de trocar uma peça, com resolução e frequência do monitor importado, usando a mesma função do orçamento para combinar os índices.
+
+Na aba de processadores, a última coluna destaca a CPU importada, com o índice em jogos e as especificações disponíveis. Ela permanece fora da ordenação, das notas e dos destaques das alternativas.
+
+Na mesma aba, Compatibilidade Direta e Componentes Adicionais Necessários usam o socket, o chipset e o tipo de memória do PC importado. O comparador indica mudança de plataforma, troca de placa-mãe ou memória e possível atualização de BIOS. Cooler e fonte ficam na análise de compatibilidade da montagem.
+
+Adicionar Hardware abre a busca na categoria ativa em outra guia. Alterações na seleção do navegador atualizam o comparador aberto, e a ordenação fica na mesma faixa das abas.
+
+Na tela inicial, o atalho de comparação exibe o texto Comparar. No cabeçalho da busca, comparação e montagem usam ícones com contagem.
+
+Links para a busca usam `?categoria=…` para escolher a categoria inicial. O app remove esse parâmetro da URL depois de abrir.
+
+Abas ativas e botões em destaque do app e do admin usam a classe compartilhada `accent-control`, com borda laranja e fundo suave.
 
 #### Depois do lançamento, nesta ordem
 
@@ -754,6 +776,8 @@ Com o comparador e os discos, a 1ª versão pode ser lançada.
 
 A tela Montar Peça por Peça agrupa os componentes em uma lista única, com as ações de cada peça junto dela e o total fixo no rodapé. O título abre a página do produto quando alguma oferta tem a chave do catálogo, seguindo a mesma regra da busca.
 
+O primeiro disco fica em `ssd`, e os demais em `extraDrives`. A compatibilidade compara a quantidade de discos M.2 e SATA com os slots e portas informados na ficha da placa-mãe. Quando a ficha declara compartilhamento de portas SATA ou de linhas com vídeo, a montagem avisa para conferir a posição no manual. A ficha ainda não descreve as combinações de portas e slots por modelo. Esses avisos vêm do texto guardado da ficha e não entram na fila de perguntas da busca web.
+
 Uma tela de montagem peça por peça, na ordem em que uma escolha restringe a próxima:
 
 > **Decidido (nov/2026):** a montagem parte do que está à venda (as buscas, agora lidas do banco), não de modelos escolhidos no catálogo. A ideia de montar escolhendo modelos (processador, chipset, chip de vídeo) e só no fim buscar o preço do setup inteiro foi descartada: com os preços no banco, faz mais sentido escolher entre o que dá para comprar. Depois disso o catálogo de peças saiu de vez ([ADR-005](#adr-005-catálogo-de-peças-em-sqlite-importado-uma-vez-do-opendb)).
@@ -831,7 +855,7 @@ A pessoa gera o relatório no CPU-Z (aba **About** → **Save Report (.TXT)**) e
 - **Formato:** seções com o título sublinhado por traços; em cada linha, `Chave<TABs>Valor`, com subitens indentados por TAB. Arquivo em UTF-8/ANSI ou UTF-16.
 - **Peças no mesmo formato das ofertas:** o nome de cada peça passa pelos mesmos extratores dos títulos das lojas (`extractCpuSpecs`, `extractGpuSpecs`, `extractMotherboardSpecs`), e o relatório completa o que o nome não diz (encaixe, chipset, tipo de memória, slots, núcleos, TDP, VRAM). Assim a compatibilidade e as buscas da montagem funcionam sem regra nova.
 - **Peças atuais funcionam juntas:** um problema que envolve só peças "Atual" (ex. "pode precisar de BIOS") não aparece. Uma peça nova continua sendo conferida contra as atuais.
-- **Fonte e cooler** não aparecem no relatório. Na prévia da importação, a pessoa pode informar a fonte (potência, marca, PFC ativo, eficiência mínima; tudo opcional, e sem potência a fonte não entra). Ela vai para a montagem como "Atual" e para a análise, e fica guardada para a próxima importação. Na montagem, "Já Tenho" faz o mesmo com uma fonte escolhida numa loja.
+- **Fonte e cooler** não aparecem no relatório. Na prévia da importação, a pessoa pode informar a fonte (potência, marca, PFC ativo, eficiência mínima; tudo opcional, e sem potência a fonte não entra). A marca usa um menu compacto com opção de entrada manual. A fonte vai para a montagem como "Atual" e para a análise, e fica guardada para a próxima importação. Na montagem, "Já Tenho" faz o mesmo com uma fonte escolhida numa loja.
 
 | Peça | Seção e campos do CPU-Z | Observações |
 |---|---|---|

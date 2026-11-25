@@ -51,7 +51,7 @@ export function Pill({
       aria-pressed={active}
       className={`rounded-full border transition ${size === 'md' ? 'px-3.5 py-1.5 text-sm' : 'px-2.5 py-0.5 text-xs'} ${
         active
-          ? 'border-accent-500 bg-accent-500 text-accent-950'
+          ? 'accent-control'
           : 'border-zinc-300 hover:border-accent-500 dark:border-zinc-700'
       } ${muted && !active ? 'opacity-40' : ''}`}
     >

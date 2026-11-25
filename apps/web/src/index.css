@@ -44,6 +44,21 @@ body {
   background: var(--color-zinc-950);
 }
 
+@layer components {
+  .accent-control {
+    @apply border border-accent-500 bg-accent-100 text-accent-900;
+  }
+  .accent-control:hover:not(:disabled) {
+    @apply bg-accent-200;
+  }
+  .dark .accent-control {
+    @apply bg-accent-500/15 text-accent-300;
+  }
+  .dark .accent-control:hover:not(:disabled) {
+    @apply bg-accent-500/25;
+  }
+}
+
 /* Um brilho laranja bem discreto no alto da página: o fundo não fica chapado. */
 #root {
   min-height: 100vh;
@@ -61,6 +76,53 @@ select:not([multiple]):not([size]) {
   background-position: right 0.6rem center;
   background-size: 1rem;
   padding-right: 2.1rem;
+}
+
+/* O menu nativo pode pintar a opção ativa de azul mesmo com o campo estilizado. */
+@supports (appearance: base-select) and selector(::picker(select)) {
+  select:not([multiple]):not([size]),
+  select:not([multiple]):not([size])::picker(select) {
+    appearance: base-select;
+  }
+
+  select:not([multiple]):not([size])::picker-icon {
+    display: none;
+  }
+
+  select:not([multiple]):not([size]) {
+    align-items: center;
+  }
+
+  select:not([multiple]):not([size])::picker(select) {
+    margin-block: 0.25rem;
+    padding: 0.25rem;
+    border: 1px solid light-dark(var(--color-zinc-300), var(--color-zinc-700));
+    border-radius: 0.5rem;
+    background: light-dark(white, var(--color-zinc-900));
+    color: light-dark(var(--color-zinc-900), var(--color-zinc-100));
+  }
+
+  select:not([multiple]):not([size]) option {
+    padding: 0.375rem 0.5rem;
+    border-radius: 0.25rem;
+  }
+
+  select.compact-picker::picker(select) {
+    max-block-size: min(15rem, 50dvh);
+    overflow-y: auto;
+  }
+
+  select:not([multiple]):not([size]) option:checked {
+    background: light-dark(var(--color-accent-100), var(--color-accent-950));
+    color: light-dark(var(--color-accent-900), var(--color-accent-200));
+  }
+
+  select:not([multiple]):not([size]) option:is(:hover, :focus-visible) {
+    background: light-dark(var(--color-accent-200), var(--color-accent-900));
+    color: light-dark(var(--color-accent-950), var(--color-accent-100));
+    outline: 2px solid var(--color-accent-500);
+    outline-offset: -2px;
+  }
 }
 
 .admin-page :is(select:not([multiple]):not([size]), input:not([type]), input:is([type='text'], [type='search'], [type='number'], [type='password'], [type='email'], [type='url'])) {

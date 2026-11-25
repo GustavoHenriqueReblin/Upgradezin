@@ -131,7 +131,7 @@ export function BackupsPanel({ onUnauthorized }: Props) {
               setMessage({ ok: true, text: `Backup criado: ${b.name} (${b.sizeMb} MB).` });
             })
           }
-          className="mb-3 flex items-center gap-1.5 rounded-lg bg-accent-500 px-3 py-1.5 text-sm font-semibold text-accent-950 hover:bg-accent-400 disabled:opacity-50"
+          className="mb-3 flex items-center gap-1.5 rounded-lg accent-control px-3 py-1.5 text-sm font-semibold disabled:opacity-50"
         >
           <Database className="h-4 w-4" /> {busy ? 'Aguarde…' : 'Fazer backup agora'}
         </button>
@@ -196,7 +196,7 @@ export function BackupsPanel({ onUnauthorized }: Props) {
                     setMessage({ ok: true, text: `Merge aplicado (backup antes: ${r.backup}).` });
                   })
                 }
-                className="rounded-lg bg-accent-500 px-3 py-1.5 font-semibold text-accent-950 hover:bg-accent-400 disabled:opacity-50"
+                className="rounded-lg accent-control px-3 py-1.5 font-semibold disabled:opacity-50"
               >
                 Aplicar
               </button>

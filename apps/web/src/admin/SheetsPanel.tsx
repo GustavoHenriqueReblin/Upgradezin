@@ -50,10 +50,8 @@ const pct = (x: number, total: number) => (total ? Math.round((x / total) * 100)
  */
 export function SheetsPanel({ onUnauthorized }: Props) {
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  // '' = todas as categorias (colunas gerais: categoria e o que falta).
-  const [category, setCategory] = useState<CategoryId | ''>('cpu');
-  // A situação filtrada vale para todas as categorias (trocar de categoria não volta a "qualquer situação").
-  const [state, setState] = useState<SheetFilterState | ''>('');
+  const [filters, setFilters] = useState<Filters>({ category: 'cpu', state: '', q: '', page: 1, inStock: '', ownRetail: '' });
+  const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch, page: patch.page ?? 1 }));
   const fail = useCallback(
     (err: unknown) => {
       if (err instanceof AdminError && err.status === 401) return onUnauthorized();
@@ -66,8 +64,8 @@ export function SheetsPanel({ onUnauthorized }: Props) {
     <div className="space-y-4">
       {message && <p className={`rounded-lg px-3 py-2 text-sm ${message.ok ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-red-500/10 text-red-700 dark:text-red-300'}`}>{message.text}</p>}
       <SheetRoutine fail={fail} onMessage={setMessage} />
-      <Coverage fail={fail} onPick={setCategory} />
-      <Products key={category} category={category} onCategory={setCategory} state={state} onState={setState} fail={fail} onMessage={setMessage} />
+      <Coverage fail={fail} onPick={(category) => set({ category })} />
+      <Products filters={filters} set={set} fail={fail} onMessage={setMessage} />
     </div>
   );
 }
@@ -223,25 +221,26 @@ function Coverage({ fail, onPick }: { fail: (err: unknown) => void; onPick: (c: 
 type OfferFilter = '' | '1' | '0';
 
 interface Filters {
+  category: CategoryId | '';
+  state: SheetFilterState | '';
   q: string;
   page: number;
   inStock: OfferFilter;
   ownRetail: OfferFilter;
 }
 
-/** Produtos de uma categoria com os campos da ficha. A situação vem do painel (fica ao trocar de categoria). */
+/** Produtos filtrados, com a ficha e os anúncios de cada produto. */
 function Products({
-  category,
-  onCategory,
-  state,
-  onState,
+  filters,
+  set,
   fail,
   onMessage,
-}: Shared & { category: CategoryId | ''; onCategory: (c: CategoryId | '') => void; state: SheetFilterState | ''; onState: (s: SheetFilterState | '') => void }) {
-  const [filters, setFilters] = useState<Filters>({ q: '', page: 1, inStock: '', ownRetail: '' });
+}: Shared & { filters: Filters; set: (patch: Partial<Filters>) => void }) {
+  const { category, state } = filters;
   const request = useRef(0);
   const [text, setText] = useState('');
-  const [data, setData] = useState<SheetProductPage | null>(null);
+  const [response, setResponse] = useState<{ filters: Filters; data: SheetProductPage } | null>(null);
+  const data = response?.filters === filters ? response.data : null;
   const [stores, setStores] = useState<Map<string, string>>(new Map());
   const [open, setOpen] = useState<string | null>(null);
   const fields = category ? sheetFields(category).filter((f) => f.key !== 'brand' && f.key !== 'model') : [];
@@ -260,12 +259,11 @@ function Products({
     if (filters.inStock) q.set('inStock', filters.inStock);
     if (filters.ownRetail) q.set('ownRetail', filters.ownRetail);
     adminApi<SheetProductPage>(`/sheets/products?${q}`)
-      .then((result) => { if (id === request.current) setData(result); })
+      .then((data) => { if (id === request.current) setResponse({ filters, data }); })
       .catch((err) => { if (id === request.current) fail(err); });
   }, [category, state, filters, fail]);
   useEffect(load, [load]);
   useLiveReload(['attempt', 'admin'], load, { delayMs: 3_000, fallbackMs: 60_000 });
-  const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch, page: patch.page ?? 1 }));
 
   return (
     <Box
@@ -277,7 +275,7 @@ function Products({
       }
     >
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <select className={select} value={category} onChange={(e) => onCategory(e.target.value as CategoryId | '')} aria-label="Categoria">
+        <select className={select} value={category} onChange={(e) => set({ category: e.target.value as CategoryId | '' })} aria-label="Categoria">
           <option value="">todas as categorias</option>
           {ENABLED_CATEGORIES.map((c) => (
             <option key={c} value={c}>
@@ -288,10 +286,7 @@ function Products({
         <select
           className={select}
           value={state}
-          onChange={(e) => {
-            onState(e.target.value as SheetFilterState | '');
-            set({ page: 1 });
-          }}
+          onChange={(e) => set({ state: e.target.value as SheetFilterState | '' })}
           aria-label="Situação da ficha"
         >
           <option value="">qualquer situação</option>

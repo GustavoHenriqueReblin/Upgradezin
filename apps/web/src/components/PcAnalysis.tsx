@@ -118,7 +118,7 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onUpgra
           </div>
           <div className="flex flex-col justify-center border-t border-zinc-200 bg-zinc-50 p-4 sm:p-6 dark:border-zinc-800 dark:bg-zinc-950/45 md:border-l md:border-t-0">
             <button onClick={() => setImporting('file')}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent-500 px-4 text-sm font-semibold text-accent-950 transition hover:bg-accent-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600">
+              className="inline-flex items-center justify-center gap-2 rounded-xl accent-control px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600">
               <Cpu className="h-4 w-4" /> Importar Meu PC
             </button>
           </div>

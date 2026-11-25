@@ -1,4 +1,4 @@
-import { checkBuild, coolerFits, type Build, type BuildIssue, type BuildSlot } from './compat.ts';
+import { BUILD_SLOTS, checkBuild, coolerFits, type Build, type BuildIssue, type BuildSlot } from './compat.ts';
 import { BASE_SYSTEM_POWER, chipsetSupport, cpuFamily, cpuPower, cpuTdp, GPU_POWER, recommendedPsuWatts } from './hardware.ts';
 import { caseFits } from './pccase.ts';
 import { budgetCpuCapacity, budgetCpuScore, budgetGamingScore, budgetGpuScore, budgetIgpuScore, ENTRY_CHIPSETS, type Resolution } from './perf.ts';
@@ -761,8 +761,8 @@ export function prepareBudget(req: Omit<BudgetRequest, 'budget'>, offers: Partia
     if (combo.cooler && c.cpu) notes.add('cooling-estimate');
 
     const buildOf = (): Build => {
-      const b: Build = {};
-      for (const [slot, part] of Object.entries(owned) as [BuildSlot, NonNullable<Build[BuildSlot]>][]) b[slot] = { ...part, current: true };
+      const b: Build = { extraDrives: owned.extraDrives };
+      for (const slot of BUILD_SLOTS) if (owned[slot]) b[slot] = { ...owned[slot]!, current: true };
       // Plataforma nova: a placa-mãe e o processador antigos saem (a memória só se foi trocada).
       for (const [slot, p] of Object.entries(picked) as [BuildSlot, Product][]) b[slot] = { specs: slot === 'psu' && psuAtx3(p) ? { ...p.specs, atx: p.specs.atx ?? '3.0' } : p.specs, ...(p.qty && { qty: p.qty }) };
       if (notes.has('box-cooler')) delete b.cooler;

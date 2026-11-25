@@ -4,6 +4,20 @@ import { checkBuild, type Build, type BuildSlot } from './compat.ts';
 import { chipsetSupport, cpuFamily, cpuMemorySpeed, cpuPower, cpuTdp, GPU_POWER } from './hardware.ts';
 import { extractCpuSpecs } from './cpu.ts';
 import { withSheetSpecs } from './sheet/specs.ts';
+import { readSheet } from './sheet/read.ts';
+
+it('conta ocupação de M.2 e SATA separadamente e sinaliza compartilhamento declarado', () => {
+  const values = readSheet('motherboard', '1 slot M.2\n2 portas SATA\nM.2_1 compartilha portas SATA\nM.2_1 shares lanes with the graphics card');
+  const motherboard = { specs: withSheetSpecs('motherboard', {}, values) };
+  const ssd = { specs: { ssdInterface: 'nvme' as const } };
+  const sata = { specs: { ssdInterface: 'sata' as const } };
+  const gpu = { specs: {} };
+  const mixed = checkBuild({ motherboard, gpu, ssd, extraDrives: [sata] });
+  expect(mixed.issues.map((i) => i.code)).toEqual(expect.arrayContaining(['ssd-shares-sata', 'ssd-shares-gpu']));
+  expect(mixed.issues.map((i) => i.code)).not.toContain('ssd-no-m2');
+  const full = checkBuild({ motherboard, gpu, ssd, extraDrives: [ssd, sata, sata, sata] });
+  expect(full.issues.map((i) => i.code)).toEqual(expect.arrayContaining(['ssd-no-m2', 'ssd-no-sata']));
+});
 
 /** Peça a partir do título do anúncio, como chega das lojas. */
 const part = (category: BuildSlot, title: string) => ({ specs: normalizeListing(category, title).specs });

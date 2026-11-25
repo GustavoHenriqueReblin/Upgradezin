@@ -1,5 +1,5 @@
-import { parseCpuzReport, PC_LIMITS, type BuildSlot, type PcPart, type PcProfile } from '@upgradezin/shared';
-import { itemFromPc, type SavedBuild } from './build.ts';
+import { MAX_BUILD_DRIVES, parseCpuzReport, PC_LIMITS, type BuildSlot, type PcPart, type PcProfile } from '@upgradezin/shared';
+import { buildDrives, itemFromPc, withDrives, type SavedBuild } from './build.ts';
 
 /**
  * "Meu PC": o relatório do CPU-Z lido no navegador (o arquivo nunca vai para o servidor).
@@ -33,6 +33,18 @@ export async function readReportFile(file: File): Promise<ReadResult> {
 /** Peças do relatório que entram na montagem (fonte e cooler não aparecem no CPU-Z). */
 export const PC_SLOTS = ['motherboard', 'cpu', 'ram', 'gpu'] as const satisfies readonly BuildSlot[];
 
+function importDrives(build: SavedBuild, pc: PcProfile): SavedBuild {
+  const selected = buildDrives(build).filter((item) => !item.key.startsWith('pc:ssd:'));
+  const imported = pc.drives.map((drive, index) => ({
+    ...itemFromPc('ssd', {
+      title: drive.name,
+      specs: { ssdCapacity: drive.capacityGb, ssdInterface: drive.interface ?? (drive.kind === 'nvme' ? 'nvme' : undefined) },
+    }),
+    key: `pc:ssd:${index}`,
+  }));
+  return withDrives(build, [...imported, ...selected].slice(0, MAX_BUILD_DRIVES));
+}
+
 /**
  * Coloca as peças atuais na montagem. As peças lidas substituem as que estiverem lá;
  * sem placa de vídeo dedicada no relatório, sai a placa "Atual" de uma importação anterior.
@@ -46,7 +58,7 @@ export function applyPc(build: SavedBuild, pc: PcProfile): SavedBuild {
   }
   // Fonte informada na importação: entra como "Atual" (sem ela, a da montagem fica).
   if (pc.psu) next.psu = itemFromPc('psu', pc.psu);
-  return next;
+  return importDrives(next, pc);
 }
 
 /** Peças do PC só onde a montagem está vazia (abrir uma sugestão não apaga o que a pessoa escolheu). */
@@ -54,7 +66,7 @@ export function fillPc(build: SavedBuild, pc: PcProfile): SavedBuild {
   const next: SavedBuild = { ...build };
   for (const slot of PC_SLOTS) if (!next[slot] && pc[slot]) next[slot] = itemFromPc(slot, pc[slot]!);
   if (!next.psu && pc.psu) next.psu = itemFromPc('psu', pc.psu);
-  return next;
+  return importDrives(next, pc);
 }
 
 const KEY = 'upgradezin.pc.v1';

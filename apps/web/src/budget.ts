@@ -132,7 +132,7 @@ export const optionsOf = (plan: BudgetPlan): BudgetOption[] => (plan.status === 
  */
 export function planToBuild(plan: BudgetOption, base: SavedBuild = {}): SavedBuild {
   const next: SavedBuild = { ...base };
-  for (const [slot, part] of Object.entries(plan.parts) as [keyof SavedBuild, BudgetOption['parts'][keyof SavedBuild]][]) {
+  for (const [slot, part] of Object.entries(plan.parts) as [keyof BudgetOption['parts'], BudgetOption['parts'][keyof BudgetOption['parts']]][]) {
     const group = part && groupOffers(part.offers)[0];
     if (group) next[slot] = { ...(itemFromGroup(group) as BuildItem), ...(part.qty && part.qty > 1 && { qty: part.qty }) };
   }

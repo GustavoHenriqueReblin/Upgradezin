@@ -38,6 +38,7 @@ export interface PcGpu extends PcPart {
 export interface PcDrive {
   name: string;
   kind: 'nvme' | 'ssd' | 'hdd' | 'unknown';
+  interface?: 'nvme' | 'sata';
   capacityGb: number;
   /** Tem o volume C: (sistema). */
   system: boolean;
@@ -355,6 +356,7 @@ function readDrives(s: Sections): PcDrive[] {
     out.push({
       name: clean(get(d, 'Name') ?? 'Disco'),
       kind,
+      ...(/nvme/i.test(bus) ? { interface: 'nvme' } as const : /sata/i.test(bus) ? { interface: 'sata' } as const : {}),
       capacityGb,
       system: !!sys,
       ...(main?.free !== undefined && { freePercent: main.free }),

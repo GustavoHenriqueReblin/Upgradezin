@@ -38,6 +38,10 @@ export function splitOffers(offers: Offer[]) {
 
 /** Página do produto de um card: a da melhor oferta, ou a de qualquer oferta do grupo que o servidor conheça. */
 export function productHref(group: Pick<ProductGroup, 'best' | 'offers'>): string | undefined {
-  const key = group.best.productKey ?? group.offers.find((o) => o.productKey)?.productKey;
+  const key = productKeyOf(group);
   return key ? productPath(key) : undefined;
+}
+
+export function productKeyOf(group: Pick<ProductGroup, 'best' | 'offers'>): string | undefined {
+  return group.best.productKey ?? group.offers.find((o) => o.productKey)?.productKey;
 }

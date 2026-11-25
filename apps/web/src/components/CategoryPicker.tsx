@@ -55,14 +55,15 @@ export function CategoryPicker({ value, onChange, variant, disabled }: Props) {
           <button
             key={id}
             disabled={!def.enabled || disabled}
+            aria-pressed={active}
             onClick={() => onChange(id)}
             title={def.enabled ? def.name : `${def.name} (Em Breve)`}
             className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm transition disabled:cursor-not-allowed ${
               active
-                ? 'bg-accent-500 text-accent-950'
+                ? 'accent-control'
                 : def.enabled
-                  ? 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'
-                  : 'text-zinc-400 opacity-50 dark:text-zinc-600'
+                  ? 'border border-transparent text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                  : 'border border-transparent text-zinc-400 opacity-50 dark:text-zinc-600'
             }`}
           >
             <Icon className="h-4 w-4" strokeWidth={1.75} />

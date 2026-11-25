@@ -20,10 +20,10 @@ describe('importar o PC pelo relatório do CPU-Z', () => {
     const psu: BuildItem = { key: 'psu', title: 'Fonte 650W', specs: normalizeListing('psu', 'Fonte MSI MAG A650BN 650W 80 Plus Bronze').specs, offers: [] };
     const old: BuildItem = { key: 'x', title: 'Ryzen 5 5600', specs: normalizeListing('cpu', 'Processador AMD Ryzen 5 5600, AM4').specs, offers: [] };
     const b = applyPc({ cpu: old, psu }, pc);
-    expect(Object.keys(b).sort()).toEqual(['cpu', 'gpu', 'motherboard', 'psu', 'ram']);
+    expect(Object.keys(b).sort()).toEqual(['cpu', 'extraDrives', 'gpu', 'motherboard', 'psu', 'ram', 'ssd']);
     expect(b.cpu).toMatchObject({ key: 'pc:cpu', title: 'AMD Ryzen 7 5800X3D', offers: [], current: true });
     expect(b.psu).toBe(psu);
-    expect(buildTotals(b)).toMatchObject({ best: 0, parts: 1, current: 4 });
+    expect(buildTotals(b)).toMatchObject({ best: 0, parts: 1, current: 7 });
   });
 
   it('fonte informada na importação entra como "Atual"; sem ela, a da montagem fica', () => {

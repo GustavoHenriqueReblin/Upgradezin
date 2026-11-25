@@ -82,7 +82,7 @@ const LATEST_SERIES = new Set(['RTX 50', 'RTX 40', 'RX 9000', 'RX 7000', 'Arc B'
 /** Tamanhos de memória de vídeo vendidos (GB). */
 const VRAM_SIZES = [4, 6, 8, 10, 12, 16, 20, 24, 32];
 
-const RES_LABEL: Record<Resolution, string> = { '1080p': 'Full HD', '1440p': 'Quad HD (1440p)', '4k': '4K' };
+export const RES_LABEL: Record<Resolution, string> = { '1080p': 'Full HD', '1440p': 'Quad HD (1440p)', '4k': '4K' };
 
 const listNames = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} e ${xs.at(-1)}`);
 

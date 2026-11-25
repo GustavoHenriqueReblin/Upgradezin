@@ -45,10 +45,12 @@ describe('montar pelo orçamento: tela', () => {
   it('as peças atuais: as do relatório e a fonte marcada como "Já Tenho"; o pedido leva só as specs', () => {
     const psu: BuildItem = { key: 'psu', title: 'Fonte 650W', specs: { watts: 650 }, offers: [], current: true };
     const owned = ownedBuild(pc, { psu });
-    expect(Object.keys(owned).sort()).toEqual(['cpu', 'gpu', 'motherboard', 'psu', 'ram']);
+    expect(Object.keys(owned).sort()).toEqual(['cpu', 'extraDrives', 'gpu', 'motherboard', 'psu', 'ram', 'ssd']);
     const req = budgetRequest(3000, { res: '1440p', hz: 144 }, owned, { cpu: 132, gpu: 95 });
     expect(req).toMatchObject({ budget: 3000, res: '1440p', hz: 144, current: { cpu: 132, gpu: 95 } });
     expect(req.owned?.psu).toEqual({ specs: { watts: 650 }, qty: 1, current: true });
+    expect(req.owned?.extraDrives).toHaveLength(2);
+    expect(req.owned?.extraDrives?.[1]).toEqual({ specs: { ssdCapacity: 932, ssdInterface: 'nvme' }, current: true });
     expect(JSON.stringify(req)).not.toContain('Fonte 650W');
     // Fonte comprada numa loja (não "Já Tenho") não conta como do PC.
     expect(ownedBuild(pc, { psu: { ...psu, current: undefined } }).psu).toBeUndefined();

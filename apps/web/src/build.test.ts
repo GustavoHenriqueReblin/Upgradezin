@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { normalizeListing, type BuildSlot, type Offer, type StoreId } from '@upgradezin/shared';
-import { bestOffer, buildTotals, checkCandidate, loadBuild, saveBuild, slotFilters, type BuildItem, type SavedBuild } from './build.ts';
+import { bestOffer, buildDrives, buildTotals, checkCandidate, editDrive, loadBuild, sanitizeBuild, saveBuild, slotFilters, type BuildItem, type SavedBuild } from './build.ts';
 import { DEFAULT_FILTERS } from './filters.ts';
 
 const offer = (store: StoreId, priceCash: number, inStock = true): Offer =>
@@ -19,6 +19,19 @@ const MB_LGA1700 = item('motherboard', 'Placa Mãe Gigabyte B760M DS3H, Intel LG
 const CPU_5600 = item('cpu', 'Processador AMD Ryzen 5 5600, AM4');
 const CPU_7600 = item('cpu', 'Processador AMD Ryzen 5 7600, AM5, Com Cooler');
 const GPU_4060 = item('gpu', 'Placa de Vídeo Gigabyte RTX 4060 Eagle OC 8GB GDDR6');
+
+it('adiciona, valida e remove discos por posição, incluindo apenas compras no total', () => {
+  const motherboard = { ...MB_AM4, specs: { m2Slots: 1, sataPorts: 2 } };
+  const nvme: BuildItem = { ...item('ssd', 'SSD NVMe'), current: true, specs: { ssdInterface: 'nvme' } };
+  const sata: BuildItem = { ...item('ssd', 'SSD SATA', [offer('s1', 220)]), specs: { ssdInterface: 'sata' } };
+  const first = { motherboard, ssd: nvme };
+  expect(checkCandidate(first, 'ssd', nvme.specs, 1).status).toBe('error');
+  expect(checkCandidate(first, 'ssd', sata.specs, 1).status).toBe('ok');
+  const build = editDrive(first, 1, sata);
+  expect(buildTotals(build)).toMatchObject({ best: 320, parts: 2, current: 1 });
+  expect(buildDrives(sanitizeBuild(JSON.parse(JSON.stringify(build)))).map((d) => d.title)).toEqual(['SSD NVMe', 'SSD SATA']);
+  expect(editDrive(build, 0).ssd).toBe(sata);
+});
 
 describe('slotFilters: a busca de cada peça já vem filtrada pela montagem', () => {
   it('placa-mãe AM4 → processador AM4 e memória DDR4', () => {

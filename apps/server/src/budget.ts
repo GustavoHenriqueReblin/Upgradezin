@@ -1,4 +1,4 @@
-import { BUILD_SLOTS, planBudget, type BudgetMode, type BudgetOffer, type BudgetPlan, type BudgetRequest, type BuildSlot, type StoreId } from '@upgradezin/shared';
+import { BUILD_SLOTS, MAX_BUILD_DRIVES, planBudget, type BudgetMode, type BudgetOffer, type BudgetPlan, type BudgetRequest, type BuildSlot, type StoreId } from '@upgradezin/shared';
 import { z } from 'zod';
 import type { Db } from './db/db.ts';
 import { applySheets } from './prices/offer-sheets.ts';
@@ -29,7 +29,8 @@ export const BudgetBody = z
     workload: z.enum(['cpu', 'gpu']).optional(),
     requiredBrands: z.object({ cpu: z.enum(['amd', 'intel']).optional(), gpu: z.enum(['amd', 'intel', 'nvidia']).optional() }).strict().optional(),
     preferences: z.object({ cpu: z.enum(['amd', 'intel']).optional(), gpu: z.enum(['amd', 'intel', 'nvidia']).optional() }).strict().optional(),
-    owned: z.partialRecord(z.enum(BUILD_SLOTS), Part).optional(),
+    owned: z.object(Object.fromEntries(BUILD_SLOTS.map((slot) => [slot, Part.optional()])) as Record<BuildSlot, z.ZodOptional<typeof Part>>)
+      .extend({ extraDrives: z.array(Part).max(MAX_BUILD_DRIVES - 1).optional() }).strict().optional(),
     current: z.object({ cpu: z.number().positive().max(1000).optional(), gpu: z.number().positive().max(1000).optional() }).strict().optional(),
   })
   .strict();

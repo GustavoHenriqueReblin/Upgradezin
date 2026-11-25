@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, ChartColumn } from 'lucide-react';
 import { productPath, type UpgradeAction, type UpgradePick } from '@upgradezin/shared';
 import { brl } from '../format.ts';
 import { storeName } from '../stores.ts';
 import { StoreDot } from './StoreDot.tsx';
+import { CompareButton } from './CompareControls.tsx';
+import { compareUrl } from '../compare.ts';
 
 /**
  * As 3 peças que mais acertam a dica de upgrade (1ª, 2ª e 3ª opção), com o preço de agora (POST /api/upgrade/picks, só do
@@ -36,12 +38,20 @@ export function UpgradePicks({ action }: { action: UpgradeAction }) {
   if (!picks.length) return null;
   const ranked = picks.some((p) => p.gain !== undefined);
   const resolving = picks.some((p) => p.resolves);
+  const alternativeKeys = [...new Set(picks.flatMap(({ offer }) => offer.productKey ? [offer.productKey] : []))];
 
   return (
     <div className="mt-3">
-      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-        {resolving ? 'Resolvem o gargalo, da mais barata' : ranked ? 'Mais desempenho por real, agora' : 'Mais baratas que servem, agora'}
-      </p>
+      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+          {resolving ? 'Resolvem o gargalo, da mais barata' : ranked ? 'Mais desempenho por real, agora' : 'Mais baratas que servem, agora'}
+        </p>
+        {alternativeKeys.length > 1 && (
+          <a href={compareUrl(alternativeKeys)} className="button-link inline-flex items-center gap-2 rounded-lg border border-zinc-300 px-3 text-sm font-medium hover:border-accent-500 dark:border-zinc-700">
+            <ChartColumn aria-hidden="true" className="h-4 w-4" /> Comparar Alternativas
+          </a>
+        )}
+      </div>
       <ol className="divide-y divide-zinc-100 overflow-hidden rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
         {picks.map((p, i) => {
           const model = action.slot === 'gpu' ? p.offer.specs.gpuModel : action.slot === 'cpu' ? [p.offer.specs.cpuLine, p.offer.specs.cpuModel].filter(Boolean).join(' ') : undefined;
@@ -76,6 +86,9 @@ export function UpgradePicks({ action }: { action: UpgradeAction }) {
                 <span className="shrink-0 text-right font-semibold tabular-nums">{brl(p.price)}</span>
                 <ArrowRight className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
               </a>
+              {p.offer.productKey && (
+                <div className="px-3 pb-2"><CompareButton category={action.slot} productKey={p.offer.productKey} /></div>
+              )}
             </li>
           );
         })}

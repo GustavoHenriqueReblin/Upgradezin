@@ -22,6 +22,7 @@ import { SOCKET_BRAND, SOCKET_MEMORY, type Socket, type Specs } from './types.ts
 /** Ordem da montagem: cada peça restringe as seguintes. */
 export const BUILD_SLOTS = ['motherboard', 'cpu', 'ram', 'gpu', 'psu', 'ssd', 'cooler', 'case'] as const;
 export type BuildSlot = (typeof BUILD_SLOTS)[number];
+export const MAX_BUILD_DRIVES = 24;
 
 export interface BuildPart {
   specs: Specs;
@@ -32,7 +33,7 @@ export interface BuildPart {
 }
 
 /** Peças escolhidas até agora; a montagem pode estar incompleta. */
-export type Build = Partial<Record<BuildSlot, BuildPart>>;
+export type Build = Partial<Record<BuildSlot, BuildPart>> & { extraDrives?: BuildPart[] };
 
 /**
  *   error   não funciona (vermelho)
@@ -108,7 +109,8 @@ export function checkBuild(build: Build): BuildCheck {
   const ramQty = Math.max(1, build.ram?.qty ?? 1);
   const gpu = build.gpu?.specs;
   const psu = build.psu?.specs;
-  const ssd = build.ssd?.specs;
+  const driveParts = [build.ssd, ...(build.extraDrives ?? [])].filter((part) => part !== undefined);
+  const drives = driveParts.map((part) => part.specs);
   const cooler = build.cooler?.specs;
   const pcase = build.case?.specs;
 
@@ -238,10 +240,19 @@ export function checkBuild(build: Build): BuildCheck {
 
   // ---- SSD ----
   // Encaixe (ficha técnica): M.2 em placa sem M.2, 2,5" (SATA) em placa sem porta SATA.
-  if (ssd && mb) {
-    if (ssd.ssdForm === 'm2' && mb.m2Slots === 0) add('error', 'ssd-no-m2', ['ssd', 'motherboard'], 'O SSD é M.2 e a placa-mãe não tem slot M.2.');
-    if (ssd.ssdForm === '2.5' && mb.sataPorts === 0) add('error', 'ssd-no-sata', ['ssd', 'motherboard'], 'O SSD é SATA (2,5") e a placa-mãe não tem porta SATA.');
+  if (mb) {
+    const m2 = drives.filter((s) => s.ssdForm === 'm2' || s.ssdInterface === 'nvme').length;
+    const sata = drives.filter((s) => s.ssdForm !== 'm2' && s.ssdInterface !== 'nvme' && (s.ssdForm === '2.5' || s.ssdInterface === 'sata')).length;
+    if (mb.m2Slots !== undefined && m2 > mb.m2Slots)
+      add('error', 'ssd-no-m2', ['ssd', 'motherboard'], `A montagem precisa de ${m2} slot(s) M.2. A placa-mãe tem ${mb.m2Slots}.`);
+    if (mb.sataPorts !== undefined && sata > mb.sataPorts)
+      add('error', 'ssd-no-sata', ['ssd', 'motherboard'], `A montagem precisa de ${sata} porta(s) SATA. A placa-mãe tem ${mb.sataPorts}.`);
+    if (m2 && sata && mb.m2SharesSata)
+      add('warn', 'ssd-shares-sata', ['ssd', 'motherboard'], 'A ficha indica que um slot M.2 pode desativar portas SATA. Confira quais conexões usar no manual da placa-mãe.');
+    if (m2 && gpu && mb.m2SharesGpu)
+      add('info', 'ssd-shares-gpu', ['ssd', 'motherboard', 'gpu'], 'A ficha indica que um slot M.2 pode reduzir as linhas da placa de vídeo. Confira no manual qual slot usar.');
   }
+  const ssd = drives.filter((s) => s.ssdInterface === 'nvme').sort((a, b) => (b.ssdPcie ?? 0) - (a.ssdPcie ?? 0))[0];
   if (ssd?.ssdInterface === 'nvme' && ssd.ssdPcie && mb && (mb.m2Pcie || mb.chipset)) {
     // Geração do M.2: a da ficha da placa; sem ela, a do chipset.
     const slot = mb.m2Pcie ?? chipsetPcie(mb.chipset);
@@ -287,7 +298,8 @@ export function checkBuild(build: Build): BuildCheck {
 
   // Peças que já estão funcionando juntas no PC da pessoa: um problema só entre elas não vale (ex. "pode precisar de BIOS").
   // A fonte é exceção: fonte fraca para o PC atual é justamente o que a pessoa precisa saber.
-  const relevant = issues.filter((i) => i.parts.includes('psu') || !i.parts.every((p) => build[p]?.current));
+  const allDrivesCurrent = driveParts.length > 0 && driveParts.every((part) => part.current);
+  const relevant = issues.filter((i) => i.parts.includes('psu') || !i.parts.every((p) => p === 'ssd' ? allDrivesCurrent : build[p]?.current));
   issues.length = 0;
   issues.push(...relevant);
 

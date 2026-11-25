@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Check, Cpu, Link2, Minus, Plus, RefreshCw, Trash2, Zap } from 'lucide-react';
-import { BUILD_SLOTS, CATEGORY_DEFS, checkBuild, effectiveCash, type BuildIssue, type BuildSlot, type PcProfile } from '@upgradezin/shared';
-import { bestOffer, buildTotals, MAX_QTY, QTY_SLOTS, qtyOf, toBuild, type SavedBuild } from '../build.ts';
+import { BUILD_SLOTS, CATEGORY_DEFS, checkBuild, effectiveCash, MAX_BUILD_DRIVES, type BuildIssue, type BuildSlot, type PcProfile } from '@upgradezin/shared';
+import { bestOffer, buildDrives, buildTotals, MAX_QTY, QTY_SLOTS, qtyOf, toBuild, type SavedBuild } from '../build.ts';
 import { ago, brl } from '../format.ts';
 import { shareBuild, shareUrl } from '../share.ts';
 import { storeName } from '../stores.ts';
@@ -16,14 +16,14 @@ interface Props {
   build: SavedBuild;
   /** Sem `edit`: só leitura (montagem aberta por link). */
   edit?: {
-    onOpen: (slot: BuildSlot) => void;
-    onRemove: (slot: BuildSlot) => void;
+    onOpen: (slot: BuildSlot, driveIndex?: number) => void;
+    onRemove: (slot: BuildSlot, driveIndex?: number) => void;
     onQty: (slot: BuildSlot, qty: number) => void;
     onClear: () => void;
     /** Peças atuais lidas do relatório do CPU-Z. */
     onImport: (pc: PcProfile) => void;
     /** "Já Tenho": a peça sai do total e conta como parte do PC atual. */
-    onOwned: (slot: BuildSlot, owned: boolean) => void;
+    onOwned: (slot: BuildSlot, owned: boolean, driveIndex?: number) => void;
   };
   /** Título e texto do topo (só leitura: de onde veio a montagem e as ações). */
   header?: ReactNode;
@@ -46,6 +46,7 @@ const LEVEL_ORDER: Record<BuildIssue['level'], number> = { error: 0, warn: 1, un
 /** Montagem peça por peça, com compatibilidade revalidada a cada mudança e o total sempre à mostra. */
 export function BuildView({ build, edit, header }: Props) {
   const check = checkBuild(toBuild(build));
+  const drives = buildDrives(build);
   const totals = buildTotals(build);
   const errors = check.issues.filter((i) => i.level === 'error').length;
   const warns = check.issues.filter((i) => i.level === 'warn').length;
@@ -92,16 +93,18 @@ export function BuildView({ build, edit, header }: Props) {
       )}
 
       <ol className="divide-y divide-zinc-200 rounded-2xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-        {BUILD_SLOTS.map((slot) => {
-          const item = build[slot];
+        {BUILD_SLOTS.flatMap<{ slot: BuildSlot; driveIndex: number }>((slot) => slot === 'ssd'
+          ? Array.from({ length: Math.max(1, drives.length) }, (_, driveIndex) => ({ slot, driveIndex }))
+          : [{ slot, driveIndex: 0 }]).map(({ slot, driveIndex }) => {
+          const item = slot === 'ssd' ? drives[driveIndex] : build[slot];
           const Icon = CATEGORY_ICONS[slot];
-          const name = CATEGORY_DEFS[slot].name;
-          const issues = check.issues.filter((i) => i.parts.includes(slot)).sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
+          const name = slot === 'ssd' ? `Disco ${driveIndex + 1}` : CATEGORY_DEFS[slot].name;
+          const issues = driveIndex === 0 ? check.issues.filter((i) => i.parts.includes(slot)).sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]) : [];
           const offer = item ? bestOffer(item) : undefined;
           const href = item && offer ? productHref({ best: offer, offers: item.offers }) : undefined;
           const qty = item ? qtyOf(item) : 1;
           return (
-            <li key={slot} className="px-4 py-3.5 sm:px-6">
+            <li key={`${slot}:${driveIndex}`} className="px-4 py-3.5 sm:px-6">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-500/10 text-accent-600 dark:text-accent-400">
                   <Icon className="h-5 w-5" strokeWidth={1.75} />
@@ -122,9 +125,9 @@ export function BuildView({ build, edit, header }: Props) {
                 {item && check.status[slot] && <CompatBadge status={check.status[slot]!} />}
                 {!item && edit && (
                   <button
-                    onClick={() => edit.onOpen(slot)}
+                    onClick={() => edit.onOpen(slot, driveIndex)}
                     aria-label={`Escolher ${name}`}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-accent-500 px-3 text-sm font-semibold text-accent-950 transition hover:bg-accent-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-xl accent-control px-3 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
                   >
                     <Plus className="h-4 w-4" /> Escolher
                   </button>
@@ -181,7 +184,7 @@ export function BuildView({ build, edit, header }: Props) {
                   </div>
                   <div className="flex shrink-0 items-end justify-between gap-3 sm:flex-col sm:items-end">
                     {item.current && <div className="text-sm text-zinc-500 sm:text-right">Você já tem</div>}
-                    {edit && item.offers.length > 0 && <OwnedSwitch on={!!item.current} onChange={(v) => edit.onOwned(slot, v)} />}
+                    {edit && item.offers.length > 0 && <OwnedSwitch on={!!item.current} onChange={(v) => edit.onOwned(slot, v, driveIndex)} />}
                     {offer && !item.current && (
                       <a href={offer.url} target="_blank" rel="noreferrer" className="hover:underline sm:text-right">
                         <div className="text-lg font-bold tabular-nums">{brl(effectiveCash(offer) * qty)}</div>
@@ -201,13 +204,13 @@ export function BuildView({ build, edit, header }: Props) {
                     {edit && (
                     <div className="flex gap-1">
                       <button
-                        onClick={() => edit.onOpen(slot)}
+                        onClick={() => edit.onOpen(slot, driveIndex)}
                         className="flex items-center gap-1 rounded-lg border border-zinc-300 px-2.5 py-1 text-sm hover:border-accent-500 dark:border-zinc-700"
                       >
                         <RefreshCw className="h-3.5 w-3.5" /> Trocar
                       </button>
                       <button
-                        onClick={() => edit.onRemove(slot)}
+                        onClick={() => edit.onRemove(slot, driveIndex)}
                         title="Remover"
                         className="rounded-lg border border-zinc-300 px-2 py-1 text-zinc-500 hover:border-red-400 hover:text-red-600 dark:border-zinc-700"
                       >
@@ -217,6 +220,13 @@ export function BuildView({ build, edit, header }: Props) {
                     )}
                   </div>
                 </div>
+              )}
+
+              {slot === 'ssd' && item && edit && driveIndex === drives.length - 1 && drives.length < MAX_BUILD_DRIVES && (
+                <button type="button" onClick={() => edit.onOpen('ssd', driveIndex + 1)}
+                  className="mt-3 inline-flex items-center gap-2 rounded-lg border border-zinc-300 px-3 text-sm hover:border-accent-500 dark:border-zinc-700">
+                  <Plus className="h-4 w-4" /> Adicionar Disco
+                </button>
               )}
 
               {/* Recomendação de fonte, mesmo antes de escolher uma. */}

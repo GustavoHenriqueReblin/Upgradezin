@@ -25,7 +25,7 @@ Fora do escopo: marketplaces abertos, usado/recondicionado, checkout, afiliados,
 - **Em produção** num servidor Ubuntu doméstico, com acesso público por túnel. A rotina de coleta, a varredura completa da madrugada e a rotina de fichas rodam lá. O servidor pode estar alguns commits atrás do `main`: o deploy é manual (seção 12).
 - **Catálogo** (snapshot local de 25/11/2026) com 19.067 anúncios catalogados e 14.456 páginas de produto lidas.
 - **Versão 0.3.0.** O `[Não lançado]` do CHANGELOG lista o que já está no código e ainda não virou versão.
-- **Próximo marco:** lançar a 1ª versão depois do comparador de hardware e de vários discos na montagem (seção 11).
+- **Próximo marco:** validar e lançar a 1ª versão, com o comparador e a montagem com vários discos implementados (seção 11).
 
 ---
 
@@ -40,7 +40,8 @@ No admin, fichas em revisão podem ser concluídas com campos pendentes e reaber
 | Busca por categoria | Formulário por categoria (potência, soquete, chipset, memória, linha de processador, fabricante de placa de vídeo, capacidade etc.) com a contagem de produtos em estoque em cada opção; o resultado vem do banco, filtrado pelas specs da ficha | §7, §9 |
 | Filtros do resultado | Calculados dos próprios resultados, com contagem; filtros genéricos para cada campo da ficha; ordenações por categoria (R$ por watt, por GB, por TB…) | §7 |
 | Produto | Página do produto (`/produto/<chave>`) com as ofertas de todas as lojas, a ficha completa e o histórico de preço (30/90 dias/tudo), selo "Menor Preço em 30 Dias" | §9 |
-| Montagem do PC | 8 peças (placa-mãe, processador, memória, placa de vídeo, fonte, SSD, cooler, gabinete), cada busca já filtrada pelas outras peças, compatibilidade conferida a cada escolha, quantidade na memória, total por loja e na melhor combinação, compartilhamento por link (`/m/<id>`) | §17.1 |
+| Comparador | Seleção de peças de várias categorias, com tabelas separadas e rolagem horizontal. CPUs e GPUs têm índices de jogos e, com PC importado, estimativas de ganho e equilíbrio | §14 |
+| Montagem do PC | Oito categorias, com múltiplos discos NVMe e SATA. Busca e compatibilidade por peça, quantidade na memória, total por loja e na melhor combinação e compartilhamento por link (`/m/<id>`) | §17.1 |
 | Montar pelo Orçamento | PC completo ou upgrade do PC importado, com até 3 opções. Acesso pela tela inicial e pelo Identificar Gargalo | §17.4 |
 | Importar o PC (CPU-Z) | Lê o relatório `.txt` do CPU-Z **no navegador** (o arquivo não vai ao servidor); as peças viram "Atual" na montagem; a fonte é informada à mão | §17.2 |
 | Identificar Gargalo | Equilíbrio processador × placa de vídeo na tela da pessoa (resolução e Hz do monitor), dicas (upgrade, grátis, atenção, observação) e as 3 melhores ofertas de cada dica | §17.3 |
@@ -233,8 +234,8 @@ ADRs completos em ARCHITECTURE §15. As principais:
 
 ### Para lançar a 1ª versão, nesta ordem (ARCHITECTURE §14)
 1. ~~Montar pelo orçamento~~ (disponível na tela inicial e no diagnóstico de gargalo).
-2. **Comparador de hardware**, começando por placa de vídeo e processador: 2 ou 3 modelos lado a lado (desempenho na escala do app, quanto um rende a mais, specs da ficha, menor preço, desempenho por real; com o PC importado, ganho sobre a peça atual e gargalo).
-3. **Mais de um disco na montagem** (NVMe e SATA misturados), com slots M.2 e portas SATA da placa-mãe contados contra os discos; os discos do PC importado entram como "Atual".
+2. ~~Comparador de hardware~~ (seleção por categoria, com desempenho estimado para processadores e placas de vídeo).
+3. ~~Mais de um disco na montagem~~ (NVMe, SATA e discos importados do CPU-Z).
 
 ### Depois do lançamento
 4. **Login com Google** (gratuito; projeto no Google Cloud e tela de consentimento): PC importado, montagens, buscas por orçamento e alertas na conta; o que está no navegador sobe no primeiro login.

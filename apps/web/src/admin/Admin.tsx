@@ -70,7 +70,7 @@ export function Admin() {
                     key={t.id}
                     onClick={() => setTab(t.id)}
                     className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm ${
-                      tab === t.id ? 'bg-accent-500 text-accent-950' : 'text-zinc-600 hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                      tab === t.id ? 'accent-control' : 'border border-transparent text-zinc-600 hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800'
                     }`}
                   >
                     <t.icon className="h-4 w-4" />
@@ -147,7 +147,7 @@ function LoginForm({ onDone }: { onDone: (user: string) => void }) {
       <input className={input} placeholder="Usuário" autoComplete="username" value={user} onChange={(e) => setUser(e.target.value)} required />
       <input className={input} placeholder="Senha" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-      <button disabled={busy} className="w-full rounded-lg bg-accent-500 px-4 py-2 font-semibold text-accent-950 hover:bg-accent-400 disabled:opacity-60">
+      <button disabled={busy} className="w-full rounded-lg accent-control px-4 py-2 font-semibold disabled:opacity-60">
         {busy ? 'Entrando…' : 'Entrar'}
       </button>
     </form>

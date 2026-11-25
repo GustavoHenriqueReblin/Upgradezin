@@ -2,6 +2,7 @@ import {
   BUILD_SLOTS,
   checkBuild,
   effectiveCash,
+  MAX_BUILD_DRIVES,
   PSU_POWERS,
   SOCKET_MEMORY,
   STORES,
@@ -42,7 +43,23 @@ export const QTY_SLOTS: readonly BuildSlot[] = ['ram'];
 export const MAX_QTY = 4;
 export const qtyOf = (i: BuildItem) => Math.min(MAX_QTY, Math.max(1, Math.floor(i.qty ?? 1)));
 
-export type SavedBuild = Partial<Record<BuildSlot, BuildItem>>;
+export type SavedBuild = Partial<Record<BuildSlot, BuildItem>> & { extraDrives?: BuildItem[] };
+
+export const buildDrives = (b: SavedBuild): BuildItem[] => [...(b.ssd ? [b.ssd] : []), ...(b.extraDrives ?? [])];
+
+export function withDrives(b: SavedBuild, drives: BuildItem[]): SavedBuild {
+  const { ssd: _first, extraDrives: _extra, ...rest } = b;
+  if (!drives.length) return rest;
+  const [ssd, ...extraDrives] = drives;
+  return { ...rest, ssd, ...(extraDrives.length ? { extraDrives } : {}) };
+}
+
+export function editDrive(b: SavedBuild, index: number, item?: BuildItem): SavedBuild {
+  const drives = buildDrives(b);
+  if (item && index >= MAX_BUILD_DRIVES) return b;
+  drives.splice(index, 1, ...(item ? [item] : []));
+  return withDrives(b, drives);
+}
 
 export const itemFromGroup = (g: ProductGroup): BuildItem => ({
   key: g.key,
@@ -66,6 +83,7 @@ export const itemFromPc = (slot: BuildSlot, p: PcPart): BuildItem => ({
 export function toBuild(b: SavedBuild): Build {
   const out: Build = {};
   for (const slot of BUILD_SLOTS) if (b[slot]) out[slot] = { specs: b[slot]!.specs, qty: qtyOf(b[slot]!), ...(b[slot]!.current && { current: true }) };
+  if (b.extraDrives?.length) out.extraDrives = b.extraDrives.map(({ specs, current }) => ({ specs, current }));
   return out;
 }
 
@@ -88,7 +106,7 @@ export interface BuildTotals {
 }
 
 export function buildTotals(b: SavedBuild): BuildTotals {
-  const all = BUILD_SLOTS.map((s) => b[s]).filter((i): i is BuildItem => !!i);
+  const all = [...BUILD_SLOTS.map((s) => b[s]).filter((i): i is BuildItem => !!i), ...(b.extraDrives ?? [])];
   const items = all.filter((i) => !i.current);
   const best = items.reduce((sum, i) => sum + (bestOffer(i) ? effectiveCash(bestOffer(i)!) * qtyOf(i) : 0), 0);
   const perStore = STORES.map((store) => {
@@ -149,8 +167,16 @@ const NOT_MEASURED_YET = new Set([
   'memory-capacity',
 ]);
 
-export function checkCandidate(b: SavedBuild, slot: BuildSlot, specs: Specs): CandidateCheck {
-  const r = checkBuild({ ...toBuild(b), [slot]: { specs } });
+export function checkCandidate(b: SavedBuild, slot: BuildSlot, specs: Specs, driveIndex = 0): CandidateCheck {
+  const next = toBuild(b);
+  if (slot === 'ssd' && driveIndex > 0) {
+    const extra = next.extraDrives ?? [];
+    extra.splice(driveIndex - 1, 1, { specs });
+    next.extraDrives = extra;
+  } else {
+    next[slot] = { specs };
+  }
+  const r = checkBuild(next);
   const issues = r.issues
     .filter((i) => i.parts.includes(slot) && !NOT_MEASURED_YET.has(i.code))
     .sort((x, y) => ORDER[x.level] - ORDER[y.level]);
@@ -173,7 +199,11 @@ export function sanitizeBuild(parsed: unknown): SavedBuild {
       out[slot] = item;
     }
   }
-  return out;
+  const extra = Array.isArray(src.extraDrives) ? src.extraDrives.slice(0, MAX_BUILD_DRIVES - 1).flatMap((item) => {
+    if (!item || typeof item.title !== 'string' || !item.specs || !Array.isArray(item.offers)) return [];
+    return [{ ...item, qty: undefined, current: item.current === true ? true as const : undefined }];
+  }) : [];
+  return withDrives(out, [...buildDrives(out), ...extra]);
 }
 
 export function loadBuild(): SavedBuild {

@@ -106,6 +106,8 @@ export interface MotherboardSpecs {
   m2Pcie?: 3 | 4 | 5;
   pcieGen?: 3 | 4 | 5;
   sataPorts?: number;
+  m2SharesSata?: boolean;
+  m2SharesGpu?: boolean;
   memoryMaxGb?: number;
   memoryMaxMhz?: number;
   wifi?: boolean;

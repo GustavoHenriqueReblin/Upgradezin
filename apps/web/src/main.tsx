@@ -2,6 +2,7 @@ import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';
 import { ProductPage } from './components/ProductPage.tsx';
+import { ComparisonPage } from './components/ComparisonPage.tsx';
 import { productKeyFromUrl } from './product.ts';
 import { loadStores } from './stores.ts';
 import '@fontsource-variable/quicksand';
@@ -23,6 +24,8 @@ if (location.pathname === '/admin' || location.pathname.startsWith('/admin/')) {
       </Suspense>
     </StrictMode>,
   );
+} else if (location.pathname === '/comparar' || location.pathname === '/comparar/') {
+  root.render(<StrictMode><ComparisonPage /></StrictMode>);
 } else if (productKeyFromUrl()) {
   // Página do produto: no ar mesmo com o resto do site em manutenção.
   const key = productKeyFromUrl()!;

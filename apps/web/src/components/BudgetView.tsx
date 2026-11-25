@@ -280,7 +280,7 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onToBuild }: Pro
             <button
               onClick={run}
               disabled={!budget || state.kind === 'loading' || (mode === 'upgrade' && !pc)}
-              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-accent-500 px-4 text-sm font-semibold text-accent-950 transition hover:bg-accent-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl accent-control px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {state.kind === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
               {state.kind === 'loading' ? 'Montando…' : mode === 'full' ? 'Montar o PC' : 'Montar o Upgrade'}
@@ -520,7 +520,7 @@ function OptionDetail({ opt, first, n, budget, owned, screen, profile, onToBuild
           <p className="text-xs text-zinc-500">Algumas peças têm apenas preço histórico. Para levar uma opção com ofertas à montagem, use PC Comprável Agora.</p>
         ) : (
           <>
-            <button onClick={() => onToBuild(planToBuild(plan, owned))} className="inline-flex items-center gap-1.5 rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-accent-950 hover:bg-accent-400">
+            <button onClick={() => onToBuild(planToBuild(plan, owned))} className="inline-flex items-center gap-1.5 rounded-lg accent-control px-4 py-2 text-sm font-medium">
               Levar para a Montagem <ArrowRight className="h-4 w-4" />
             </button>
             <p className="text-xs text-zinc-500">Na montagem dá para trocar as peças e conferir a compatibilidade. Os preços são à vista.</p>
