@@ -124,7 +124,7 @@ export function sheetSpecs(category: CategoryId, v: SheetValues): Specs {
         efficiencyCert: level ? (eff.includes('cybenetics') ? 'cybenetics' : '80plus') : undefined,
         modular: /total|full|sim/.test(modular) ? 'full' : /semi/.test(modular) ? 'semi' : /n[aã]o/.test(modular) ? 'none' : undefined,
         atx,
-        pcie5: (num(v.pcie16) ?? 0) > 0 || !!atx || undefined,
+        pcie5: num(v.pcie16) === undefined ? (atx ? true : undefined) : num(v.pcie16)! > 0,
         sfx: /sfx/.test(std) || undefined,
       });
     }

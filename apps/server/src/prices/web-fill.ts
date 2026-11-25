@@ -129,7 +129,7 @@ export function webQueue(db: Db, now = Date.now()): WebQuestion[] {
   const asked = new Set((ready(db).prepare("SELECT product_key || '|' || field AS k FROM sheet_web").all() as { k: string }[]).map((r) => r.k));
   for (const category of ENABLED_CATEGORIES) {
     for (const p of catalogProducts(db, category, since)) {
-      if (p.state === 'unread' || !p.listings.every((l) => l.read)) continue;
+      if (p.completedManually || p.state === 'unread' || !p.listings.every((l) => l.read)) continue;
       const fields = webKeys(category).map((k) => k.field);
       if (![...p.missing, ...p.gaps].some((f) => fields.includes(f) && !asked.has(`${p.key}|${f}`))) continue;
       out.push({

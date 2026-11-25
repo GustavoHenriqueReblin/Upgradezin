@@ -7,8 +7,7 @@ import {
   cpuTdp,
   GPU_POWER,
   MEMORY_LOCKED_CHIPSETS,
-  PSU_HEADROOM,
-  roundUp50,
+  recommendedPsuWatts,
 } from './hardware.ts';
 import { caseFits } from './pccase.ts';
 import { chipsetPcie, ENTRY_CHIPSETS, GPU_PCIE_X8 } from './perf.ts';
@@ -263,11 +262,12 @@ export function checkBuild(build: Build): BuildCheck {
   let power: BuildPower | undefined;
   const cpuW = cpu ? cpuPower(cpu) : undefined;
   // Consumo da placa de vídeo: o de referência do chip; sem ele, o da ficha técnica.
-  const gpuW = (gpu?.gpuModel ? GPU_POWER[gpu.gpuModel] : undefined) ?? gpu?.gpuTdp;
+  const referenceGpuW = gpu?.gpuModel ? GPU_POWER[gpu.gpuModel] : undefined;
+  const gpuW = gpu?.gpuTdp === undefined ? referenceGpuW : Math.max(gpu.gpuTdp, referenceGpuW ?? 0);
   if ((cpu && cpuW !== undefined && (!gpu || gpuW !== undefined)) || (!cpu && gpuW !== undefined)) {
     const estimate = (cpuW ?? 0) + (gpuW ?? 0) + BASE_SYSTEM_POWER;
     // A fonte que o fabricante da placa de vídeo recomenda (ficha técnica) vale como piso.
-    power = { estimate, recommended: Math.max(roundUp50(estimate * PSU_HEADROOM), gpu?.gpuPsu ?? 0), partial: !gpu || !cpu };
+    power = { estimate, recommended: recommendedPsuWatts(estimate, gpuW ?? 0, gpu?.gpuPsu ?? 0, !!psu?.atx), partial: !gpu || !cpu };
   }
   if (psu) {
     if (cpu || gpu) {

@@ -112,7 +112,20 @@ export function syncSheetTables(db: Db): { added: string[]; dropped: string[] } 
   // Colunas que vieram depois (a confiança e as fontes da resposta em JSON).
   const webCols = new Set((db.prepare('PRAGMA table_info(sheet_web)').all() as { name: string }[]).map((c) => c.name));
   for (const col of ['confidence', 'sources']) if (!webCols.has(col)) db.exec(`ALTER TABLE sheet_web ADD COLUMN ${col} TEXT`);
+  // As tabelas por campo podem guardar valores da versão antiga do leitor.
+  db.exec("DELETE FROM sheet_manual WHERE category = 'cpu' AND field = 'maxPowerW'; DELETE FROM sheet_web WHERE category = 'cpu' AND field = 'maxPowerW'");
   return { added, dropped };
+}
+
+/** Registra a decisão sobre um produto existente, independente dos valores da ficha. */
+export function setSheetCompletion(db: Db, key: string, category: CategoryId, complete: boolean): boolean {
+  const exists = key.startsWith('id:')
+    ? db.prepare('SELECT 1 FROM listings WHERE category = ? AND id = ? AND product_key IS NULL').get(category, key.slice(3))
+    : db.prepare('SELECT 1 FROM listings WHERE category = ? AND product_key = ?').get(category, key);
+  if (!exists) return false;
+  if (complete) db.prepare('INSERT OR IGNORE INTO sheet_completion (category, product_key) VALUES (?, ?)').run(category, key);
+  else db.prepare('DELETE FROM sheet_completion WHERE category = ? AND product_key = ?').run(category, key);
+  return true;
 }
 
 /** Campos preenchidos à mão, por produto, de uma categoria (ou só dos produtos dados). */
@@ -332,7 +345,11 @@ export function mergeSources(category: CategoryId, sources: SheetSource[], title
     }
   for (const s of sources) {
     for (const [k, v] of Object.entries(s.values)) {
-      if (taken(k, v)) continue;
+      const existing = values[k];
+      // Duas fichas divergentes não comprovam capacidade extra de expansão.
+      const smallerBoardCount = category === 'motherboard' && (k === 'ramSlots' || k === 'm2Slots') &&
+        origin[k]?.from !== 'manual' && typeof existing === 'number' && typeof v === 'number' && v < existing;
+      if (taken(k, v) && !smallerBoardCount) continue;
       values[k] = v;
       origin[k] = { store: s.store, sku: s.sku };
     }
@@ -439,6 +456,7 @@ export function catalogProducts(db: Db, category: CategoryId, since: string): Sh
   })[];
   const web = webSheets(db, category);
   const manual = manualSheets(db, category);
+  const completed = new Set((db.prepare('SELECT product_key FROM sheet_completion WHERE category = ?').all(category) as { product_key: string }[]).map((r) => r.product_key));
   const groups = new Map<string, typeof rows>();
   for (const r of rows) {
     const k = r.product_key ?? `id:${r.id}`;
@@ -461,6 +479,7 @@ export function catalogProducts(db: Db, category: CategoryId, since: string): Sh
     // Opcionais vazios ("não sei"): só depois de ler alguma página (antes, tudo falta).
     const gaps = sources.length ? missingOptional(category, merged.values) : [];
     const empty = [...merged.missing, ...gaps];
+    const completedManually = completed.has(key);
     return {
       key,
       category,
@@ -475,11 +494,12 @@ export function catalogProducts(db: Db, category: CategoryId, since: string): Sh
         read: r.page !== null,
         ...(r.page !== null && { at: r.fetched_at!, hasSheet: !!r.has_sheet }),
       })),
-      state: !sources.length ? 'unread' : merged.missing.length ? 'incomplete' : 'complete',
+      completedManually,
+      state: completedManually ? 'complete' : !sources.length ? 'unread' : merged.missing.length ? 'incomplete' : 'complete',
       ...merged,
       gaps,
       // Algum campo vazio (principal ou opcional), as páginas todas lidas e a web já perguntada de todos: só uma pessoa completa.
-      needsHuman: !!sources.length && empty.length > 0 && g.every((r) => r.page !== null) && empty.every((f) => web.get(key)?.asked.has(f)),
+      needsHuman: !completedManually && !!sources.length && empty.length > 0 && g.every((r) => r.page !== null) && empty.every((f) => web.get(key)?.asked.has(f)),
     };
   });
 }

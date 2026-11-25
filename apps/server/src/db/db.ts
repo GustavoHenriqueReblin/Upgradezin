@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync } from './sqlite.ts';
 
 /**
  * Banco local (SQLite embutido no Node, sem dependência nativa): anúncios das lojas,
@@ -250,6 +250,14 @@ const MIGRATIONS: (string | Rebuild)[] = [
     last_at   TEXT NOT NULL,                -- última falha
     detail    TEXT,                         -- mensagem do erro
     PRIMARY KEY (store, store_sku)
+  );
+  `,
+  // 15: conclusão manual de uma ficha, sem preencher os campos que faltam.
+  `
+  CREATE TABLE sheet_completion (
+    category    TEXT NOT NULL,
+    product_key TEXT NOT NULL,
+    PRIMARY KEY (category, product_key)
   );
   `,
 ];

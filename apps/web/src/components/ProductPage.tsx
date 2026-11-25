@@ -86,7 +86,7 @@ function Content({ page }: { page: ProductPageData }) {
                 href={best.url}
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center gap-1.5 rounded-lg bg-accent-500 px-4 py-2 font-medium text-accent-950 hover:bg-accent-400"
+                className="button-link flex items-center gap-1.5 rounded-lg bg-accent-500 px-4 font-medium text-accent-950 hover:bg-accent-400"
               >
                 Ver na Loja <ExternalLink className="h-4 w-4" />
               </a>

@@ -95,6 +95,7 @@ export function ImportPc({ onClose, onApply, replacing = [], applyLabel = 'Usar 
 
             <button
               onClick={() => input.current?.click()}
+              data-button-layout="card"
               onDragOver={(e) => {
                 e.preventDefault();
                 setOver(true);

@@ -103,7 +103,7 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
   /** Fonte sem PFC ativo e sem certificação: costuma entregar menos do que promete. */
   const basicPsu = !!psu && psu.activePfc === false && (!psu.efficiency || psu.efficiency === 'white');
   const psuWatts = psu?.watts;
-  const pcie = chipsetPcie(mb?.chipset);
+  const pcie = mb?.pcieGen ?? chipsetPcie(mb?.chipset);
   const boardName = pc.motherboard?.title ?? `placa-mãe ${mb?.chipset ?? ''}`.trim();
   const cpuW = cpu ? cpuPower(cpu) : undefined;
 
@@ -134,12 +134,8 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
     const range = Object.entries(GPU_PERF)
       .filter(([m, p]) => p >= lo && p <= hi && CURRENT_SERIES.has(gpuSeriesOf(m) ?? ''))
       .sort((a, b) => a[1] - b[1]);
-    // Placa-mãe PCIe 3.0: as placas de 8 linhas perdem desempenho nela; ficam de fora se houver outras.
-    const x16 = pcie === 3 ? range.filter(([m]) => !GPU_PCIE_X8.has(m)) : range;
-    const leftOut = pcie === 3 && x16.length && x16.length < range.length ? range.find(([m]) => GPU_PCIE_X8.has(m))?.[0] : undefined;
-    const usable = x16.length ? x16 : range;
-    const ok = usable.filter(([m]) => fits(m));
-    const pool = ok.length ? ok : usable;
+    const ok = range.filter(([m]) => fits(m));
+    const pool = ok.length ? ok : range;
     const models = pool.map(([m]) => m);
     // No texto, as de geração atual mais perto do ideal; a busca mostra a faixa toda.
     const named = pool
@@ -175,7 +171,9 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
         (named.length ? ` Na faixa certa para ele: ${listNames(named)}.` : models.length ? ` Na faixa certa para ele: ${listNames(models.slice(0, 4))}.` : '') +
         vramNote +
         vramFloor +
-        (leftOut ? ` A ${boardName} é PCIe 3.0, então ficaram de fora as placas que usam só 8 linhas (como a ${leftOut}), que perdem desempenho nela.` : '') +
+        (pcie === 3 && models.some((m) => GPU_PCIE_X8.has(m))
+          ? ` A ${boardName} é PCIe 3.0. Placas com menos linhas PCIe funcionam nela e podem ganhar desempenho em alguns jogos se você trocar a plataforma depois.`
+          : '') +
         psuText,
       ...(models.length && {
         action: {
@@ -188,7 +186,6 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
             current: gpuP,
             target,
             ...(gpu?.vram && { minVram: gpu.vram }),
-            ...(pcie === 3 && { pcie3: true }),
             ...(ok.length && !basicPsu && psuWatts && cpuW && { maxGpuPower: psuWatts - cpuW - BASE_SYSTEM_POWER }),
           },
         },

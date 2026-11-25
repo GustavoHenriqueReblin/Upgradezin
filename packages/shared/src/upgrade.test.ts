@@ -44,11 +44,15 @@ describe('análise do PC importado', () => {
     expect(gpu.text).toContain('Só versões com 8 GB de memória de vídeo ou mais');
     expect(gpu.action?.slot).toBe('gpu');
     expect(gpu.action?.filters.gpuModels).toEqual(expect.arrayContaining(['RX 7700 XT', 'RX 7800 XT', 'RTX 4070']));
-    // B450 é PCIe 3.0: placas de 8 linhas ficam de fora, e o texto explica.
-    expect(gpu.action?.filters.gpuModels).not.toContain('RTX 5060 Ti');
+    // B450 é PCIe 3.0: a RTX de 8 linhas continua na busca.
+    expect(gpu.action?.filters.gpuModels).toContain('RTX 5060 Ti');
+    expect(gpu.text).toContain('podem ganhar desempenho');
     expect(gpu.text).toContain('PCIe 3.0');
     expect(gpu.action?.filters.gpuModels).not.toContain('RX 6600');
     expect(gpu.action?.filters.gpuModels).not.toContain('RTX 4090');
+    const with550W = analyzePc(parseCpuzReport(amd)!, { psu: { watts: 550 } }).tips[0]!;
+    expect(with550W.action?.filters.gpuModels).toContain('RTX 5060 Ti');
+    expect(with550W.text).toContain('550 W');
   });
 
   it('placa-mãe de entrada: PCIe 3.0, energia para processador de 105 W, já no topo do encaixe', () => {

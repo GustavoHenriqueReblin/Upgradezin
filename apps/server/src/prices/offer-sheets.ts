@@ -17,19 +17,20 @@ const SCOPE_DAYS = 30;
 
 type Product = { key: string; values: SheetValues };
 type Index = { at: number; db: Db; byListing: Map<string, Product> };
-const cache = new Map<CategoryId, Index>();
+const cache = new Map<string, Index>();
 
 /** Testes e mudanças feitas à mão: esquece os índices (o próximo pedido monta de novo). */
 export const forgetSheetIndex = () => cache.clear();
 
-function index(db: Db, category: CategoryId, now: number): Map<string, Product> {
-  const hit = cache.get(category);
+function index(db: Db, category: CategoryId, now: number, scopeDays: number): Map<string, Product> {
+  const key = `${category}|${scopeDays}`;
+  const hit = cache.get(key);
   if (hit && hit.db === db && now - hit.at < TTL_MS) return hit.byListing;
   const byListing = new Map<string, Product>();
-  for (const p of catalogProducts(db, category, new Date(now - SCOPE_DAYS * 86_400_000).toISOString())) {
+  for (const p of catalogProducts(db, category, new Date(now - scopeDays * 86_400_000).toISOString())) {
     for (const l of p.listings) byListing.set(`${l.store}|${l.sku}`, { key: p.key, values: p.values });
   }
-  cache.set(category, { at: now, db, byListing });
+  cache.set(key, { at: now, db, byListing });
   return byListing;
 }
 
@@ -40,11 +41,11 @@ export function offerWithSheet(category: CategoryId, o: Offer, sheet: SheetValue
 }
 
 /** As ofertas da categoria com a ficha de cada produto. */
-export function applySheets(db: Db, category: CategoryId, offers: Offer[], now = Date.now()): Offer[] {
+export function applySheets<T extends Offer>(db: Db, category: CategoryId, offers: T[], now = Date.now(), scopeDays = SCOPE_DAYS): T[] {
   if (!offers.length) return offers;
-  const byListing = index(db, category, now);
+  const byListing = index(db, category, now, scopeDays);
   return offers.map((o) => {
     const p = byListing.get(`${o.store}|${o.storeSku}`);
-    return offerWithSheet(category, o, p?.values, p?.key);
+    return { ...o, ...offerWithSheet(category, o, p?.values, p?.key) };
   });
 }

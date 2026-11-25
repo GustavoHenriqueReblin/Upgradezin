@@ -12,7 +12,7 @@ import { listAttempts, onAttempt, pageAttempts } from '../prices/attempts.ts';
 import { attemptTimeline, coverage, perfGaps } from './data.ts';
 import { listProducts } from './products.ts';
 import { listSheetProducts, sheetPageText, sheetStoreStatus } from './sheets.ts';
-import { savePage, setManualSheet, SHEET_SCOPE_DAYS, sheetCoverage } from '../prices/sheets.ts';
+import { savePage, setManualSheet, setSheetCompletion, SHEET_SCOPE_DAYS, sheetCoverage } from '../prices/sheets.ts';
 import { webAnswers } from '../prices/web-fill.ts';
 import { saveCollection } from '../prices/prices.ts';
 import { registerAdmin } from './routes.ts';
@@ -126,6 +126,7 @@ function makeApp() {
       web: () => ({ enabled: false, interval: { minS: 90, maxS: 150 }, queue: 0, answered: 0, empty: 0, pausedUntil: null, pauseReason: null, nextAt: null, busy: false }),
       setWeb: (s) => ({ enabled: s.enabled ?? false, interval: s.interval ?? { minS: 90, maxS: 150 }, queue: 0, answered: 0, empty: 0, pausedUntil: null, pauseReason: null, nextAt: null, busy: false }),
       askWeb: async () => null,
+      setCompletion: (m) => setSheetCompletion(db, m.key, m.category, m.complete),
       setManual: (m) => setManualSheet(db, m.key, m.category, m.values),
       webAnswers: (f) => webAnswers(db, f),
       resumeWeb: () => ({ enabled: false, interval: { minS: 90, maxS: 150 }, queue: 0, answered: 0, empty: 0, pausedUntil: null, pauseReason: null, nextAt: null, busy: false }),
@@ -193,7 +194,7 @@ describe('rotas /api/admin', () => {
     const app = makeApp();
     const cookie = cookieOf(await login(app));
     const s = (await app.inject({ url: '/api/admin/status', headers: { cookie } })).json();
-    expect(s).toMatchObject({ version: '9.9.9', browserOpen: false, activeSessions: 0, db: { file: ':memory:', migration: 14 } });
+    expect(s).toMatchObject({ version: '9.9.9', browserOpen: false, activeSessions: 0, db: { file: ':memory:', migration: 15 } });
     expect(s.uptimeS).toBeGreaterThanOrEqual(0);
     expect(s.memory.rssMb).toBeGreaterThan(0);
     // Monitor da máquina: só logado.
@@ -363,6 +364,17 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     expect((await app.inject({ url: '/api/admin/sheets/page?store=s1&sku=1', headers: { cookie } })).json()).toMatchObject({ store: 's1', sku: '1', text });
     expect((await app.inject({ url: '/api/admin/sheets/page?store=s1&sku=2', headers: { cookie } })).statusCode).toBe(404);
     expect((await app.inject({ url: '/api/admin/sheets/page?store=s9&sku=1', headers: { cookie } })).statusCode).toBe(400);
+
+    const mark = (key: string, complete: boolean) => app.inject({
+      method: 'PUT', url: '/api/admin/sheets/completion', headers: { cookie, 'x-admin': '1' }, payload: { key, category: 'cpu', complete },
+    });
+    const key = sheets.json().items[0].key as string;
+    expect((await mark('cpu:missing', true)).statusCode).toBe(404);
+    expect((await mark(key, true)).statusCode).toBe(200);
+    expect((await app.inject({ url: '/api/admin/sheets/products?category=cpu&state=complete', headers: { cookie } })).json())
+      .toMatchObject({ total: 1, items: [{ key, completedManually: true, values: { ramType: 'DDR4' } }] });
+    expect((await mark(key, false)).statusCode).toBe(200);
+    expect((await app.inject({ url: '/api/admin/sheets/products?category=cpu&state=complete', headers: { cookie } })).json()).toMatchObject({ total: 0 });
 
     // Rotina de fichas (separada da coleta): ligar, lojas e intervalo; inválido é recusado.
     const put = (payload: unknown, headers: Record<string, string> = { cookie, 'x-admin': '1' }) => app.inject({ method: 'PUT', url: '/api/admin/sheets', headers, payload: payload as object });

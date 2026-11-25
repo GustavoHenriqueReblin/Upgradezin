@@ -1,4 +1,4 @@
-import { groupOffers, type BudgetNote, type BudgetOption, type BudgetPlan, type BudgetRequest, type PcProfile, type Resolution } from '@upgradezin/shared';
+import { groupOffers, type BudgetMode as PriceMode, type BudgetNote, type BudgetOption, type BudgetPlan, type BudgetProfile, type BudgetRequest, type PcProfile, type Resolution } from '@upgradezin/shared';
 import { itemFromGroup, toBuild, type BuildItem, type SavedBuild } from './build.ts';
 import { applyPc } from './pc.ts';
 
@@ -9,38 +9,39 @@ import { applyPc } from './pc.ts';
 
 export type BudgetMode = 'full' | 'upgrade';
 
-/**
- * Montar pelo Orçamento escondido do site por enquanto (precisa de mais refino): sem o card da tela
- * inicial nem o "Tem um Valor em Mente?" do Identificar Gargalo. A rota e a tela continuam; para voltar, true.
- */
-export const BUDGET_VISIBLE = false;
+/** Exibe os atalhos na tela inicial e no Identificar Gargalo. */
+export const BUDGET_VISIBLE = true;
 
 /** Valor que a tela sugere ao abrir (a pessoa digita o dela). */
 export const BUDGET_DEFAULT: Record<BudgetMode, number> = { full: 8000, upgrade: 2500 };
 
 /**
  * O que a tela do orçamento lembra entre uma visita e outra (só no navegador, por enquanto; com o login,
- * vai para a conta): a aba, o valor de cada aba, a tela do PC completo e em que abas a pessoa já montou.
- * O resultado não é guardado (os preços mudam): ao voltar, a última busca é refeita, com os preços de agora.
+ * vai para a conta): a aba, o valor de cada aba, a tela do PC completo e o tipo de recomendação.
  */
 export interface SavedBudget {
   mode?: BudgetMode;
+  priceMode?: PriceMode;
+  profile?: BudgetProfile;
   text: Record<BudgetMode, string>;
   res: Resolution;
   fast: boolean;
-  /** Abas em que a pessoa montou: ao voltar, a busca é refeita sozinha. */
-  ran: Partial<Record<BudgetMode, true>>;
 }
 
 const BUDGET_KEY = 'upgradezin.budget.v1';
 const MODES: BudgetMode[] = ['full', 'upgrade'];
 const RESOLUTIONS: Resolution[] = ['1080p', '1440p', '4k'];
 
+const budgetNumber = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+export function formatBudget(value: number): string {
+  return budgetNumber.format(value);
+}
+
 export const defaultBudgetUi = (): SavedBudget => ({
-  text: { full: BUDGET_DEFAULT.full.toLocaleString('pt-BR'), upgrade: BUDGET_DEFAULT.upgrade.toLocaleString('pt-BR') },
+  text: { full: formatBudget(BUDGET_DEFAULT.full), upgrade: formatBudget(BUDGET_DEFAULT.upgrade) },
   res: '1080p',
   fast: false,
-  ran: {},
 });
 
 /** Só o formato esperado volta (versão antiga, dado corrompido ou editado à mão fica com o padrão). */
@@ -48,12 +49,17 @@ export function sanitizeBudgetUi(raw: unknown): SavedBudget {
   const src = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const out = defaultBudgetUi();
   if (MODES.includes(src.mode as BudgetMode)) out.mode = src.mode as BudgetMode;
+  if (src.priceMode === 'buyable' || src.priceMode === 'ideal') out.priceMode = src.priceMode;
+  if (src.profile === 'games' || src.profile === 'mixed' || src.profile === 'productivity') out.profile = src.profile;
   const text = (src.text && typeof src.text === 'object' ? src.text : {}) as Record<string, unknown>;
-  for (const m of MODES) if (typeof text[m] === 'string' && (text[m] as string).length <= 20) out.text[m] = text[m] as string;
+  for (const m of MODES) {
+    const saved = text[m];
+    if (typeof saved !== 'string' || saved.length > 20) continue;
+    const amount = parseBudget(saved);
+    out.text[m] = amount === undefined ? saved : formatBudget(amount);
+  }
   if (RESOLUTIONS.includes(src.res as Resolution)) out.res = src.res as Resolution;
   if (typeof src.fast === 'boolean') out.fast = src.fast;
-  const ran = (src.ran && typeof src.ran === 'object' ? src.ran : {}) as Record<string, unknown>;
-  for (const m of MODES) if (ran[m] === true) out.ran[m] = true;
   return out;
 }
 
@@ -80,10 +86,12 @@ export function saveBudgetUi(s: SavedBudget): void {
   }
 }
 
-/** "R$ 8.000,00", "8000", "8.000" → 8000. Centavos são ignorados. */
+/** "R$ 8.000,00", "8000", "8.000" → 8000. Uma vírgula separa os centavos. */
 export function parseBudget(text: string): number | undefined {
-  const n = Number(text.replace(/,\d{0,2}$/, '').replace(/\D/g, ''));
-  return n > 0 ? n : undefined;
+  const value = text.trim().replace(/^R\$\s*/i, '');
+  if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d{0,2})?$/.test(value)) return undefined;
+  const n = Number(value.replaceAll('.', '').replace(',', '.'));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
 /** As peças que a pessoa já tem: as do relatório do CPU-Z, mais a fonte marcada como "Já Tenho" na montagem. */
@@ -94,8 +102,9 @@ export function ownedBuild(pc: PcProfile, build: SavedBuild): SavedBuild {
 }
 
 /** Pedido ao servidor. No upgrade, as peças atuais vão como specs (nunca o relatório). */
-export function budgetRequest(budget: number, screen: Pick<BudgetRequest, 'res' | 'hz'>, owned?: SavedBuild, current?: BudgetRequest['current']): BudgetRequest {
-  return { budget, res: screen.res, ...(screen.hz && { hz: screen.hz }), ...(owned && { owned: toBuild(owned) }), ...(current && { current }) };
+export function budgetRequest(budget: number, screen: Pick<BudgetRequest, 'res' | 'hz' | 'mode' | 'profile'>, owned?: SavedBuild, current?: BudgetRequest['current']): BudgetRequest {
+  return { budget, res: screen.res, ...(screen.hz && { hz: screen.hz }), ...(screen.mode && { mode: screen.mode }), ...(screen.profile && { profile: screen.profile }),
+    ...(owned && { owned: toBuild(owned) }), ...(current && { current }) };
 }
 
 /**
@@ -105,9 +114,11 @@ export function budgetRequest(budget: number, screen: Pick<BudgetRequest, 'res' 
  */
 export function optionLabels(options: BudgetOption[]): string[] {
   const inBudget = options.map((o, i) => ({ o, i })).filter(({ o }) => !o.stretch && o.total > 0);
-  const value = inBudget.length > 1 ? inBudget.reduce((a, b) => (b.o.fps / b.o.total > a.o.fps / a.o.total ? b : a)).i : -1;
+  const perReal = (o: BudgetOption) => (o.gain ?? o.objective ?? o.fps) / o.total;
+  const value = inBudget.length > 1 ? inBudget.reduce((a, b) => (perReal(b.o) > perReal(a.o) ? b : a)).i : -1;
+  const highest = inBudget.reduce((top, next) => (next.o.objective ?? next.o.fps) > (top.o.objective ?? top.o.fps) ? next : top, inBudget[0]!);
   return options.map((o, i) => {
-    const tags = [i === 0 ? 'Mais desempenho no valor' : undefined, i === value ? 'Melhor custo-benefício' : undefined, o.stretch ? 'Acima do valor' : undefined].filter(Boolean);
+    const tags = [i === 0 ? 'Recomendada no valor' : undefined, highest?.i === i && i !== 0 ? 'Maior Desempenho no Valor' : undefined, i === value ? 'Melhor custo-benefício' : undefined, o.stretch ? 'Acima do valor' : undefined].filter(Boolean);
     return tags.join(' · ');
   });
 }
@@ -126,18 +137,32 @@ export function planToBuild(plan: BudgetOption, base: SavedBuild = {}): SavedBui
     if (group) next[slot] = { ...(itemFromGroup(group) as BuildItem), ...(part.qty && part.qty > 1 && { qty: part.qty }) };
   }
   if (plan.notes.includes('igpu') && next.gpu?.current) delete next.gpu;
+  if (plan.notes.includes('box-cooler')) delete next.cooler;
   return next;
 }
 
+/** Ganho comparável somente quando há uma estimativa positiva de referência. */
+export function stretchGain(option: BudgetOption, first: BudgetOption): number | undefined {
+  const baseline = first.objective ?? first.fps;
+  const score = option.objective ?? option.fps;
+  if (!Number.isFinite(baseline) || baseline <= 0 || !Number.isFinite(score) || score <= baseline) return undefined;
+  return Math.round((score / baseline - 1) * 100);
+}
+
 export const NOTE_TEXT: Record<BudgetNote, string> = {
-  igpu: 'Sem placa de vídeo: o valor não fecha com uma. O vídeo integrado do processador roda o dia a dia e jogos leves; a placa entra no próximo upgrade.',
-  'ram-16': '16 GB de memória para caber no valor. O recomendado é 32 GB: quando der, troque por um kit de 32 GB (2x 16 GB).',
-  'ssd-500': 'SSD de 500 GB para caber no valor. Jogos atuais ocupam de 50 a 150 GB cada.',
+  igpu: 'Esta opção usa o vídeo integrado do processador. O desempenho varia conforme o jogo e a memória instalada.',
+  'ram-16': 'Esta opção inclui 16 GB de memória. Jogos pesados e uso de vários programas ao mesmo tempo podem se beneficiar de 32 GB.',
+  'ssd-500': 'Esta opção inclui um SSD de 500 GB. Confira quanto espaço os seus jogos ocupam.',
   'psu-unknown': 'Você não informou a sua fonte: informe-a em Identificar Gargalo para o Upgradezin conferir se ela aguenta, ou inclua uma fonte nova.',
   'keeps-ram': 'A sua memória serve na placa-mãe nova e fica.',
-  'ram-32': 'Sobrou para subir a memória para 32 GB, o recomendado para jogos atuais.',
-  'ram-pair': 'Memória em 2 pentes avulsos iguais: sai mais barata que o kit com os mesmos 32 GB. Costumam funcionar juntos; só o kit garante a frequência anunciada com os dois.',
+  'ram-pair': 'Esta opção usa dois pentes avulsos iguais. Confira a frequência que a placa-mãe aceita com os dois instalados.',
   bios: 'A sua placa-mãe aceita o processador novo depois de atualizar a BIOS: atualize com o processador atual ainda instalado, antes da troca.',
+  'box-cooler': 'Esta opção usa o cooler que acompanha o processador, conforme o anúncio.',
+  'vrm-unverified': 'Confira se a placa-mãe sustenta a potência do processador escolhido em cargas longas.',
+  'psu-connector': 'A placa de vídeo pede um conector de 16 pinos. Confira se a fonte traz o cabo adequado.',
+  'capacity-value': 'Esta opção tem mais memória ou espaço para jogos. Compare o preço com as outras opções.',
+  'case-clearance': 'Confira a folga no gabinete. Um radiador frontal com ventoinhas pode reduzir o espaço para a placa de vídeo.',
+  'cooling-estimate': 'O cooler foi dimensionado pela potência estimada do processador. A temperatura depende da ventilação e da carga.',
 };
 
 export async function fetchPlan(req: BudgetRequest, signal?: AbortSignal): Promise<BudgetPlan> {

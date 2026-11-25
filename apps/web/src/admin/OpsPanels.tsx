@@ -146,7 +146,7 @@ export function BackupsPanel({ onUnauthorized }: Props) {
                 <span className="font-mono text-xs">{b.name}</span>
                 <span className="text-zinc-500">{b.sizeMb} MB</span>
                 <span className="text-zinc-500">{formatWhen(b.at)}</span>
-                <a href={`/api/admin/backups/${encodeURIComponent(b.name)}`} className="ml-auto rounded p-1 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200" title="Baixar">
+                <a href={`/api/admin/backups/${encodeURIComponent(b.name)}`} className="button-link ml-auto inline-flex items-center rounded px-1 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200" title="Baixar">
                   <Download className="h-4 w-4" />
                 </a>
                 <button

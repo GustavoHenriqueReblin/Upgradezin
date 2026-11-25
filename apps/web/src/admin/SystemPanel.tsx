@@ -3,7 +3,7 @@ import type { SystemSnapshot } from '@upgradezin/shared';
 import { AdminError, adminApi } from './api.ts';
 import { formatDuration } from './format.ts';
 
-/** A cada quantos ms lê a máquina (só com esta tela aberta e a aba do navegador visível). */
+/** A cada quantos ms lê a máquina enquanto o admin está aberto. */
 const EVERY_MS = 2000;
 /** Pontos nos gráficos: 2 min. */
 const HISTORY = 60;
@@ -22,7 +22,7 @@ export function SystemPanel({ onUnauthorized }: { onUnauthorized: () => void }) 
     let alive = true;
     let busy = false;
     const load = () => {
-      if (busy || document.visibilityState !== 'visible') return;
+      if (busy) return;
       busy = true;
       adminApi<SystemSnapshot>('/system')
         .then((r) => {

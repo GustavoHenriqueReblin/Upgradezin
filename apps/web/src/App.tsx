@@ -427,18 +427,20 @@ export function App() {
           <CategoryPicker variant="grid" value={null} onChange={pickCategory} />
           {BUDGET_VISIBLE && (
             <button
+              data-button-layout="card"
               onClick={() => openBudget(lastBudgetMode(pc))}
-              className="group mt-3 flex w-full items-center gap-4 rounded-2xl border border-accent-500/40 bg-white px-5 py-4 text-left transition hover:border-accent-500 hover:shadow-md dark:bg-zinc-900"
+              className="group mt-3 flex w-full items-center gap-4 rounded-2xl border border-zinc-200 bg-white px-5 py-4 text-left transition hover:border-accent-500 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
             >
-              <Wallet className="h-8 w-8 shrink-0 text-accent-500" strokeWidth={1.5} />
+              <Wallet className="h-8 w-8 shrink-0 text-zinc-500 transition group-hover:text-accent-500" strokeWidth={1.5} />
               <span className="flex-1">
                 <span className="block font-medium">Montar pelo Orçamento</span>
-                <span className="block text-sm text-zinc-500">Diga quanto quer gastar: o PC completo ou o upgrade do seu, com as peças que mais rendem e o menor preço.</span>
+                <span className="block text-sm text-zinc-500">Diga quanto quer gastar para montar o PC completo ou o dar um upgrade do seu.</span>
               </span>
             </button>
           )}
           <button
             onClick={openBuild}
+            data-button-layout="card"
             className="group mt-3 flex w-full items-center gap-4 rounded-2xl border border-zinc-200 bg-white px-5 py-4 text-left transition hover:border-accent-500 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
           >
             <Wrench className="h-8 w-8 shrink-0 text-zinc-500 transition group-hover:text-accent-500" strokeWidth={1.5} />
@@ -454,6 +456,7 @@ export function App() {
           </button>
           <button
             onClick={openAnalysis}
+            data-button-layout="card"
             className="group mt-3 flex w-full items-center gap-4 rounded-2xl border border-zinc-200 bg-white px-5 py-4 text-left transition hover:border-accent-500 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
           >
             <Gauge className="h-8 w-8 shrink-0 text-zinc-500 transition group-hover:text-accent-500" strokeWidth={1.5} />

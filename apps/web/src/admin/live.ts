@@ -34,7 +34,7 @@ function subscribe(fn: Listener): () => void {
   };
 }
 
-type Options = { delayMs?: number; fallbackMs?: number };
+type Options = { delayMs?: number; fallbackMs?: number; inBackground?: boolean };
 
 /**
  * Chama `reload` quando chega um aviso de um dos `kinds` (com uma folga de `delayMs` para juntar
@@ -43,7 +43,7 @@ type Options = { delayMs?: number; fallbackMs?: number };
  * `fallbackMs` com ela visível (o que não gera aviso, como o fim de uma pausa pelo tempo; 0: nunca).
  * Devolve a função que para.
  */
-export function watchLive(kinds: LiveKind[], reload: () => void, { delayMs = 500, fallbackMs = 30_000 }: Options = {}): () => void {
+export function watchLive(kinds: LiveKind[], reload: () => void, { delayMs = 500, fallbackMs = 30_000, inBackground = false }: Options = {}): () => void {
   if (!kinds.length && !fallbackMs) return () => {};
   const wanted = new Set<string>(kinds);
   let t: ReturnType<typeof setTimeout> | undefined;
@@ -55,7 +55,7 @@ export function watchLive(kinds: LiveKind[], reload: () => void, { delayMs = 500
   const visible = () => document.visibilityState === 'visible';
   const onVisible = () => visible() && later();
   document.addEventListener('visibilitychange', onVisible);
-  const every = fallbackMs ? setInterval(() => visible() && reload(), fallbackMs) : undefined;
+  const every = fallbackMs ? setInterval(() => (inBackground || visible()) && reload(), fallbackMs) : undefined;
   return () => {
     off();
     clearTimeout(t);
@@ -65,11 +65,11 @@ export function watchLive(kinds: LiveKind[], reload: () => void, { delayMs = 500
 }
 
 /** `watchLive` numa tela: liga ao montar, para ao desmontar; usa sempre o `reload` mais recente. */
-export function useLiveReload(kinds: LiveKind[], reload: () => void, { delayMs = 500, fallbackMs = 30_000 }: Options = {}) {
+export function useLiveReload(kinds: LiveKind[], reload: () => void, { delayMs = 500, fallbackMs = 30_000, inBackground = false }: Options = {}) {
   const ref = useRef(reload);
   useEffect(() => {
     ref.current = reload;
   });
   const key = kinds.join();
-  useEffect(() => watchLive(key ? (key.split(',') as LiveKind[]) : [], () => ref.current(), { delayMs, fallbackMs }), [key, delayMs, fallbackMs]);
+  useEffect(() => watchLive(key ? (key.split(',') as LiveKind[]) : [], () => ref.current(), { delayMs, fallbackMs, inBackground }), [key, delayMs, fallbackMs, inBackground]);
 }

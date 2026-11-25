@@ -41,6 +41,58 @@ export const IGPU_PERF = 12;
 
 export const gpuPerf = (g: Pick<GpuSpecs, 'gpuModel'> | undefined): number | undefined => (g?.gpuModel ? GPU_PERF[g.gpuModel] : undefined);
 
+/** Médias de rasterização em Ultra para ajustar a base ao escalar resolução (§17.4). */
+const GPU_RES_SCALING: Record<string, readonly [number, number, number]> = {
+  'RTX 5090': [203.8, 167.3, 110.8], 'RTX 5080': [166.9, 128.3, 77.4], 'RTX 5070 Ti': [155.4, 116.8, 68.6],
+  'RTX 5060': [88.5, 59.8, 21.8], 'RTX 5050': [69.3, 45.2, 17.0],
+  'RTX 4090': [183.6, 143.4, 89.1], 'RTX 4080 Super': [158.9, 118.6, 69.4], 'RTX 4080': [157.3, 117.5, 67.5],
+  'RTX 4070 Ti Super': [141.2, 104.0, 58.5],
+  'RTX 4070 Ti': [135.1, 97.9, 53.9], 'RTX 4070 Super': [126.7, 91.2, 49.2], 'RTX 4070': [111.5, 77.8, 41.3],
+  'RTX 4060': [71.5, 47.6, 17.4], 'RTX 3090': [122.9, 91.5, 53.1], 'RTX 3060 Ti': [74.2, 51.0, 19.4],
+  'RX 9070 XT': [156.6, 116.5, 65.8], 'RX 9070': [140.9, 104.0, 57.7], 'RX 9070 GRE': [120.6, 86.6, 46.3],
+  'RX 7900 XTX': [161.5, 122.3, 70.6], 'RX 7900 XT': [145.4, 108.0, 59.8], 'RX 7800 XT': [118.4, 84.7, 45.1],
+  'RX 7700 XT': [102.9, 72.7, 38.0], 'RX 7600': [69.9, 45.4, 18.4], 'RX 6600': [51.9, 24.8, 14.5],
+  'Arc B580': [71.5, 50.7, 27.6], 'Arc B570': [63.5, 44.3, 19.6],
+};
+
+/** Índices de rasterização para o orçamento, com as referências e condições na arquitetura (§17.4). */
+export function budgetGpuScore(gpu: Pick<GpuSpecs, 'gpuModel' | 'vram'> | undefined, res: Resolution): number | undefined {
+  const base = gpuPerf(gpu);
+  if (gpu?.gpuModel === 'RTX 3060' && gpu.vram === 8) return Math.round(100 / (res === '1080p' ? 1.17 : 1.18));
+  if (gpu?.gpuModel === 'RTX 5060 Ti' && gpu.vram === 8) return Math.round(150 * { '1080p': 100.4 / 105.2, '1440p': 68.6 / 73.4, '4k': 28.1 / 40.2 }[res]);
+  if (gpu?.gpuModel === 'RX 9060 XT' && gpu.vram === 8) return Math.round(145 * { '1080p': 93.2 / 98.3, '1440p': 62.5 / 67.3, '4k': 29.7 / 35.2 }[res]);
+  if (gpu?.gpuModel === 'RTX 5070') return Math.round(GPU_PERF['RTX 4070']! * { '1080p': 1.16, '1440p': 1.20, '4k': 1.23 }[res]);
+  if (gpu?.gpuModel === 'RTX 3070') return Math.round(GPU_PERF['RTX 4070']! / { '1080p': 1.33, '1440p': 1.30, '4k': 1.27 }[res]);
+  const profile = gpu?.gpuModel ? GPU_RES_SCALING[gpu.gpuModel] : undefined;
+  if (base && profile && res !== '1080p') {
+    const i = res === '1440p' ? 1 : 2;
+    const anchor = GPU_RES_SCALING['RTX 4070']!;
+    return Math.round(base * (profile[i] / profile[0]) / (anchor[i] / anchor[0]));
+  }
+  return base;
+}
+
+/** Referências aproximadas para iGPU a 1080p baixo. Modelos sem referência usam o índice genérico. */
+export function budgetIgpuScore(cpu: Pick<CpuSpecs, 'cpuBrand' | 'cpuModel' | 'igpu'>, sheet?: Record<string, unknown>): number | undefined {
+  if (cpu.igpu !== true) return undefined;
+  const model = cpu.cpuBrand === 'amd' ? cpu.cpuModel?.toUpperCase() : undefined;
+  const chip = typeof sheet?.igpu === 'string' ? sheet.igpu : '';
+  const score780m = GPU_PERF['RX 6600']! / 2.38;
+  // Relações medidas em 1080p. Para o 740M, a estimativa escala as CUs de RDNA 3, sem alegar FPS medido.
+  const scoreVega8 = score780m * 0.55;
+  if (/\bUHD\s*(?:Graphics\s*)?730\b/i.test(chip)) return Math.round(scoreVega8 * 0.429);
+  if (/\bUHD\s*(?:Graphics\s*)?770\b/i.test(chip)) return Math.round(score780m * 0.371);
+  if (model === '8500G' || /\b740M\b/i.test(chip)) return Math.round(score780m / 1.10 / 2);
+  if (model === '5700G' || model === '4750G' || model === '3400G') {
+    return Math.round(scoreVega8 * (model === '3400G' ? 0.84 : model === '4750G' ? 0.94 : 1));
+  }
+  if (model === '5600G' || /\bVega\s*7\b/i.test(chip)) return Math.round(scoreVega8 * 0.96);
+  if (/\bVega\s*8\b/i.test(chip)) return Math.round(scoreVega8 * 0.9);
+  if (model === '8700G' || /\b780M\b/i.test(chip)) return Math.round(score780m);
+  if (model === '8600G' || /\b760M\b/i.test(chip)) return Math.round(score780m / 1.10);
+  return IGPU_PERF;
+}
+
 /** Por geração e linha. Modelos fora da curva (X3D, sem cache) ficam em CPU_MODEL_PERF. */
 const CPU_PERF: Partial<Record<CpuFamily, Record<string, number>>> = {
   zen1: { Athlon: 35, 'Ryzen 3': 55, 'Ryzen 5': 62, 'Ryzen 7': 66 },
@@ -89,6 +141,30 @@ export function cpuPerf(c: Pick<CpuSpecs, 'cpuBrand' | 'cpuLine' | 'cpuModel' | 
  */
 export function cpuScore(specs: Parameters<typeof cpuPerf>[0], sheet?: Record<string, unknown>): number | undefined {
   return cpuSheetScore(cpuSheetOf(sheet)) ?? cpuPerf(specs);
+}
+
+/**
+ * Referências de jogos v1 para a montagem pelo orçamento, Ryzen 5 5600 = 100.
+ * Os ensaios e as ligações entre eles estão na seção 17.4 da arquitetura.
+ */
+const BUDGET_CPU_GAMING = new Map<string, number>([
+  ['amd:5600', 100],
+  ['amd:7600', 135],
+  ['intel:12400F', 105],
+  ['amd:5800X3D', 128],
+  ['amd:5700X3D', Math.round(128 * 0.95)],
+  ['amd:7800X3D', Math.round(128 * 1.24)],
+  ['amd:9800X3D', Math.round(128 * 1.37)],
+  ['amd:9600X', Math.round(128 / 0.99)],
+  ['intel:14600K', Math.round(128 / 1.02)],
+  ['intel:14600KF', Math.round(128 / 1.02)],
+  ['intel:285K', Math.round(128 / 0.98)],
+]);
+
+/** A mesma referência por modelo vale para a oferta e para a CPU que a pessoa já tem. */
+export function budgetCpuScore(specs: Parameters<typeof cpuPerf>[0], sheet?: Record<string, unknown>, current?: number): number | undefined {
+  const reference = specs?.cpuModel ? BUDGET_CPU_GAMING.get(`${specs.cpuBrand}:${specs.cpuModel.toUpperCase()}`) : undefined;
+  return reference ?? current ?? cpuScore(specs, sheet);
 }
 
 /** Consumo da placa de vídeo (W): o de referência do chip; sem ele, o da ficha. */
@@ -173,4 +249,22 @@ export function cpuNeeded(gpu: number, res: Resolution, hz = 60): number {
 /** Placa de vídeo que o processador aguenta sem ser o gargalo (inverso de cpuNeeded). */
 export function gpuMatching(cpu: number, res: Resolution, hz = 60): number {
   return (cpu / (hz >= 120 ? 1.05 : 1) - 60) / 0.4 / RES_FACTOR[res];
+}
+
+/** Teto de GPU estimado para orçamento. A resposta é moderada acima do par de referência 5600/3060 em 1080p. */
+export function budgetCpuCapacity(cpu: number, res: Resolution, hz = 60): number {
+  const exponent = 1.8;
+  const refresh = 1 + 0.05 * Math.min(180 / 84, Math.max(0, (hz - 60) / 84));
+  return 100 * Math.pow(cpu / 100, exponent) / (RES_FACTOR[res] * refresh);
+}
+
+/** Interpolação da transição em torno do gargalo, com perda limitada a 2,5% no ponto de equilíbrio. */
+export function budgetGamingScore(cpu: number, gpu: number, res: Resolution, hz?: number): number {
+  if (!(cpu > 0) || !(gpu > 0)) return 0;
+  const ceiling = budgetCpuCapacity(cpu, res, hz);
+  const lower = Math.min(ceiling, gpu);
+  const band = lower * 0.10;
+  if (!(band > 0)) return 0;
+  const overlap = Math.max(0, band - Math.abs(ceiling - gpu));
+  return lower - overlap * overlap / (4 * band);
 }

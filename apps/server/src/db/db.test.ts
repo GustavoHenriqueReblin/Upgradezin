@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync } from './sqlite.ts';
 import { describe, expect, it } from 'vitest';
 import { DROP_CATALOG, migrate, openDb } from './db.ts';
 
@@ -75,7 +75,7 @@ describe('migrações', () => {
   it('14: páginas de produto com erro (falhas seguidas, a última e a mensagem), vazia', () => {
     const db = new DatabaseSync(':memory:');
     migrate(db, 13);
-    expect(migrate(db)).toEqual([14]);
+    expect(migrate(db, 14)).toEqual([14]);
     expect(db.prepare("SELECT name FROM pragma_table_info('page_errors')").all().map((c) => (c as { name: string }).name)).toEqual(['store', 'store_sku', 'fails', 'last_at', 'detail']);
     expect(db.prepare('SELECT count(*) n FROM page_errors').get()).toEqual({ n: 0 });
   });

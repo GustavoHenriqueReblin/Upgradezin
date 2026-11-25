@@ -634,8 +634,26 @@ describe('"não tem" × "não sei" e os campos novos', () => {
     expect(readSheet('motherboard', 'Slots: 1+1+1+1 fases').vrmPhases).toBeUndefined();
   });
 
-  it('processador: potência máxima (turbo)', () => {
-    expect(readSheet('cpu', lines('TDP: 125 W', 'Maximum Turbo Power: 253 W'))).toMatchObject({ tdpW: 125, maxPowerW: 253 });
+  it('conta M.2_1 e M2_1 como o mesmo slot', () => {
+    expect(readSheet('motherboard', lines('1 x Fonte M.2 M.2_1', 'SATA5 indisponível ao usar o slot M2_1.')).m2Slots).toBe(1);
+    expect(readSheet('motherboard', lines('Armazenamento: M.2_1 e M2_1', 'Slot M2_2')).m2Slots).toBe(2);
+  });
+
+  it('mantém o TDP e ignora a potência máxima da CPU', () => {
+    expect(readSheet('cpu', lines('TDP: 125 W', 'Maximum Turbo Power: 253 W'))).toEqual({ tdpW: 125 });
+  });
+
+  it('infere memória nos sockets de tipo fixo e preserva a variante da placa LGA1700', () => {
+    for (const [socket, ramType] of [['AM4', 'DDR4'], ['AM5', 'DDR5'], ['LGA1200', 'DDR4'], ['LGA1851', 'DDR5']]) {
+      expect(readSheet('cpu', `Socket: ${socket}`).ramType).toBe(ramType);
+      expect(readSheet('motherboard', `Socket: ${socket}`).ramType).toBe(ramType);
+    }
+    expect(readSheet('cpu', lines('Socket: AM4', 'Memory Type: DDR5')).ramType).toBe('DDR4');
+    expect(readSheet('cpu', 'Socket: LGA1700').ramType).toBe('DDR4, DDR5');
+    expect(readSheet('motherboard', 'Socket: LGA1700').ramType).toBeUndefined();
+    expect(readSheet('motherboard', lines('Socket: LGA1700', 'Memória: DDR4')).ramType).toBe('DDR4');
+    expect(readSheet('motherboard', lines('Socket: LGA1151', 'Memória: DDR3L')).ramType).toBe('DDR3');
+    expect(readTitle('cpu', 'Processador AMD Ryzen 7 5800X3D, AM4').ramType).toBe('DDR4');
   });
 
   it('placa de vídeo: arquitetura pelo chip, unidades, banda (lida ou pelo barramento × velocidade) e conectores sem o adaptador', () => {

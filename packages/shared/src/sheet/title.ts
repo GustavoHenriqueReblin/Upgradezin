@@ -9,6 +9,7 @@ import { extractRamSpecs } from '../ram.ts';
 import { extractSsdSpecs } from '../ssd.ts';
 import type { CategoryId, FormFactor } from '../types.ts';
 import { SHEET_FIELDS, type SheetValues } from './fields.ts';
+import { sheetSocketMemory } from './read.ts';
 
 /**
  * Campos da ficha pelo título do anúncio: o que a página não trouxe e o título diz ("750W, 80 Plus Gold,
@@ -52,6 +53,7 @@ const num = (s: string | undefined) => (s === undefined ? undefined : Number(s.r
 function cpu(title: string, t: string): SheetValues {
   const s = extractCpuSpecs(title);
   const fam = cpuFamily(s);
+  const ramType = sheetSocketMemory(s.socket, 'cpu');
   // "3.4GHz (4.5GHz Turbo)", "Turbo até 4.6GHz"; a base só quando há as duas (um "4.5GHz" sozinho pode ser qualquer uma).
   // O maior dos dois jeitos: em "3.7ghz Turbo 4.4ghz" o "3.7ghz Turbo" é a base seguida da palavra turbo.
   const turbos = [
@@ -67,6 +69,7 @@ function cpu(title: string, t: string): SheetValues {
   return {
     ...(s.socket && { socket: s.socket }),
     ...(fam && { architecture: ARCH_OF[fam] }),
+    ...(ramType && { ramType }),
     ...(s.cores && { cores: s.cores }),
     ...(s.threads && { threads: s.threads }),
     ...(base && { baseGhz: base }),
@@ -78,6 +81,7 @@ function cpu(title: string, t: string): SheetValues {
 
 function motherboard(title: string, t: string): SheetValues {
   const s = extractMotherboardSpecs(title);
+  const ramType = sheetSocketMemory(s.socket, 'motherboard') ?? s.memory?.toUpperCase();
   const wifi = t.match(/wi-?fi\s*(7|6e|6|5)\b/)?.[1];
   // "Wifi" sem a versão: tem Wi-Fi (vale contra o "não tem" de uma página que não fala dele).
   const hasWifi = !wifi && /\bwi-?fi\b|\bwireless\b/.test(t);
@@ -85,7 +89,7 @@ function motherboard(title: string, t: string): SheetValues {
     ...(s.chipset && { chipset: s.chipset }),
     ...(s.socket && { socket: s.socket }),
     ...(s.formFactor && { formFactor: FORM_NAME[s.formFactor] }),
-    ...(s.memory && { ramType: s.memory.toUpperCase() }),
+    ...(ramType && { ramType }),
     ...(s.memorySlots && { ramSlots: s.memorySlots }),
     ...(wifi && { wifi: `Wi-Fi ${wifi.toUpperCase()}` }),
     ...(hasWifi && { wifi: 'Wi-Fi' }),

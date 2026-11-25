@@ -5,6 +5,7 @@ import { bestOffer, buildTotals, MAX_QTY, QTY_SLOTS, qtyOf, toBuild, type SavedB
 import { ago, brl } from '../format.ts';
 import { shareBuild, shareUrl } from '../share.ts';
 import { storeName } from '../stores.ts';
+import { productHref } from '../product.ts';
 import { StoreDot } from './StoreDot.tsx';
 import { CATEGORY_ICONS } from './CategoryPicker.tsx';
 import { CompatBadge, IssueList } from './Compat.tsx';
@@ -52,15 +53,15 @@ export function BuildView({ build, edit, header }: Props) {
   const [importing, setImporting] = useState(false);
 
   return (
-    <div className="mx-auto w-full max-w-3xl pb-28">
+    <div className="mx-auto w-full max-w-4xl pb-28">
       {header ?? (
-        <div className="mb-6 flex flex-wrap items-end gap-3">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold">Montar o PC</h2>
-            <p className="text-sm text-zinc-500">Escolha peça por peça. A compatibilidade é conferida a cada escolha.</p>
+            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Montar Peça por Peça</h2>
+            <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">Escolha as peças e acompanhe a compatibilidade da montagem.</p>
           </div>
           {edit && (
-            <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               {hasItems && (
                 <button onClick={edit.onClear} className="text-sm text-zinc-500 hover:text-red-600 hover:underline">
                   Limpar Montagem
@@ -68,7 +69,7 @@ export function BuildView({ build, edit, header }: Props) {
               )}
               <button
                 onClick={() => setImporting(true)}
-                className="flex items-center gap-1.5 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:border-accent-500 dark:border-zinc-700"
+                className="inline-flex items-center gap-2 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-medium transition hover:border-accent-500 focus-visible:outline-2 focus-visible:outline-accent-500 dark:border-zinc-700 dark:bg-zinc-900"
               >
                 <Cpu className="h-4 w-4" /> Importar Meu PC
               </button>
@@ -90,40 +91,40 @@ export function BuildView({ build, edit, header }: Props) {
         </div>
       )}
 
-      <ol className="space-y-3">
-        {BUILD_SLOTS.map((slot, idx) => {
+      <ol className="divide-y divide-zinc-200 rounded-2xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+        {BUILD_SLOTS.map((slot) => {
           const item = build[slot];
           const Icon = CATEGORY_ICONS[slot];
           const name = CATEGORY_DEFS[slot].name;
           const issues = check.issues.filter((i) => i.parts.includes(slot)).sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
           const offer = item ? bestOffer(item) : undefined;
+          const href = item && offer ? productHref({ best: offer, offers: item.offers }) : undefined;
           const qty = item ? qtyOf(item) : 1;
           return (
-            <li key={slot} className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <li key={slot} className="px-4 py-3.5 sm:px-6">
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-600/10 text-accent-600 dark:text-accent-400">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-500/10 text-accent-600 dark:text-accent-400">
                   <Icon className="h-5 w-5" strokeWidth={1.75} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                    {idx + 1}. {name}
-                  </div>
+                  <div className="text-sm font-semibold">{name}</div>
                   {!item &&
                     (!edit ? (
-                      <div className="text-sm text-zinc-500">Não escolhida.</div>
+                      <div className="text-sm text-zinc-600 dark:text-zinc-400">Não escolhida.</div>
                     ) : slot === 'gpu' && build.cpu?.specs.igpu === false ? (
                       <div className="text-sm font-medium text-amber-700 dark:text-amber-300">Obrigatória: o processador escolhido não tem vídeo integrado.</div>
                     ) : slot === 'cooler' && build.cpu?.specs.cooler === false ? (
                       <div className="text-sm font-medium text-amber-700 dark:text-amber-300">Obrigatório: o processador escolhido não vem com cooler.</div>
                     ) : (
-                      <div className="text-sm text-zinc-500">{EMPTY_HINT[slot]}</div>
+                      <div className="text-sm text-zinc-600 dark:text-zinc-400">{EMPTY_HINT[slot]}</div>
                     ))}
                 </div>
                 {item && check.status[slot] && <CompatBadge status={check.status[slot]!} />}
                 {!item && edit && (
                   <button
                     onClick={() => edit.onOpen(slot)}
-                    className="flex shrink-0 items-center gap-1 rounded-lg bg-accent-500 px-3 py-1.5 text-sm font-medium text-accent-950 hover:bg-accent-400"
+                    aria-label={`Escolher ${name}`}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-accent-500 px-3 text-sm font-semibold text-accent-950 transition hover:bg-accent-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
                   >
                     <Plus className="h-4 w-4" /> Escolher
                   </button>
@@ -147,7 +148,7 @@ export function BuildView({ build, edit, header }: Props) {
                           </div>
                         )}
                         <div className="line-clamp-2 text-sm font-medium leading-snug" title={item.title}>
-                          {item.title}
+                          {href ? <a href={href} className="hover:text-accent-700 hover:underline dark:hover:text-accent-400">{item.title}</a> : item.title}
                         </div>
                       </div>
                       {!edit && qty > 1 && <div className="text-sm text-zinc-500">Quantidade: {qty}</div>}
@@ -233,7 +234,7 @@ export function BuildView({ build, edit, header }: Props) {
 
       {hasItems && (
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-zinc-200 bg-white/95 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95">
-          <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
+          <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
             <div>
               <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                 {totals.parts ? `Total à Vista · ${totals.parts} ${totals.parts === 1 ? 'Peça Nova' : 'Peças Novas'}` : 'Nenhuma Peça Nova Ainda'}

@@ -46,6 +46,7 @@ export function Pill({
   return (
     <button
       type="button"
+      data-button-layout="compact"
       onClick={onClick}
       aria-pressed={active}
       className={`rounded-full border transition ${size === 'md' ? 'px-3.5 py-1.5 text-sm' : 'px-2.5 py-0.5 text-xs'} ${

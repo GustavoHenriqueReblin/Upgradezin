@@ -354,6 +354,7 @@ export interface SheetProduct {
   category: CategoryId;
   title: string;
   state: SheetState;
+  completedManually: boolean;
   values: SheetValues;
   /** De qual página (loja + código) veio cada campo; from: do título desse anúncio, da busca na web, estimado ou o valor padrão da categoria. */
   origin: Record<string, { store: StoreId; sku: string; from?: SheetValueFrom }>;

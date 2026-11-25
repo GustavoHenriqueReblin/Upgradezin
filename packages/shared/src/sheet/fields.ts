@@ -83,7 +83,6 @@ export const SHEET_FIELDS: Record<CategoryId, SheetField[]> = {
     f('tdpW', 'TDP', 'int', 'W', M),
     f('igpu', 'Vídeo integrado', 'text', undefined, M),
     f('ramType', 'Memória', 'text'),
-    f('maxPowerW', 'Potência máxima', 'int', 'W'),
   ],
   gpu: [
     f('chip', 'Chip', 'text', undefined, M),

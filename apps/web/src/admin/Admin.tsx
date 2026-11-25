@@ -94,7 +94,9 @@ export function Admin() {
           </p>
         )}
         {session.state === 'login' && <LoginForm onDone={(user) => setSession({ state: 'in', user })} />}
-        {session.state === 'in' && tab === 'status' && <StatusPanel onUnauthorized={toLogin} />}
+        {session.state === 'in' && (
+          <div hidden={tab !== 'status'}><StatusPanel onUnauthorized={toLogin} /></div>
+        )}
         {session.state === 'in' && tab === 'collect' && <CollectPanel onUnauthorized={toLogin} />}
         {session.state === 'in' && tab === 'attempts' && <AttemptsPanel onUnauthorized={toLogin} />}
         {session.state === 'in' && tab === 'coverage' && (

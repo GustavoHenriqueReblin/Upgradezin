@@ -215,3 +215,9 @@ export const BASE_SYSTEM_POWER = 75;
 export const PSU_HEADROOM = 1.3;
 
 export const roundUp50 = (w: number) => Math.ceil(w / 50) * 50;
+
+/** Reserva de triagem para carga e transientes. A recomendação da GPU continua sendo piso. */
+export function recommendedPsuWatts(load: number, gpuWatts: number, gpuFloor: number, atx3: boolean): number {
+  const reserve = atx3 ? load * 1.20 : Math.max(load * PSU_HEADROOM, load + 0.50 * gpuWatts);
+  return Math.max(gpuFloor, roundUp50(reserve));
+}

@@ -89,6 +89,17 @@ describe('canal ao vivo do admin (telas recarregam sozinhas)', () => {
     expect(reload).toHaveBeenCalledTimes(2);
   });
 
+  it('mantém o intervalo de monitoramento com a aba do navegador escondida e encerra ao sair', () => {
+    doc.visibilityState = 'hidden';
+    const reload = vi.fn();
+    const stop = watchLive([], reload, { fallbackMs: 10_000, inBackground: true });
+    vi.advanceTimersByTime(20_000);
+    expect(reload).toHaveBeenCalledTimes(2);
+    stop();
+    vi.advanceTimersByTime(20_000);
+    expect(reload).toHaveBeenCalledTimes(2);
+  });
+
   it('sem avisos nem garantia: não conecta', () => {
     watchLive([], vi.fn(), { fallbackMs: 0 })();
     expect(FakeSource.all).toHaveLength(0);

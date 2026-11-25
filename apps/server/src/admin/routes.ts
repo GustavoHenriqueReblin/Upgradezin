@@ -55,6 +55,7 @@ export interface AdminDeps {
     resumeWeb: () => WebFillStatus;
     webAnswers: (f: WebAnswerFilter) => WebAnswerPage;
     /** Preenche à mão campos de um produto; devolve os campos recusados (fora do tipo, das opções ou da faixa). */
+    setCompletion: (m: { key: string; category: CategoryId; complete: boolean }) => boolean;
     setManual: (m: SheetManualInput) => { errors: string[] };
   };
   data: {
@@ -327,6 +328,13 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
         return { answer: await deps.sheets.askWeb(b.data.key) };
       });
       // Ficha preenchida à mão (produto "precisa de você").
+      admin.put('/sheets/completion', async (req, reply) => {
+        const b = ManualBody.pick({ key: true, category: true }).extend({ complete: z.boolean() }).safeParse(req.body);
+        if (!b.success) return reply.code(400).send({ error: 'invalid' });
+        if (!deps.sheets.setCompletion(b.data)) return reply.code(404).send({ error: 'not-found' });
+        emitChange('admin');
+        return { ok: true };
+      });
       admin.put('/sheets/manual', async (req, reply) => {
         const b = ManualBody.safeParse(req.body);
         if (!b.success) return reply.code(400).send({ error: 'invalid' });

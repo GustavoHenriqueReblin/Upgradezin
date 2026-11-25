@@ -1,6 +1,6 @@
 # Fichas técnicas (fixtures)
 
-Usadas por `packages/shared/src/specsheet.test.ts`. Cada arquivo é só o HTML do campo da ficha técnica de uma página de produto da S1 (o texto que o fabricante ou a loja cadastrou), sem o resto da página: nada de nome, domínio, preço ou dados de sessão da loja.
+Amostras de referência guardadas para comparar a leitura das fichas. A suíte atual do leitor está em [sheet.test.ts](../../src/sheet/sheet.test.ts). Cada arquivo é só o HTML do campo da ficha técnica de uma página de produto da S1 (o texto que o fabricante ou a loja cadastrou), sem o resto da página: nada de nome, domínio, preço ou dados de sessão da loja.
 
 | Arquivo | Cobre |
 |---|---|

@@ -125,8 +125,10 @@ describe('checkBuild: ressalvas (amarelo)', () => {
     expect(codes({ motherboard: MB_B850, cpu: CPU_9600X })).not.toContain('chipset-bios');
   });
   it('fonte no limite', () => {
-    const r = checkBuild({ cpu: CPU_14600K, gpu: GPU_4090, psu: PSU_850_ATX3 });
+    const conventional = { specs: { ...PSU_850_ATX3.specs, atx: undefined } };
+    const r = checkBuild({ cpu: CPU_14600K, gpu: GPU_4090, psu: conventional });
     expect(r.issues.find((i) => i.code === 'psu-tight')?.message).toContain('950 W');
+    expect(codes({ cpu: CPU_14600K, gpu: GPU_4090, psu: PSU_850_ATX3 })).not.toContain('psu-tight');
     expect(codes({ cpu: CPU_14600K, gpu: GPU_4090, psu: PSU_1000_ATX3 })).not.toContain('psu-tight');
   });
   it('processador sem vídeo integrado e sem placa de vídeo (observação: a placa de vídeo é peça da montagem)', () => {

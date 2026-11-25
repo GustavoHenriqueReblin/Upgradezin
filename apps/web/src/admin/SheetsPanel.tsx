@@ -182,7 +182,7 @@ function Coverage({ fail, onPick }: { fail: (err: unknown) => void; onPick: (c: 
     adminApi<SheetCoverageRow[]>('/sheets/coverage').then(setRows).catch(fail);
   }, [fail]);
   useEffect(load, [load]);
-  useLiveReload(['attempt'], load, { delayMs: 5_000, fallbackMs: 60_000 });
+  useLiveReload(['attempt', 'admin'], load, { delayMs: 5_000, fallbackMs: 60_000 });
 
   return (
     <Box title="Cobertura das fichas">
@@ -341,7 +341,7 @@ function Products({
                 {isOpen && (
                   <tr className="bg-zinc-50 dark:bg-zinc-950/40">
                     <td colSpan={category ? fields.length + 3 : 5} className="px-3 py-3">
-                      <ProductDetail p={p} names={stores} fail={fail} onMessage={onMessage} />
+                      <ProductDetail p={p} names={stores} fail={fail} onMessage={onMessage} onCompletion={load} />
                     </td>
                   </tr>
                 )}
@@ -440,8 +440,9 @@ function ManualFill({ p, fail, onMessage, edit, onDone }: Shared & { p: SheetPro
 }
 
 /** Um produto: os anúncios (página lida ou não, texto guardado, "Ler ficha") e de onde veio cada campo. */
-function ProductDetail({ p, names, fail, onMessage }: Shared & { p: SheetProduct; names: Map<string, string> }) {
+function ProductDetail({ p, names, fail, onMessage, onCompletion }: Shared & { p: SheetProduct; names: Map<string, string>; onCompletion: () => void }) {
   const [page, setPage] = useState<SheetPageText | null>(null);
+  const [completing, setCompleting] = useState(false);
   const [editing, setEditing] = useState(false);
   const name = (s: StoreId) => names.get(s) ?? s;
   const fields = sheetFields(p.category);
@@ -449,6 +450,16 @@ function ProductDetail({ p, names, fail, onMessage }: Shared & { p: SheetProduct
     adminApi(`/products/${store}/${encodeURIComponent(sku)}/sheet`, { method: 'POST' })
       .then(() => onMessage({ ok: true, text: `Ficha de "${title.slice(0, 60)}" na fila da loja (na frente da rotina). A lista atualiza sozinha quando ela for lida.` }))
       .catch(fail);
+  const complete = () => {
+    setCompleting(true);
+    adminApi('/sheets/completion', { method: 'PUT', body: { key: p.key, category: p.category, complete: !p.completedManually } })
+      .then(() => {
+        onCompletion();
+        onMessage({ ok: true, text: p.completedManually ? 'Ficha reaberta para revisão.' : 'Ficha marcada como concluída.' });
+      })
+      .catch(fail)
+      .finally(() => setCompleting(false));
+  };
   const showText = (store: StoreId, sku: string) =>
     adminApi<SheetPageText>(`/sheets/page?store=${store}&sku=${encodeURIComponent(sku)}`)
       .then(setPage)
@@ -456,6 +467,15 @@ function ProductDetail({ p, names, fail, onMessage }: Shared & { p: SheetProduct
 
   return (
     <div className="grid gap-4 text-sm md:grid-cols-2">
+      {(p.needsHuman || p.completedManually) && (
+        <div className="md:col-span-2">
+          {p.completedManually && <p className="mb-1 text-xs text-zinc-500">Concluída manualmente. Os campos ausentes continuam vazios.</p>}
+          <button type="button" disabled={completing} onClick={complete}
+            className="rounded-lg border border-zinc-300 px-2.5 py-1 text-xs hover:border-accent-500 disabled:opacity-50 dark:border-zinc-700">
+            {p.completedManually ? 'Reabrir Revisão' : 'Marcar como Concluída'}
+          </button>
+        </div>
+      )}
       <div>
         <p className="mb-1 flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">
           Anúncios

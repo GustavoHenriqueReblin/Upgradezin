@@ -2,7 +2,7 @@
 
 Documento de entrada para quem chega ao projeto (pessoa ou agente) sem o histórico das conversas. Resume o que o projeto é, como funciona, as regras, as decisões, o estado atual e o que vem depois, e aponta para a referência detalhada em [ARCHITECTURE.md](ARCHITECTURE.md) (seções citadas como §N). O histórico de mudanças está no [CHANGELOG](../CHANGELOG.md).
 
-Última consolidação: 24/11/2026, versão 0.3.0 (com mudanças ainda não lançadas no `[Não lançado]` do CHANGELOG).
+Última consolidação: 25/11/2026, versão 0.3.0 (com mudanças ainda não lançadas no `[Não lançado]` do CHANGELOG).
 
 ---
 
@@ -23,13 +23,15 @@ Fora do escopo: marketplaces abertos, usado/recondicionado, checkout, afiliados,
 ## 2. Estado atual (nov/2026)
 
 - **Em produção** num servidor Ubuntu doméstico, com acesso público por túnel. A rotina de coleta, a varredura completa da madrugada e a rotina de fichas rodam lá. O servidor pode estar alguns commits atrás do `main`: o deploy é manual (seção 12).
-- **Catálogo** (cópia de 24/11/2026): cerca de 18 mil anúncios ativos nas 8 categorias, ~13,8 mil páginas de produto lidas, ~11,5 mil produtos com ficha completa.
+- **Catálogo** (snapshot local de 25/11/2026) com 19.067 anúncios catalogados e 14.456 páginas de produto lidas.
 - **Versão 0.3.0.** O `[Não lançado]` do CHANGELOG lista o que já está no código e ainda não virou versão.
 - **Próximo marco:** lançar a 1ª versão depois do comparador de hardware e de vários discos na montagem (seção 11).
 
 ---
 
 ## 3. Funcionalidades
+
+No admin, fichas em revisão podem ser concluídas com campos pendentes e reabertas. O monitoramento do servidor continua ativo em qualquer aba do painel.
 
 ### Implementadas
 
@@ -39,6 +41,7 @@ Fora do escopo: marketplaces abertos, usado/recondicionado, checkout, afiliados,
 | Filtros do resultado | Calculados dos próprios resultados, com contagem; filtros genéricos para cada campo da ficha; ordenações por categoria (R$ por watt, por GB, por TB…) | §7 |
 | Produto | Página do produto (`/produto/<chave>`) com as ofertas de todas as lojas, a ficha completa e o histórico de preço (30/90 dias/tudo), selo "Menor Preço em 30 Dias" | §9 |
 | Montagem do PC | 8 peças (placa-mãe, processador, memória, placa de vídeo, fonte, SSD, cooler, gabinete), cada busca já filtrada pelas outras peças, compatibilidade conferida a cada escolha, quantidade na memória, total por loja e na melhor combinação, compartilhamento por link (`/m/<id>`) | §17.1 |
+| Montar pelo Orçamento | PC completo ou upgrade do PC importado, com até 3 opções. Acesso pela tela inicial e pelo Identificar Gargalo | §17.4 |
 | Importar o PC (CPU-Z) | Lê o relatório `.txt` do CPU-Z **no navegador** (o arquivo não vai ao servidor); as peças viram "Atual" na montagem; a fonte é informada à mão | §17.2 |
 | Identificar Gargalo | Equilíbrio processador × placa de vídeo na tela da pessoa (resolução e Hz do monitor), dicas (upgrade, grátis, atenção, observação) e as 3 melhores ofertas de cada dica | §17.3 |
 | Admin (`/admin`) | Lojas, rotina por loja, intervalos, fila, pausas, registro de consultas, cobertura, produtos, fichas (lista, "Ler ficha", preencher/editar à mão, revisão), busca na web, monitor do servidor (CPU, memória, disco, rede), backups e merge de bancos | §9.3 |
@@ -48,7 +51,6 @@ Fora do escopo: marketplaces abertos, usado/recondicionado, checkout, afiliados,
 
 | Funcionalidade | Por quê | Como religar |
 |---|---|---|
-| **Montar pelo Orçamento** (PC completo ou upgrade do PC importado, até 3 opções) | Precisa de mais refino antes de ir ao público | `BUDGET_VISIBLE = true` em `apps/web/src/budget.ts` (a rota `POST /api/budget/plan` já está no ar) |
 | "Não achou? Buscar nas lojas" (texto livre que vai às lojas) | A varredura completa já traz praticamente todas as peças | `STORE_TEXT_SEARCH = true` em `apps/web/src/App.tsx` |
 
 ### Planejadas
@@ -59,7 +61,7 @@ Ver seção 11 (o caminho até a 1ª versão e depois).
 
 ## 4. Arquitetura
 
-Monorepo pnpm, TypeScript em tudo, Node ≥ 22.
+Monorepo pnpm, TypeScript em tudo, Node 22.13 ou superior para o servidor. A auditoria de orçamento requer Node 22.16 ou superior.
 
 ```
 apps/server     Fastify + node:sqlite: API, rotinas de coleta, fichas, busca na web, admin
@@ -98,7 +100,8 @@ Migrações por `PRAGMA user_version` em `apps/server/src/db/db.ts`: só acresce
 | `sheet_pages` | texto da ficha de cada página de produto lida (null: a página não tinha ficha) |
 | `sheet_<categoria>` | os campos lidos de cada página, uma coluna por campo de `SHEET_FIELDS`; as colunas seguem a lista (o servidor cria e apaga ao subir) |
 | `sheet_web` | perguntas e respostas da busca na web, por produto e campo |
-| `sheet_manual` | campos preenchidos à mão no admin (valem mais que tudo) |
+| `sheet_manual` | campos preenchidos à mão no admin (têm prioridade) |
+| `sheet_completion` | fichas concluídas manualmente por categoria e produto (migração 15) |
 | `page_errors` | páginas de produto que deram erro (fora da fila de fichas por 6 h; com 2 falhas seguidas, a oferta sai do app) |
 | `shared_builds` | montagens compartilhadas por link |
 
@@ -125,7 +128,7 @@ Tabelas antigas (`search_terms`, `term_runs`, `listing_terms`, `parts`, `part_co
 - Junção campo a campo: à mão > páginas das lojas > título > web > estimativa > padrão da categoria.
 - **"Não tem" × "não sei":** campo que o produto pode não ter tem um valor de "não tem" (`none`: "Não", 0 ou false); vazio é "não sei". O "não tem" automático cede para um valor de verdade de outra fonte; o à mão vale contra tudo.
 - Fila: a rotina abre só páginas de produto sem ficha completa; a busca na web pergunta de produto com campo vazio (principal ou opcional) ainda não perguntado, os que falta campo principal primeiro; o que nem a web completa vai para a revisão manual ("precisa de você").
-- Mudou o leitor ou a lista de campos: sobe `READER_VERSION` (`packages/shared/src/sheet/read.ts`, hoje 13) e o servidor relê todas as páginas guardadas ao subir, sem abrir as lojas.
+- Mudou o leitor ou a lista de campos: sobe `READER_VERSION` (`packages/shared/src/sheet/read.ts`, hoje 15) e o servidor relê todas as páginas guardadas ao subir, sem abrir as lojas.
 
 **Compatibilidade** (`packages/shared/src/compat.ts`, §17.1.1)
 - Erro (não funciona), ressalva, "não deu para confirmar" e observação; nunca vira "ok" por padrão.
@@ -147,14 +150,19 @@ Tabelas antigas (`search_terms`, `term_runs`, `listing_terms`, `parts`, `part_co
 - **Equilíbrio:** `cpuNeeded(gpu, resolução, hz)` = (60 + 0,4 × gpu × fator da resolução) × 1,05 se ≥ 120 Hz; fator 1 (1080p), 0,8 (1440p), 0,62 (4K). `gpuMatching` é o inverso. Processador ÷ o que a placa pede ≥ 1,2: a placa de vídeo é o gargalo; ≤ 0,8: o processador.
 
 ### 7.2 Gargalo e dicas (`packages/shared/src/upgrade.ts`, §17.3)
-A partir do PC importado e da ficha do processador (GET `/api/sheets/cpu`): veredito, placas de vídeo na faixa do que o processador aguenta (cabendo na fonte, sem x8 em PCIe 3.0), processador do mesmo encaixe ou troca de plataforma, memória (XMP, single channel, 32 GB), disco do sistema, monitor, fonte, erros WHEA.
+A partir do PC importado e da ficha do processador (GET `/api/sheets/cpu`): veredito, placas de vídeo na faixa do que o processador aguenta (cabendo na fonte, com aviso de banda PCIe quando aplicável), processador do mesmo encaixe ou troca de plataforma, memória (XMP, single channel, 32 GB), disco do sistema, monitor, fonte, erros WHEA.
 
 ### 7.3 Melhores ofertas de cada dica (`packages/shared/src/picks.ts`)
-Do banco (cache de 1 min): processador e placa de vídeo, uma por modelo, só as compatíveis (chipset, fonte, x8, memória de vídeo mínima); primeiro as que resolvem o gargalo (≥ 90% do equilíbrio), da mais barata, depois mais desempenho por real; ganho mínimo de 15%. Memória, fonte e SSD: as mais baratas que servem. 3 por dica.
+Do banco (cache de 1 min): processador e placa de vídeo, uma por modelo, só as compatíveis (chipset, fonte, memória de vídeo mínima); primeiro as que resolvem o gargalo (≥ 90% do equilíbrio), da mais barata, depois mais desempenho por real; ganho mínimo de 15%. Memória, fonte e SSD: as mais baratas que servem. 3 por dica.
 
-### 7.4 Montar pelo orçamento (`packages/shared/src/budget.ts`, §17.4; escondido no site)
-- Percorre todos os pares processador × placa de vídeo à venda (~10 mil, 10–70 ms) e monta o resto em volta: placa-mãe mais barata que aceita o processador sem BIOS (sem chipset de entrada para 105 W+), 32 GB em 2 pentes (kit ou 2 avulsos iguais), fonte certificada com 50% de folga (Gold com preferência acima de 400 W), cooler quando o processador não traz (air com TDP ≥ 100 W e 30% acima do processador), SSD NVMe de 1 TB, gabinete com ventilação onde a placa de vídeo cabe.
-- Rendimento = o menor entre a placa de vídeo e o que o processador alimenta. Opção 1: a mais barata que rende ≥ 97% da melhor que cabe no valor. Opção 2: outra placa de vídeo, mais barata ou mais forte. Opção 3: até 25% acima do valor se render ≥ 10% a mais. Rótulos honestos ("Mais desempenho no valor", "Melhor custo-benefício" calculado, "Acima do valor").
+### 7.4 Montar pelo orçamento (`packages/shared/src/budget.ts`, §17.4)
+
+Os perfis disponíveis são Jogos, Jogos e Trabalho e Produtividade. Nos dois perfis com trabalho, o pedido pode distinguir cargas de CPU de cargas com aceleração gráfica. A auditoria local ampliada mede a progressão de orçamento e a resposta da recomendação a mudanças no catálogo, mantendo o relatório original de 120 cenários como referência.
+
+A montagem usa referências locais de CPU por modelo e ajustes de GPU por resolução. A metodologia, as fontes e os resultados da comparação com o catálogo local estão na seção 17.4 da arquitetura.
+- Percorre pares de CPU e GPU, preserva variantes e compara 16 e 32 GB com SSDs de 500 GB, 1 TB e 2 TB. Jogos e Trabalho e Produtividade também avaliam 64 GB e SSD de 4 TB. Dimensiona refrigeração, fonte e placa-mãe a partir da potência estimada, características físicas e evidência disponível. Verifica se o cooler acompanha a variante anunciada.
+- Com placa dedicada, combina o teto estimado da CPU com a nota de GPU em cada resolução. Entre opções de desempenho próximo, compara custo e benefícios marginais de RAM, SSD e peças de apoio conforme o perfil. As alternativas mostram diferenças de preço, capacidade ou ganho estimado.
+- PC Comprável Agora usa estoque observado nas últimas 24 horas. PC Ideal também aceita o último preço em estoque registrado em até 90 dias, marcado como histórico na peça e no total.
 - Marcas com **prioridade, não exclusividade** (`BUDGET_BRANDS`): produto de outra marca conta como mais caro na escolha (fonte +70%, memória +30%, placa de vídeo +20%, placa-mãe +15%).
 - Upgrade: cada peça fica ou sai; só sugere troca que renda ≥ 10%; reaproveita a memória quando serve.
 
@@ -210,7 +218,7 @@ ADRs completos em ARCHITECTURE §15. As principais:
 | Admin arredonda o progresso das fichas para 100% com itens na fila | Confunde (os itens podem estar parados por erro) | Mostrar "X com erro, voltam às HH:MM" e não arredondar para 100% |
 | As ofertas das dicas (`picks.ts`) têm ranking próprio | Duas lógicas de escolha (dicas e orçamento) | Unificar com o motor do orçamento |
 | Texto da dica de placa de vídeo cita chips sem saber a memória de vídeo de cada um | A frase pode citar um chip sem versão com memória suficiente (as ofertas e a busca já filtram) | Falta uma tabela de memória de vídeo por chip |
-| Orçamento ainda grosseiro | Escondido do site (`BUDGET_VISIBLE`) | Refinar: preço acima do normal, qualidade por modelo, mais avaliações |
+| Orçamento ainda em refino | Disponível na tela inicial e no Identificar Gargalo | Refinar: preço acima do normal, qualidade por modelo, mais avaliações |
 | Memória e SSD caros nas lojas (nov/2026) | Montagens baratas saem sem placa de vídeo | Preço de mercado; nada a corrigir no motor |
 | Processador sem informação de cooler na caixa (~100 ofertas) | O orçamento compra um cooler à parte por segurança | Ler da ficha quando houver |
 | Campos opcionais pouco publicados (fases do VRM, cache DRAM) | Depois da web, podem encher a revisão manual | Se ficar demais: marcar campos que não vão para a revisão |
@@ -223,7 +231,7 @@ ADRs completos em ARCHITECTURE §15. As principais:
 ## 11. Melhorias planejadas
 
 ### Para lançar a 1ª versão, nesta ordem (ARCHITECTURE §14)
-1. ~~Montar pelo orçamento~~: feito, escondido até refinar.
+1. ~~Montar pelo orçamento~~ (disponível na tela inicial e no diagnóstico de gargalo).
 2. **Comparador de hardware**, começando por placa de vídeo e processador: 2 ou 3 modelos lado a lado (desempenho na escala do app, quanto um rende a mais, specs da ficha, menor preço, desempenho por real; com o PC importado, ganho sobre a peça atual e gargalo).
 3. **Mais de um disco na montagem** (NVMe e SATA misturados), com slots M.2 e portas SATA da placa-mãe contados contra os discos; os discos do PC importado entram como "Atual".
 
@@ -237,8 +245,8 @@ ADRs completos em ARCHITECTURE §15. As principais:
 - Variantes do mesmo modelo por part number (cor, versão OC).
 - Detectar queda de rede na rotina de fichas (seção 10).
 - Marcar "preço acima do normal" pelo histórico de 30 dias (já está no banco).
-- Refinar e religar o Montar pelo Orçamento.
-- Usar os campos novos da ficha nas decisões (VRM e flashback na placa-mãe, cache DRAM e TBW no SSD, conectores na placa de vídeo).
+- Refinar a calibração do Montar pelo Orçamento e ampliar as referências de desempenho sustentado por modelo.
+- Usar mais campos da ficha no ranking, como BIOS Flashback na placa-mãe e cache DRAM e TBW no SSD.
 
 ---
 

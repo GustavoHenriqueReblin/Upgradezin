@@ -88,7 +88,6 @@ const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>
     tdpW: { key: 'tdp_w', min: 5, max: 500 },
     igpu: { key: 'video_integrado' },
     ramType: { key: 'memoria', options: opts('DDR4', 'DDR5', 'DDR4, DDR5') },
-    maxPowerW: { key: 'potencia_maxima_w', min: 5, max: 500 },
   },
   motherboard: {
     chipset: { key: 'chipset' },

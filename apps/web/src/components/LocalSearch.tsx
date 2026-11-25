@@ -33,7 +33,7 @@ export function LocalSearch({ value, onChange, suggestions, onSearchStores }: Pr
           className="w-full rounded-lg border border-zinc-300 bg-white py-2 pl-9 pr-9 text-sm dark:border-zinc-700 dark:bg-zinc-900"
         />
         {value && (
-          <button onClick={() => onChange('')} title="Limpar" className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
+          <button onClick={() => onChange('')} title="Limpar" data-button-layout="compact" className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
             <X className="h-4 w-4" />
           </button>
         )}
@@ -54,6 +54,7 @@ export function LocalSearch({ value, onChange, suggestions, onSearchStores }: Pr
             return (
               <button
                 key={w}
+                data-button-layout="compact"
                 onClick={() => toggle(w)}
                 aria-pressed={active}
                 className={`rounded-full border px-2.5 py-0.5 text-xs transition ${

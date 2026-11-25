@@ -100,6 +100,24 @@ describe('produtos, fila e cobertura', () => {
     expect(states).toEqual({ a: 'complete', b: 'incomplete', c: 'unread', d: 'incomplete' });
   });
 
+  it('remove potência máxima do esquema e dos valores antigos sem apagar o texto original', () => {
+    const db = openDb(':memory:');
+    syncSheetTables(db);
+    savePage(db, { store: 's1', sku: 'a', category: 'cpu', text: 'TDP: 125 W\nMaximum Turbo Power: 253 W' });
+    db.exec(`
+      ALTER TABLE sheet_cpu ADD COLUMN max_power_w INTEGER;
+      UPDATE sheet_cpu SET max_power_w = 253;
+      INSERT INTO sheet_manual VALUES ('cpu:a', 'maxPowerW', 'cpu', '253', '2026-11-21');
+      INSERT INTO sheet_web (product_key, field, category, title, question, status, store, asked_at)
+        VALUES ('cpu:a', 'maxPowerW', 'cpu', '', '', 'ok', 's1', '2026-11-21');
+    `);
+    expect(syncSheetTables(db).dropped).toContain('sheet_cpu.max_power_w');
+    expect(db.prepare('SELECT tdp_w FROM sheet_cpu').get()).toEqual({ tdp_w: 125 });
+    expect(db.prepare('SELECT field FROM sheet_manual').all()).toEqual([]);
+    expect(db.prepare('SELECT field FROM sheet_web').all()).toEqual([]);
+    expect(pageText(db, 's1', 'a')?.text).toContain('253 W');
+  });
+
   it('todas as categorias do registro têm tabela', () => {
     const db = openDb(':memory:');
     syncSheetTables(db);
@@ -109,6 +127,12 @@ describe('produtos, fila e cobertura', () => {
 
 describe('ficha completada pelo título e pelo padrão da categoria', () => {
   const page = (sku: string, values: Record<string, string | number>, hasSheet = true) => ({ store: 's3' as StoreId, sku, at: NOW, hasSheet, values });
+
+  it('conta apenas a expansão de placa-mãe sustentada pelas fichas e preserva a correção manual', () => {
+    const pages = [page('a', { ramSlots: 4, m2Slots: 2 }), page('b', { ramSlots: 2, m2Slots: 1 })];
+    expect(mergeSources('motherboard', pages).values).toMatchObject({ ramSlots: 2, m2Slots: 1 });
+    expect(mergeSources('motherboard', pages, [], undefined, { ramSlots: 4 }).values.ramSlots).toBe(4);
+  });
 
   it('gabinete "Com Fans" sem o número: o padrão (0, "não tem") não vale, fica "não sei"; com o número, o título diz quantas', () => {
     const box = (sku: string) => ({ store: 's3' as StoreId, sku, at: NOW, hasSheet: true, values: { formFactor: 'Mid Tower', mbFormats: 'ATX' } });

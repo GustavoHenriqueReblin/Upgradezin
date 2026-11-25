@@ -37,6 +37,7 @@
 :root {
   color-scheme: dark;
   font-family: var(--font-sans);
+  --button-height: 2.5rem;
 }
 
 body {
@@ -86,6 +87,13 @@ input[type='checkbox'] {
 }
 button:disabled {
   cursor: not-allowed;
+}
+
+/* Ações têm a mesma altura em toda a interface. Cartões e controles embutidos
+   têm dimensões próprias para acomodar o conteúdo ou caber no campo. */
+:is(button, input[type='submit'], [role='button'], .button-link):not([data-button-layout]) {
+  min-block-size: var(--button-height);
+  padding-block: 0.375rem;
 }
 
 /*

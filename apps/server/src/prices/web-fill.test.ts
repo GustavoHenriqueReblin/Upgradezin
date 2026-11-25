@@ -8,7 +8,7 @@ import { useStoreStorage } from '../stores.ts';
 import { saveCollection } from './prices.ts';
 import { webPrompt } from '@upgradezin/shared';
 import { listSheetProducts } from '../admin/sheets.ts';
-import { catalogProducts, productSheet, savePage, setManualSheet, sheetCoverage } from './sheets.ts';
+import { catalogProducts, productSheet, savePage, setManualSheet, setSheetCompletion, sheetCoverage } from './sheets.ts';
 import { askNextNow, askWeb, clearWebPause, googlePage, googleUrl, webAnswers, webFillStatus, webQueue } from './web-fill.ts';
 
 afterEach(() => {
@@ -172,6 +172,15 @@ describe('precisa de você: a web não achou o que falta; preenchido à mão', (
     expect(listSheetProducts(db, { category: 'case', state: 'manual' }).total).toBe(1);
     expect(listSheetProducts(db, { state: 'manual' })).toMatchObject({ total: 1, items: [{ category: 'case' }] }); // todas as categorias
     expect(webQueue(db)).toEqual([]); // não pergunta de novo sozinho
+    expect(setSheetCompletion(db, p!.key, 'case', true)).toBe(true);
+    expect(setSheetCompletion(db, p!.key, 'case', true)).toBe(true);
+    expect(listSheetProducts(db, { state: 'manual' }).total).toBe(0);
+    expect(listSheetProducts(db, { state: 'complete' }).items[0]).toMatchObject({ completedManually: true, missing: ['mbFormats'] });
+    expect(productSheet(db, 's1', '1')!.values.mbFormats).toBeUndefined();
+    expect(sheetCoverage(db, since).find((r) => r.category === 'case')).toMatchObject({ complete: 1, needsHuman: 0 });
+    expect(webQueue(db)).toEqual([]);
+    expect(setSheetCompletion(db, p!.key, 'case', false)).toBe(true);
+    expect(listSheetProducts(db, { state: 'manual' }).total).toBe(1);
     // À mão: validado como na web (lista normalizada); valor fora do formato é recusado.
     expect(setManualSheet(db, p!.key, 'case', { mbFormats: 'atx, matx', maxGpuMm: 'grande', dimensions: '460 x 210 x 480' })).toEqual({ errors: ['maxGpuMm'] });
     const after = productSheet(db, 's1', '1')!;

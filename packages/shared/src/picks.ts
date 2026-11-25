@@ -1,13 +1,13 @@
 import type { BuildSlot } from './compat.ts';
 import { chipsetSupport, cpuFamily } from './hardware.ts';
-import { cpuScore, gpuPerf, gpuPower, gpuX8 } from './perf.ts';
+import { cpuScore, gpuPerf, gpuPower } from './perf.ts';
 import { effectiveCash, type Offer } from './types.ts';
 import type { UpgradeFilters } from './upgrade.ts';
 
 /**
  * As melhores ofertas de agora para uma dica de upgrade (docs/ARCHITECTURE.md §17.3).
  * Processador e placa de vídeo: uma por modelo, só as compatíveis com o PC pela ficha (encaixe e
- * chipset; consumo × fonte; x8 em placa-mãe PCIe 3.0). Primeiro as que resolvem o gargalo (chegam ao
+ * chipset; consumo × fonte). Primeiro as que resolvem o gargalo (chegam ao
  * equilíbrio com a outra peça, `target`), da mais barata; depois as que mais sobem por real.
  * Desempenho: processador pela ficha (cpuScore), placa de vídeo pela tabela do chip (perf.ts).
  * Memória, fonte e SSD: as mais baratas entre as que servem.
@@ -19,8 +19,6 @@ export interface PickContext {
   current?: number;
   /** Desempenho que resolve o gargalo (equilíbrio com a outra peça, na tela da pessoa). */
   target?: number;
-  /** Placa-mãe PCIe 3.0: placa de vídeo x8 perde desempenho nela (fica de fora se houver outras). */
-  pcie3?: boolean;
   /** Memória de vídeo da placa atual (GB): placa com menos, ou sem a informação, não entra (seria downgrade). */
   minVram?: number;
   /** Chipset da placa-mãe: o processador tem de ser aceito por ele. */
@@ -86,8 +84,6 @@ export function pickUpgrades(req: PickRequest, offers: Offer[], now = Date.now()
   if ((req.slot === 'gpu' || req.slot === 'cpu') && ctx.current) {
     const current = ctx.current;
     const best = new Map<string, UpgradePick>();
-    // Placa-mãe PCIe 3.0: as x8 só entram se não houver outras.
-    const x8Out = req.slot === 'gpu' && ctx.pcie3 && ok.some((o) => o.specs.gpuModel && !gpuX8(o.specs.gpuModel, o.sheet));
     for (const o of ok) {
       const s = o.specs;
       const perf = req.slot === 'gpu' ? gpuPerf(s) : cpuScore(s, o.sheet);
@@ -95,7 +91,6 @@ export function pickUpgrades(req: PickRequest, offers: Offer[], now = Date.now()
       if (!perf || !model || perf < current * (1 + MIN_GAIN)) continue;
       if (req.slot === 'gpu' && ctx.maxGpuPower && (gpuPower(model, o.sheet) ?? Infinity) > ctx.maxGpuPower) continue;
       if (req.slot === 'gpu' && ctx.minVram && (s.vram ?? 0) < ctx.minVram) continue;
-      if (x8Out && gpuX8(model, o.sheet)) continue;
       let needsBios = false;
       if (req.slot === 'cpu' && ctx.chipset) {
         const family = cpuFamily(s);

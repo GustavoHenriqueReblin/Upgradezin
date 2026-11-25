@@ -13,6 +13,7 @@
     "serve": "pnpm build && pnpm start",
     "scan": "pnpm --filter @upgradezin/server scan",
     "routine-test": "pnpm --filter @upgradezin/server routine-test",
+    "budget-test": "pnpm --filter @upgradezin/server exec tsx src/cli/budget-test.ts",
     "chrome-setup": "pnpm --filter @upgradezin/server chrome-setup",
     "test": "vitest run",
     "typecheck": "pnpm -r typecheck",

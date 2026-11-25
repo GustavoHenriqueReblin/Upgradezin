@@ -30,6 +30,7 @@ export function CategoryPicker({ value, onChange, variant, disabled }: Props) {
           return (
             <button
               key={id}
+              data-button-layout="card"
               disabled={!def.enabled}
               onClick={() => onChange(id)}
               className="group relative flex flex-col items-center gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-6 transition hover:border-accent-500 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-zinc-200 disabled:hover:shadow-none dark:border-zinc-800 dark:bg-zinc-900 dark:disabled:hover:border-zinc-800"

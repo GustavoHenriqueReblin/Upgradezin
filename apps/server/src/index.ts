@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, cpuSheetFor, pickUpgrades, searchOptionCounts, STORES, type CategoryId, type Offer, type SearchOptionCounts, type SheetRoutineStatus, type StoreId } from '@upgradezin/shared';
 import { fullSweep, fullSweepAll, probePage, readSheetNow, resumeRoutines, saveFullSweepSettings, useStoreIntervals, stopAdminJobs, stopFullSweep, storesState } from './admin/actions.ts';
 import { clearFullSweeps } from './prices/sweep.ts';
-import { budgetPlan } from './budget.ts';
+import { budgetOffers, budgetPlan } from './budget.ts';
 import { nightlySchedule, startNightlySweep, stopNightlySweep } from './admin/nightly.ts';
 import { listProducts } from './admin/products.ts';
 import { listSheetProducts, sheetPageText, sheetStoreStatus } from './admin/sheets.ts';
@@ -29,7 +29,7 @@ import { closeDb, getDb } from './db/instance.ts';
 import { activeSessions, canReadSheet } from './prices/collect.ts';
 import { listingBrands, listingsHistory, recentOffers } from './prices/prices.ts';
 import { productPage } from './prices/product-page.ts';
-import { rereadSheets, setManualSheet, SHEET_SCOPE_DAYS, sheetCoverage, syncSheetTables } from './prices/sheets.ts';
+import { rereadSheets, setManualSheet, setSheetCompletion, SHEET_SCOPE_DAYS, sheetCoverage, syncSheetTables } from './prices/sheets.ts';
 import { askNextNow, clearWebPause, setWebFill, startWebFill, stopWebFill, useWebFillStorage, webAnswers, webFillStatus } from './prices/web-fill.ts';
 import { startProductKeys } from './prices/identity.ts';
 import { setSheetRoutine, sheetNextAt, sheetRoutineBusy, sheetRoutineSettings, startSheetRoutine, stopSheetRoutine, useSheetRoutineStorage } from './prices/sheet-routine.ts';
@@ -159,6 +159,7 @@ if (AdminAuth.isConfigured(config.ADMIN_USER, config.ADMIN_PASSWORD)) {
       setWeb: (s) => (setWebFill(s), webFillStatus(getDb())),
       askWeb: (key) => askNextNow(getDb(), key),
       resumeWeb: () => (clearWebPause(), webFillStatus(getDb())),
+      setCompletion: (m) => setSheetCompletion(getDb(), m.key, m.category, m.complete),
       setManual: (m) => setManualSheet(getDb(), m.key, m.category, m.values),
       webAnswers: (f) => webAnswers(getDb(), f),
     },
@@ -258,7 +259,7 @@ app.post('/api/upgrade/picks', { bodyLimit: 16 * 1024 }, async (req, reply) => {
 
 /** Montar pelo orçamento: o PC inteiro ou o upgrade do PC importado, com as ofertas de agora (budget.ts). */
 app.post('/api/budget/plan', { bodyLimit: 32 * 1024 }, async (req, reply) => {
-  const r = budgetPlan(req.body, (slot) => (ENABLED_CATEGORIES.includes(slot) ? categoryOffers(slot).value : []));
+  const r = budgetPlan(req.body, (slot, mode, now) => (ENABLED_CATEGORIES.includes(slot) ? budgetOffers(getDb(), slot, mode, ACTIVE_STORES, now) : []));
   if (!r.ok) return reply.code(400).send({ error: r.error });
   return r.plan;
 });

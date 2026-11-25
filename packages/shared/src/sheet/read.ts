@@ -1,5 +1,5 @@
 import { extractGpuModel } from '../gpu.ts';
-import type { CategoryId } from '../types.ts';
+import { SOCKETS, SOCKET_MEMORY, type CategoryId, type Socket } from '../types.ts';
 import { SHEET_FIELDS, type SheetValues } from './fields.ts';
 import { dec, firstInt, isNo, isYes, numberWith, pick, sheetDoc, thousands, type SheetDoc } from './text.ts';
 
@@ -13,7 +13,7 @@ import { dec, firstInt, isNo, isYes, numberWith, pick, sheetDoc, thousands, type
  *
  * READER_VERSION: mudou o leitor ou os campos, sobe o número: o servidor relê as fichas guardadas.
  */
-export const READER_VERSION = 13;
+export const READER_VERSION = 15;
 
 type Reader = (doc: SheetDoc) => SheetValues;
 
@@ -68,6 +68,14 @@ function socketOfChipset(chipset: string | undefined): string | undefined {
   return undefined;
 }
 const socketOf = (s: string) => sockets(s)[0];
+/** O socket fixa a memória só quando toda a plataforma usa o mesmo tipo. */
+export function sheetSocketMemory(socket: string | undefined, category: 'cpu' | 'motherboard'): string | undefined {
+  // LGA1151 também tem variantes DDR3L, embora a montagem só liste DDR4 para esse socket.
+  if (socket === 'LGA1151' || !SOCKETS.includes(socket as Socket)) return undefined;
+  const types = SOCKET_MEMORY[socket as Socket];
+  if (category === 'motherboard' && types.length !== 1) return undefined;
+  return types.map((type) => type.toUpperCase()).join(', ');
+}
 
 // ---------- CPU ----------
 
@@ -136,12 +144,8 @@ const cpu: Reader = (doc) => {
   // Tipos de memória: junta os rótulos de memória ("Velocidade de memória: DDR5: 4800MHz" / "DDR4: 3200MHz").
   const memPairs = doc.pairs.filter((p) => /tipos? de memoria|memory types?|^memoria$|tipo de memoria do sistema|velocidade (maxima )?(de |da )?memoria|^ddr[345]$/.test(p.label));
   const ramTypes = [...new Set(memPairs.flatMap((p) => [...`${p.label} ${p.value}`.matchAll(/ddr([345])/g)].map((m) => `DDR${m[1]}`)))];
-  const ramType = ramTypes.length ? ramTypes.sort().join(', ') : undefined;
-  // Potência máxima (turbo): "Maximum Turbo Power: 253 W", "Potência turbo máxima", PPT dos Ryzen.
-  const maxPowerW = pick(doc, [/potencia (turbo )?maxima|maximum turbo power|potencia turbo|max(imum)? (turbo )?power|\bppt\b|\bpl2\b|potencia de pico/], (v, l) =>
-    /memoria|grafic/.test(l) ? undefined : inRange(numberWith(v, /w(?:atts?)?\b/) ?? (/\(w\)/.test(l) ? firstInt(v) : undefined), 5, 500),
-  );
-  return clean({ socket, architecture, cores, threads, baseGhz: base, boostGhz: boost && base && boost < base ? undefined : boost, l2Mb: l2, l3Mb: l3, tdpW: tdp, igpu, ramType, maxPowerW });
+  const ramType = sheetSocketMemory(socket, 'cpu') ?? (ramTypes.sort().join(', ') || undefined);
+  return clean({ socket, architecture, cores, threads, baseGhz: base, boostGhz: boost && base && boost < base ? undefined : boost, l2Mb: l2, l3Mb: l3, tdpW: tdp, igpu, ramType });
 };
 
 // ---------- placa-mãe ----------
@@ -169,7 +173,7 @@ const motherboard: Reader = (doc) => {
     formOf(doc.all.match(/(fator de forma|formato)[^\n]{0,40}/)?.[0] ?? '') ??
     formOf(doc.lines.find((l) => /^(e-?atx|m-?atx|matx|micro[- ]?atx|mini[- ]?itx|atx)$/.test(l)) ?? '');
   const memText = [...doc.pairs.filter((p) => /memoria|memory|dimm/.test(`${p.section} ${p.label}`)).map((p) => `${p.label} ${p.value}`), doc.all].join('\n');
-  const ramType = memText.match(/ddr([345])/)?.[0]?.toUpperCase();
+  const ramType = sheetSocketMemory(socket, 'motherboard') ?? memText.match(/ddr([345])/)?.[0]?.toUpperCase();
   // Também "Possui 4 slots para memória DDR5", "quatro soquetes de memória", "4 DIMMs", "Slots DIMM: 2".
   const WORDS: Record<string, number> = { dois: 2, duas: 2, quatro: 4, oito: 8 };
   const slotsM =
@@ -201,8 +205,8 @@ const motherboard: Reader = (doc) => {
   const pcieX16 = x16.length ? `${Math.max(...x16)}.0` : undefined;
   // M.2: total declarado ("2x M.2", "Suporta 2 slots M.2") ou os slots numerados (M.2_1, M2_2).
   // Também "1 x Tomada Ultra M.2", "1 x Soquete Ultra M.2" (não o "M.2_WIFI", que é da placa de rede).
-  const m2Total = [...doc.all.matchAll(/(\d)\s*(?:x\s*)?(?:slots?\s*|soquetes?\s*|conectores?\s*|tomadas?\s*)?(?:ultra\s*)?m\.?2\b/g)].map((m) => Number(m[1]));
-  const m2Named = new Set([...doc.all.matchAll(/\bm\.?2_([a-z\d])\b|\bm2[a-z]?_(?:cpu|sb|\d)/g)].map((m) => m[0]));
+  const m2Total = [...doc.all.matchAll(/(?<![.\w])(\d)\s*(?:x\s*)?(?:slots?\s*|soquetes?\s*|conectores?\s*|tomadas?\s*|fontes?\s*)?(?:ultra\s*)?m\.?2\b/g)].map((m) => Number(m[1]));
+  const m2Named = new Set([...doc.all.matchAll(/\bm\.?2_([a-z\d])\b|\bm2[a-z]?_(?:cpu|sb|\d)/g)].map((m) => m[0].replace('.', '')));
   const m2Slots = inRange(m2Total.length ? Math.max(...m2Total) : m2Named.size || (/\bm\.2\b/.test(doc.all) ? 1 : undefined), 1, 8);
   // Também "PCIe até Gen3 x4", "PCI Express até Gen3", "slot M.2 4.0", "1 slot M.2 PCIe 3.0".
   const m2v = [
