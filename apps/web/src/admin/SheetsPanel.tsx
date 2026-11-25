@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ChevronDown, ExternalLink, FileSearch, FileText, Search, Pencil } from 'lucide-react';
 import {
   ENABLED_CATEGORIES,
@@ -220,9 +220,13 @@ function Coverage({ fail, onPick }: { fail: (err: unknown) => void; onPick: (c: 
   );
 }
 
+type OfferFilter = '' | '1' | '0';
+
 interface Filters {
   q: string;
   page: number;
+  inStock: OfferFilter;
+  ownRetail: OfferFilter;
 }
 
 /** Produtos de uma categoria com os campos da ficha. A situação vem do painel (fica ao trocar de categoria). */
@@ -234,7 +238,8 @@ function Products({
   fail,
   onMessage,
 }: Shared & { category: CategoryId | ''; onCategory: (c: CategoryId | '') => void; state: SheetFilterState | ''; onState: (s: SheetFilterState | '') => void }) {
-  const [filters, setFilters] = useState<Filters>({ q: '', page: 1 });
+  const [filters, setFilters] = useState<Filters>({ q: '', page: 1, inStock: '', ownRetail: '' });
+  const request = useRef(0);
   const [text, setText] = useState('');
   const [data, setData] = useState<SheetProductPage | null>(null);
   const [stores, setStores] = useState<Map<string, string>>(new Map());
@@ -247,11 +252,16 @@ function Products({
       .catch(fail);
   }, [fail]);
   const load = useCallback(() => {
+    const id = ++request.current;
     const q = new URLSearchParams({ page: String(filters.page) });
     if (category) q.set('category', category);
     if (state) q.set('state', state);
     if (filters.q) q.set('q', filters.q);
-    adminApi<SheetProductPage>(`/sheets/products?${q}`).then(setData).catch(fail);
+    if (filters.inStock) q.set('inStock', filters.inStock);
+    if (filters.ownRetail) q.set('ownRetail', filters.ownRetail);
+    adminApi<SheetProductPage>(`/sheets/products?${q}`)
+      .then((result) => { if (id === request.current) setData(result); })
+      .catch((err) => { if (id === request.current) fail(err); });
   }, [category, state, filters, fail]);
   useEffect(load, [load]);
   useLiveReload(['attempt', 'admin'], load, { delayMs: 3_000, fallbackMs: 60_000 });
@@ -291,8 +301,18 @@ function Products({
             </option>
           ))}
         </select>
+        <select className={select} value={filters.inStock} onChange={(e) => set({ inStock: e.target.value as OfferFilter })} aria-label="Disponibilidade">
+          <option value="">Com e Sem Estoque</option>
+          <option value="1">Com Estoque</option>
+          <option value="0">Sem Estoque</option>
+        </select>
+        <select className={select} value={filters.ownRetail} onChange={(e) => set({ ownRetail: e.target.value as OfferFilter })} aria-label="Vendedor">
+          <option value="">Qualquer Vendedor</option>
+          <option value="1">Vendido pela Própria Loja</option>
+          <option value="0">Não Vendido pela Própria Loja</option>
+        </select>
         <form
-          className="flex min-w-0 flex-1 gap-1"
+          className="flex min-w-0 flex-[1_1_12rem] gap-1"
           onSubmit={(e: FormEvent) => {
             e.preventDefault();
             set({ q: text.trim() });

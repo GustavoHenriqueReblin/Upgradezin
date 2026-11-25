@@ -63,6 +63,10 @@ select:not([multiple]):not([size]) {
   padding-right: 2.1rem;
 }
 
+.admin-page :is(select:not([multiple]):not([size]), input:not([type]), input:is([type='text'], [type='search'], [type='number'], [type='password'], [type='email'], [type='url'])) {
+  min-block-size: var(--button-height);
+}
+
 ::selection {
   background: rgb(249 115 22 / 0.35);
   color: #fff;

@@ -56,7 +56,7 @@ export function Admin() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="admin-page min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <header className="border-b border-zinc-200 dark:border-zinc-800">
         <div className="mx-auto flex w-full flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
           <a href="/" className="shrink-0 whitespace-nowrap text-lg font-bold tracking-tight">

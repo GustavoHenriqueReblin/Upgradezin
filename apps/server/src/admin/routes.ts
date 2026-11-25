@@ -95,6 +95,8 @@ const ProductsQuery = z.object({
 const SheetProductsQuery = z.object({
   category: z.enum(CATEGORIES).optional(),
   state: z.enum(['complete', 'incomplete', 'unread', 'exhausted', 'manual']).optional(),
+  inStock: z.enum(['1', '0']).transform((v) => v === '1').optional(),
+  ownRetail: z.enum(['1', '0']).transform((v) => v === '1').optional(),
   q: z.string().max(80).optional(),
   ...Paging,
 });

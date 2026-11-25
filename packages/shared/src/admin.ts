@@ -457,6 +457,8 @@ export type SheetFilterState = SheetState | 'exhausted' | 'manual';
 export interface SheetProductFilter {
   category?: CategoryId;
   state?: SheetFilterState;
+  inStock?: boolean;
+  ownRetail?: boolean;
   q?: string;
   page?: number;
   pageSize?: number;

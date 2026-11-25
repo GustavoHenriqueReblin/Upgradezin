@@ -333,6 +333,29 @@ describe('rotas das ações (pausa, coletar agora, rotina)', () => {
     expect((await put('/api/admin/stores/s9/interval', ok)).statusCode).toBe(404);
   });
 
+  it('filtra as fichas pelo estoque e vendedor do mesmo anúncio antes de paginar', async () => {
+    const { app, cookie, db } = await setup();
+    const now = new Date().toISOString();
+    const cpu = (sku: string, inStock: boolean, marketplace: boolean) => ({
+      store: 's1', storeSku: sku, title: `Ryzen ${sku}`, url: `https://s1.example/${sku}`, priceCash: 1,
+      inStock, marketplace, specs: {}, modelKey: `m${sku}`, collectedAt: now,
+    }) as Offer;
+    saveCollection(db, { store: 's1', category: 'cpu', offers: [cpu('1', false, false), cpu('2', true, true), cpu('3', true, false)], at: now });
+    db.prepare("UPDATE listings SET product_key = 'cpu:mixed' WHERE store_sku IN ('1', '2')").run();
+    const list = (filters: string) => app.inject({ url: `/api/admin/sheets/products?category=cpu&${filters}`, headers: { cookie } });
+    expect((await list('pageSize=1')).json()).toMatchObject({ total: 2, pageSize: 1 });
+    expect((await list('inStock=1')).json()).toMatchObject({ total: 2 });
+    for (const filters of ['inStock=0', 'ownRetail=0', 'inStock=0&ownRetail=1', 'inStock=1&ownRetail=0']) {
+      expect((await list(filters)).json()).toMatchObject({ total: 1, items: [{ key: 'cpu:mixed' }] });
+    }
+    expect((await list('ownRetail=1')).json()).toMatchObject({ total: 2 });
+    expect((await list('inStock=1&ownRetail=1')).json()).toMatchObject({ total: 1, items: [{ listings: [{ sku: '3' }] }] });
+    expect((await list('inStock=0&ownRetail=0')).json()).toMatchObject({ total: 0 });
+    expect((await list('inStock=1&ownRetail=1&q=Ryzen+1')).json()).toMatchObject({ total: 0 });
+    expect((await list('inStock=talvez')).statusCode).toBe(400);
+    expect((await list('ownRetail=talvez')).statusCode).toBe(400);
+  });
+
   it('produtos e fichas: listas paginadas com filtros, cobertura, texto da página, rotina de fichas e "Ler ficha"', async () => {
     const { app, cookie, db } = await setup();
     const list = await app.inject({ url: '/api/admin/products?store=s1&inStock=1&page=1&pageSize=20', headers: { cookie } });

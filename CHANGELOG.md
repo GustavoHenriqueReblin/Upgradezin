@@ -4,6 +4,8 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+- A lista Fichas por Produto pode ser filtrada por estoque e vendedor. Os campos de texto e selects do admin seguem a mesma altura mínima.
+
 - O admin aproveita toda a largura disponível em desktop, tablet e celular, com as abas abaixo do cabeçalho em telas estreitas.
 
 - A lista de respostas da busca na web mostra a situação da ficha antes e depois da consulta. Respostas antigas exibem a situação atual quando disponível.

@@ -32,7 +32,11 @@ export function listSheetProducts(db: Db, f: SheetProductFilter, now = Date.now(
     !f.state || (f.state === 'exhausted' ? p.state === 'incomplete' && p.listings.every((l) => l.read) : f.state === 'manual' ? p.needsHuman : p.state === f.state);
   // Sem categoria: todas (as ligadas), uma depois da outra.
   const all = (f.category ? [f.category] : ENABLED_CATEGORIES).flatMap((c) => catalogProducts(db, c, since(now))).filter(
-    (p) => inState(p) && (!q || p.listings.some((l) => l.title.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q))),
+    (p) => inState(p) && p.listings.some((l) =>
+      (f.inStock === undefined || l.inStock === f.inStock) &&
+      (f.ownRetail === undefined || l.ownRetail === f.ownRetail) &&
+      (!q || l.title.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q)),
+    ),
   );
   return { items: all.slice(offset, offset + pageSize), total: all.length, page, pageSize };
 }
