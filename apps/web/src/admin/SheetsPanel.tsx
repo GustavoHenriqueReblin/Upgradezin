@@ -42,6 +42,8 @@ const STATE_TONE: Record<SheetState, string> = {
 /** De onde veio o campo que não é da página da loja. */
 const VALUE_FROM_LABEL: Record<SheetValueFrom, string> = { manual: 'manual', title: 'título', web: 'web', estimate: 'estimado', default: 'padrão' };
 const pct = (x: number, total: number) => (total ? Math.round((x / total) * 100) : 0);
+/** Andamento das fichas: arredonda para baixo e só mostra 100% com a fila vazia (itens parados por erro ainda contam). */
+export const sheetPct = (read: number, queue: number) => (read + queue ? Math.min(Math.floor((read / (read + queue)) * 100), queue ? 99 : 100) : 0);
 
 /**
  * Fichas técnicas: a rotina que lê as páginas dos produtos (ligar, lojas, intervalo, andamento por
@@ -133,10 +135,10 @@ function SheetRoutine({ fail, onMessage }: Shared) {
                   <input type="checkbox" checked={marked} disabled={!s.canRead} onChange={(e) => toggleStore(s.store, e.target.checked)} />
                   {s.name}
                 </label>
-                <span className="text-xs font-normal tabular-nums text-zinc-500">{s.read + s.queue ? `${pct(s.read, s.read + s.queue)}%` : '—'}</span>
+                <span className="text-xs font-normal tabular-nums text-zinc-500">{s.read + s.queue ? `${sheetPct(s.read, s.queue)}%` : '—'}</span>
               </p>
               <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800" aria-hidden>
-                <div className="h-full bg-emerald-500" style={{ width: `${pct(s.read, s.read + s.queue)}%` }} />
+                <div className="h-full bg-emerald-500" style={{ width: `${sheetPct(s.read, s.queue)}%` }} />
               </div>
               {!s.canRead ? (
                 <p className="mt-2 text-xs text-zinc-500">Esta loja não tem leitor de ficha.</p>
@@ -156,6 +158,11 @@ function SheetRoutine({ fail, onMessage }: Shared) {
                   <div className="tabular-nums">
                     {s.read.toLocaleString('pt-BR')} páginas lidas · {s.queue.toLocaleString('pt-BR')} na fila
                   </div>
+                  {s.waiting > 0 && s.retryAt && (
+                    <div className="tabular-nums text-amber-700 dark:text-amber-400">
+                      {s.waiting.toLocaleString('pt-BR')} com erro na página, {s.waiting === 1 ? 'volta' : 'começam a voltar'} às {formatWhen(s.retryAt)}
+                    </div>
+                  )}
                   <div className="tabular-nums">
                     {s.lastHour} na última hora{s.lastAt ? ` · última ${formatWhen(s.lastAt)}` : ''}
                   </div>

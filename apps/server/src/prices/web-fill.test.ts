@@ -6,10 +6,10 @@ import { getDb } from '../db/instance.ts';
 import { useBackoffStorage } from '../pace.ts';
 import { useStoreStorage } from '../stores.ts';
 import { saveCollection } from './prices.ts';
-import { webPrompt } from '@upgradezin/shared';
+import { webKeys, webPrompt } from '@upgradezin/shared';
 import { listSheetProducts } from '../admin/sheets.ts';
 import { catalogProducts, productSheet, savePage, setManualSheet, setSheetCompletion, sheetCoverage } from './sheets.ts';
-import { askNextNow, askWeb, clearWebPause, googlePage, googleUrl, webAnswers, webFillStatus, webQueue } from './web-fill.ts';
+import { askNextNow, askWeb, clearWebPause, EMPTY_RETRY_MS, EMPTY_TRIES, googlePage, googleUrl, rereadWebAnswers, webAnswers, webFillStatus, webQueue } from './web-fill.ts';
 
 afterEach(() => {
   usePageLoader(null);
@@ -54,7 +54,7 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
     useStoreStorage(getDb());
     useBackoffStorage([], () => {});
     const db = openDb(':memory:');
-    const offer = { store: 's1', storeSku: '1', title: 'Gabinete Gamer Pichau XYZ, Preto, PXG-100A', url: 'https://www.s1.example/produto/1', priceCash: 300, inStock: true, specs: {}, modelKey: 'case:1', collectedAt: '' } as Offer;
+    const offer = { store: 's1', storeSku: '1', title: 'Gabinete Gamer Fortex XYZ, Preto, PXG-100A', url: 'https://www.s1.example/produto/1', priceCash: 300, inStock: true, specs: {}, modelKey: 'case:1', collectedAt: '' } as Offer;
     saveCollection(db, { store: 's1', category: 'case', offers: [offer], at: new Date().toISOString() });
     savePage(db, { store: 's1', sku: '1', category: 'case', text: 'Placas-mãe: ATX, Micro-ATX\nDimensões: 450 x 210 x 480 mm' });
     return db;
@@ -67,7 +67,7 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
     const offer2 = { store: 's1', storeSku: '2', title: 'Gabinete Gamer Outro ABC, Mid Tower, ATX', url: 'https://www.s1.example/produto/2', priceCash: 300, inStock: true, specs: {}, modelKey: 'case:2', collectedAt: '' } as Offer;
     saveCollection(db, { store: 's1', category: 'case', offers: [offer2], at: new Date().toISOString() });
     savePage(db, { store: 's1', sku: '2', category: 'case', text: 'Tipo: Mid Tower\nPlacas-mãe: ATX, Micro-ATX' });
-    expect(webQueue(db).map((q) => q.title)).toEqual(['Gabinete Gamer Pichau XYZ, Preto, PXG-100A', 'Gabinete Gamer Outro ABC, Mid Tower, ATX']);
+    expect(webQueue(db).map((q) => q.title)).toEqual(['Gabinete Gamer Fortex XYZ, Preto, PXG-100A', 'Gabinete Gamer Outro ABC, Mid Tower, ATX']);
   });
 
   it('prioriza a melhor oferta da própria loja e conta produtos em vez de anúncios', () => {
@@ -97,13 +97,13 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
     const [q] = webQueue(db);
     expect(q).toMatchObject({ category: 'case' });
     expect(q!.fields).toEqual(expect.arrayContaining(['formFactor', 'maxGpuMm', 'radiators']));
-    expect(q!.question).toContain('do gabinete Pichau XYZ PXG-100A');
+    expect(q!.question).toContain('do gabinete Fortex XYZ PXG-100A');
     expect(q!.fields).not.toContain('mbFormats');
     expect(q!.fields).not.toContain('dimensions');
     const urls: string[] = [];
     usePageLoader(async (_s, url) => (
       urls.push(url),
-      { html: aiPage(q!.question, { produto: 'Pichau XYZ', tamanho: 'Mid Tower', placa_de_video_max_mm: 380, confianca: 'alta' }), url, title: '' }
+      { html: aiPage(q!.question, { produto: 'Fortex XYZ', tamanho: 'Mid Tower', placa_de_video_max_mm: 380, confianca: 'alta' }), url, title: '' }
     ));
     const r = await askWeb(db, q!, signal());
     expect(r).toMatchObject({ status: 'ok', confidence: 'high', store: 's1', sheetBefore: 'incomplete', sheetAfter: 'manual' });
@@ -128,7 +128,59 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
     expect(list.items[0]!.fields[0]).toEqual({ field: 'formFactor', value: 'Mid Tower' }); // na ordem da ficha
     expect(webAnswers(db, { status: 'none' }).total).toBe(0);
     expect(webAnswers(db, { category: 'cooler' }).total).toBe(0);
-    expect(webAnswers(db, { q: 'pichau' }).total).toBe(1);
+    expect(webAnswers(db, { q: 'fortex' }).total).toBe(1);
+  });
+
+  it('página sem resposta não conta como perguntado: o produto espera e é perguntado de novo, até o limite de tentativas', async () => {
+    const db = caseDb();
+    const [q] = webQueue(db);
+    usePageLoader(async (_s, url) => ({ html: aiPage(q!.question), url, title: '' }));
+    let now = Date.parse('2026-11-25T12:00:00.000Z');
+    for (let i = 1; i < EMPTY_TRIES; i++) {
+      expect(await askWeb(db, q!, signal(), () => now)).toMatchObject({ status: 'none', answer: '' });
+      expect(webAnswers(db, {}).total).toBe(0); // nada gravado
+      expect(webQueue(db, now)).toEqual([]); // espera
+      now += EMPTY_RETRY_MS + 1;
+      expect(webQueue(db, now).map((x) => x.key)).toEqual([q!.key]); // volta
+    }
+    await askWeb(db, q!, signal(), () => now);
+    expect(webAnswers(db, {}).total).toBe(1); // na última tentativa, conta como perguntado
+    expect(webQueue(db, now)).toEqual([]);
+    db.close();
+  });
+
+  it('leitor da resposta mudou: relê as respostas guardadas (sem perguntar de novo) e devolve à fila as sem resposta', () => {
+    const db = caseDb();
+    const [q] = webQueue(db);
+    rereadWebAnswers(db); // marca a versão atual
+    const insert = db.prepare(`INSERT INTO sheet_web (product_key, field, category, title, question, answer, value, status, store, asked_at) VALUES (?, ?, 'case', 't', ?, ?, NULL, 'none', 's1', ?)`);
+    insert.run(q!.key, 'fansMax', q!.question, '{"produto":"Fortex XYZ","ventoinhas_max   ":6,"confianca":"alta"}', '2026-11-25T10:00:00.000Z');
+    insert.run('case:outro', 'fansMax', q!.question, '', '2026-11-25T10:00:00.000Z');
+    // Lista vazia num pedido antigo (modelo com []): volta à fila para perguntar de novo.
+    insert.run(q!.key, 'radiators', q!.question.replace('"radiadores_mm":null', '"radiadores_mm":[]'), '{"produto":"Fortex XYZ","radiadores_mm":[],"confianca":"alta"}', '2026-11-25T10:00:00.000Z');
+    expect(rereadWebAnswers(db)).toEqual({ changed: 0, requeued: 0 }); // mesma versão: nada
+    expect(rereadWebAnswers(db, true)).toEqual({ changed: 1, requeued: 2 });
+    expect(db.prepare("SELECT count(*) AS n FROM sheet_web WHERE field = 'radiators'").get()).toEqual({ n: 0 });
+    expect(db.prepare("SELECT value, status FROM sheet_web WHERE product_key = ?").get(q!.key)).toEqual({ value: '6', status: 'ok' });
+    expect(db.prepare("SELECT count(*) AS n FROM sheet_web WHERE product_key = 'case:outro'").get()).toEqual({ n: 0 });
+    expect(productSheet(db, 's1', '1')!.values.fansMax).toBe(6);
+    db.close();
+  });
+
+  it('opcional que a web não pergunta (código do chip) não segura o produto fora do "precisa de você"', () => {
+    const db = openDb(':memory:');
+    const offer = { store: 's1', storeSku: 'g', title: 'Placa de Video Marca GeForce GTX 750 Ti, 4GB', url: 'https://s1.example/g', priceCash: 500, inStock: true, specs: {}, modelKey: 'g', collectedAt: '' } as Offer;
+    saveCollection(db, { store: 's1', category: 'gpu', offers: [offer], at: new Date().toISOString() });
+    savePage(db, { store: 's1', sku: 'g', category: 'gpu', text: ['Memória: 4GB GDDR5', 'Clock boost: 1085 MHz', 'Consumo: 60W'].join('\n') });
+    const [before] = catalogProducts(db, 'gpu', '2000-01-01');
+    expect(before!.gaps).toContain('silicon');
+    const askable = new Set(webKeys('gpu').map((k) => k.field));
+    const insert = db.prepare(`INSERT INTO sheet_web (product_key, field, category, title, question, answer, value, status, store, asked_at) VALUES (?, ?, 'gpu', 't', 'q', '{}', NULL, 'none', 's1', '2026-11-25')`);
+    for (const f of [...before!.missing, ...before!.gaps]) if (askable.has(f)) insert.run(before!.key, f);
+    const [after] = catalogProducts(db, 'gpu', '2000-01-01');
+    expect(after!.gaps).toContain('silicon'); // continua vazio (a web não pergunta)
+    expect(after!.needsHuman).toBe(true);
+    db.close();
   });
 
   it('registra a ficha que ficou completa e dá o estado atual às respostas antigas', async () => {
@@ -197,7 +249,7 @@ describe('precisa de você: a web não achou o que falta; preenchido à mão', (
     useStoreStorage(getDb());
     useBackoffStorage([], () => {});
     const db = openDb(':memory:');
-    const offer = { store: 's1', storeSku: '1', title: 'Gabinete Gamer Pichau XYZ, Preto, PXG-100A', url: 'https://www.s1.example/produto/1', priceCash: 300, inStock: true, specs: {}, modelKey: 'case:1', collectedAt: '' } as Offer;
+    const offer = { store: 's1', storeSku: '1', title: 'Gabinete Gamer Fortex XYZ, Preto, PXG-100A', url: 'https://www.s1.example/produto/1', priceCash: 300, inStock: true, specs: {}, modelKey: 'case:1', collectedAt: '' } as Offer;
     const now = new Date().toISOString();
     saveCollection(db, { store: 's1', category: 'case', offers: [offer], at: now });
     savePage(db, { store: 's1', sku: '1', category: 'case', text: 'Dimensões: 450 x 210 x 480 mm' });

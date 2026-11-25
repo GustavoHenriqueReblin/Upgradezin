@@ -13,7 +13,7 @@ import { dec, firstInt, isNo, isYes, numberWith, pick, sheetDoc, thousands, type
  *
  * READER_VERSION: mudou o leitor ou os campos, sobe o número: o servidor relê as fichas guardadas.
  */
-export const READER_VERSION = 17;
+export const READER_VERSION = 18;
 
 type Reader = (doc: SheetDoc) => SheetValues;
 
@@ -404,8 +404,12 @@ const ram: Reader = (doc) => {
     pick(doc, [/^capacidade|quantidade de memoria|tamanho do modulo|^tamanho$|^capacity|densidade/], (v) => (/\d\s*gb/.test(v) ? v : undefined)) ??
     doc.lines.find((l) => /^\d{1,3}\s*gb(\s*\(\d\s*x\s*\d{1,3}\s*gb\))?$/.test(l)) ??
     '';
-  const kit = capV.match(/(\d)\s*x\s*(\d{1,3})\s*gb/);
   const total = numberWith(capV, /gb/);
+  // Página que dá a capacidade por pente ("Capacidade: 16GB") e o kit só em outro lugar, como no conteúdo da embalagem
+  // ("32GB (2x16GB)"): vale o kit, se o pente dele bate com a capacidade lida.
+  const elsewhere = [...doc.all.matchAll(/(\d{1,3})\s*gb\s*\(\s*(\d)\s*x\s*(\d{1,3})\s*gb\s*\)/g)]
+    .find((m) => Number(m[3]) === total && Number(m[2]) * Number(m[3]) === Number(m[1]));
+  const kit = capV.match(/(\d)\s*x\s*(\d{1,3})\s*gb/) ?? (elsewhere && [elsewhere[0], elsewhere[2]!, elsewhere[3]!]);
   const capacityGb = inRange(kit && total === Number(kit[2]) ? Number(kit[1]) * Number(kit[2]) : total, 1, 512);
   const modules = kit ? Number(kit[1]) : capacityGb ? 1 : undefined;
   const type =

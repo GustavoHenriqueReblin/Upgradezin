@@ -3,6 +3,7 @@ import {
   parseWebReply,
   STORE_INTERVAL_S_MAX,
   STORE_INTERVAL_S_MIN,
+  WEB_PARSER_VERSION,
   webKeys,
   webPrompt,
   type CategoryId,
@@ -35,7 +36,8 @@ import { catalogProducts, ready, SHEET_SCOPE_DAYS } from './sheets.ts';
  * o JSON de resposta da categoria, com os campos em aberto, para ela devolver preenchido
  * (webPrompt), e lê cada chave validando tipo e faixa (parseWebReply). Resposta de confiança baixa, ou
  * sem o JSON, conta como sem resposta. Cada produto é perguntado uma vez: sheet_web guarda cada campo,
- * com ou sem valor, e o JSON da resposta como veio.
+ * com ou sem valor, e o JSON da resposta como veio. Página sem resposta nenhuma (sem o JSON) não conta como
+ * perguntado: o produto espera EMPTY_RETRY_MS e é perguntado de novo, até EMPTY_TRIES vezes.
  *
  * Usa o Chrome de uma das lojas, na fila dela (uma página por vez, com o intervalo de fichas da loja),
  * sem contar no limite de páginas da loja. O buscador pedindo verificação ("tráfego incomum") pausa a
@@ -49,6 +51,10 @@ const FIRST_MS = 20_000;
 const IDLE_MS = 5 * 60_000;
 /** Espera a resposta da IA (ela chega aos poucos, depois da página) antes de ler de novo. */
 const ANSWER_WAIT_MS = 10_000;
+/** Página sem resposta: espera para perguntar de novo, e quantas vezes tenta antes de contar como perguntado. */
+export const EMPTY_RETRY_MS = 6 * 3_600_000;
+export const EMPTY_TRIES = 3;
+const emptyReplies = new Map<string, { tries: number; until: number }>();
 
 const DEFAULTS: WebFillSettings = { enabled: false, interval: { minS: 90, maxS: 150 } };
 
@@ -137,6 +143,7 @@ export function webQueue(db: Db, now = Date.now(), retryKey?: string): (WebQuest
     for (const p of catalogProducts(db, category, since)) {
       if (p.completedManually || p.state === 'unread' || !p.listings.every((l) => l.read)) continue;
       if (retryKey && p.key !== retryKey) continue;
+      if (!retryKey && (emptyReplies.get(p.key)?.until ?? 0) > now) continue;
       const gaps = new Set([...p.missing, ...p.gaps]);
       const fields = webKeys(category).map((k) => k.field).filter((field) => retryKey
         ? gaps.has(field) || p.origin[field]?.from === 'estimate'
@@ -237,8 +244,18 @@ export async function askWeb(db: Db, q: WebQuestion, signal: AbortSignal, now = 
     emitChange('admin');
     return { ...base, answer: '', fields: q.fields.map((field) => ({ field })), status: 'blocked' };
   }
-  const reply = parseWebReply(q.category, text);
+  const reply = parseWebReply(q.category, text, q.question);
   if (!reply && config.DEBUG_DUMPS) await saveDebugHtml(store, page.html, `web-sem-json-${q.category}`);
+  // Sem resposta nenhuma: não grava (não conta como perguntado); tenta de novo mais tarde, até EMPTY_TRIES vezes.
+  if (reply) emptyReplies.delete(q.key);
+  else {
+    const tries = (emptyReplies.get(q.key)?.tries ?? 0) + 1;
+    if (tries < EMPTY_TRIES) {
+      emptyReplies.set(q.key, { tries, until: now() + EMPTY_RETRY_MS });
+      return { ...base, answer: '', fields: q.fields.map((field) => ({ field })), status: 'none' };
+    }
+    emptyReplies.delete(q.key);
+  }
   const fields = q.fields.map((field) => {
     const value = reply?.values[field];
     return { field, ...(value !== undefined && { value }) };
@@ -287,6 +304,57 @@ export async function askWeb(db: Db, q: WebQuestion, signal: AbortSignal, now = 
     ...(reply?.confidence && { confidence: reply.confidence }),
     status: fields.some((f) => f.value !== undefined) ? 'ok' : 'none',
   };
+}
+
+/**
+ * Relê as respostas guardadas quando o leitor da resposta muda (WEB_PARSER_VERSION): recupera o que o leitor antigo
+ * perdia, sem perguntar de novo. As de página sem resposta nenhuma saem (voltam à fila para perguntar de novo).
+ */
+export function rereadWebAnswers(db: Db, force = false): { changed: number; requeued: number } {
+  const stamp = String(WEB_PARSER_VERSION);
+  if (!force && getMeta(ready(db), 'web-parser') === stamp) return { changed: 0, requeued: 0 };
+  const rows = db.prepare("SELECT product_key, field, category, question, answer, value FROM sheet_web WHERE answer <> ''").all() as {
+    product_key: string; field: string; category: CategoryId; question: string; answer: string; value: string | null;
+  }[];
+  const update = db.prepare("UPDATE sheet_web SET value = ?, status = ? WHERE product_key = ? AND field = ?");
+  const remove = db.prepare('DELETE FROM sheet_web WHERE product_key = ? AND field = ?');
+  const noneKeys = new Map<string, string>();
+  const parsed = new Map<string, ReturnType<typeof parseWebReply>>();
+  let changed = 0;
+  let requeuedLists = 0;
+  db.exec('BEGIN');
+  try {
+    for (const r of rows) {
+      const k = `${r.category}|${r.answer}|${r.question}`;
+      if (!parsed.has(k)) parsed.set(k, parseWebReply(r.category, r.answer, r.question));
+      const reply = parsed.get(k);
+      // Lista vazia num pedido antigo (o modelo trazia []): não dá para saber se é "não tem"; volta à fila para perguntar com o modelo novo.
+      const key = noneKeys.get(`${r.category}|${r.field}`) ?? (() => {
+        const w = webKeys(r.category).find((x) => x.field === r.field);
+        const name = w && w.type === 'list' && w.none !== undefined ? w.key : '';
+        noneKeys.set(`${r.category}|${r.field}`, name);
+        return name;
+      })();
+      const rv = key ? reply?.raw[key] : undefined;
+      if (r.value === null && Array.isArray(rv) && !rv.length && r.question.includes(`"${key}":[]`)) {
+        remove.run(r.product_key, r.field);
+        requeuedLists++;
+        continue;
+      }
+      const v = reply?.values[r.field];
+      const value = v === undefined ? null : JSON.stringify(v);
+      if (value === r.value) continue;
+      update.run(value, value === null ? 'none' : 'ok', r.product_key, r.field);
+      changed++;
+    }
+    const requeued = Number(db.prepare("DELETE FROM sheet_web WHERE answer = ''").run().changes) + requeuedLists;
+    setMeta(db, 'web-parser', stamp);
+    db.exec('COMMIT');
+    return { changed, requeued };
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
 }
 
 const valueText = (r: WebAnswer) =>

@@ -4,6 +4,14 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+- Busca na web, a partir da revisão das fichas "precisam de você": o leitor da resposta aceita chaves com espaços em volta (a IA às vezes devolve `"ventoinhas   "`), 0 ou "Não" no turbo do processador e no boost da placa de vídeo (vale o clock base; a pergunta agora pede isso) e `[]` como "não tem" nos radiadores do gabinete (o modelo da pergunta passou a começar listas em null). O nome do produto na pergunta não fica mais só "Intel Core" quando o título separa o modelo com " - ", e "3,7ghz" não é cortado na vírgula. Página sem resposta nenhuma é perguntada de novo depois de 6 h (até 3 vezes), em vez de ir direto para a revisão. Ao subir, o servidor relê as respostas guardadas com o leitor novo (`WEB_PARSER_VERSION`) e devolve à fila as que vieram sem resposta.
+
+- Fichas: o produto com um opcional vazio que a web não pergunta (código do chip da placa de vídeo) ficava parado, fora da fila da web e fora do "precisa de você". Agora aparece no "precisa de você".
+
+- Fichas de memória: página que dá a capacidade por pente e o kit só em outro lugar (como "32GB (2x16GB)" no conteúdo da embalagem) agora é lida como o kit, quando o pente dele bate com a capacidade lida. Leitor na versão 18 (as páginas guardadas são relidas ao subir).
+
+- Admin, rotina de fichas: o andamento por loja arredonda para baixo e só mostra 100% com a fila vazia. Os itens da fila parados por erro na página aparecem à parte ("X com erro na página, começam a voltar às HH:MM").
+
 - Card da busca: as ações viraram três botões só com ícone e do mesmo tamanho (adicionar ou trocar na montagem, acompanhar preço e comparar), com o nome na dica e no leitor de tela.
 
 - Conta: uma alteração que o servidor recusa como inválida (uma chave que deixou de ser sincronizada, por exemplo) sai da fila de sincronização em vez de travar as outras com "Sincronização pendente".

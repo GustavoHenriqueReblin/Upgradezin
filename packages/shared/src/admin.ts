@@ -307,6 +307,9 @@ export interface SheetStoreStatus {
   read: number;
   /** Páginas na fila: anúncios desta loja de produtos sem ficha completa, ainda não lidos. */
   queue: number;
+  /** Da fila, os que estão de fora por erro na página (voltam depois da espera) e quando o primeiro volta. */
+  waiting: number;
+  retryAt: string | null;
   /** Fichas lidas na última hora (rotina e admin) e a última. */
   lastHour: number;
   lastAt: string | null;

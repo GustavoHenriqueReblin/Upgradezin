@@ -12,6 +12,7 @@ import {
   readTitle,
   SHEET_DEFAULTS,
   titleBlocksDefault,
+  webKeys,
   sheetFields,
   SHEET_FIELDS,
   type CategoryId,
@@ -433,6 +434,8 @@ export function productSheet(db: Db, store: StoreId, sku: string): (ProductSheet
  */
 export function catalogProducts(db: Db, category: CategoryId, since: string, keys?: string[]): SheetProduct[] {
   if (keys?.length === 0) return [];
+  /** Campos que a busca na web pergunta nesta categoria. */
+  const askable = new Set(webKeys(category).map((k) => k.field));
   const keyFilter = keys ? `AND COALESCE(l.product_key, 'id:' || l.id) IN (${keys.map(() => '?').join(', ')})` : '';
   const rows = ready(db)
     .prepare(
@@ -505,8 +508,10 @@ export function catalogProducts(db: Db, category: CategoryId, since: string, key
       state: completedManually ? 'complete' : !sources.length ? 'unread' : merged.missing.length ? 'incomplete' : 'complete',
       ...merged,
       gaps,
-      // Algum campo vazio (principal ou opcional), as páginas todas lidas e a web já perguntada de todos: só uma pessoa completa.
-      needsHuman: !completedManually && !!sources.length && empty.length > 0 && g.every((r) => r.page !== null) && empty.every((f) => web.get(key)?.asked.has(f)),
+      // Algum campo vazio (principal ou opcional), as páginas todas lidas e a web já perguntada de todos os que ela pergunta: só uma
+      // pessoa completa. Opcional que a web não pergunta (código do chip) não segura: senão o produto não ia para a web nem para cá.
+      needsHuman: !completedManually && !!sources.length && g.every((r) => r.page !== null)
+        && empty.some((f) => askable.has(f) || merged.missing.includes(f)) && empty.every((f) => !askable.has(f) || web.get(key)?.asked.has(f)),
     };
   });
 }

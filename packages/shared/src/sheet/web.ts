@@ -10,6 +10,9 @@ import { SHEET_FIELDS, type SheetField, type SheetValue, type SheetValues } from
  *   {"produto": "...", "<campo>": null, ..., "confianca": null}
  */
 
+/** Versão do leitor da resposta: mudou, o servidor relê as respostas guardadas (recupera o que o leitor antigo perdia). */
+export const WEB_PARSER_VERSION = 2;
+
 /** Uma chave do JSON de resposta. */
 export interface WebKey {
   /** Chave no JSON (português, com a unidade: "altura_mm"). */
@@ -23,6 +26,8 @@ export interface WebKey {
   max?: number;
   /** Normaliza o texto ou cada item da lista ("LGA 1700" -> "LGA1700"); undefined: fora. */
   item?: (s: string) => string | undefined;
+  /** "Não tem" do campo (lista vazia na resposta vale isto). */
+  none?: SheetValue;
 }
 
 /** Faixa pela unidade do campo. */
@@ -202,7 +207,7 @@ export function webKeys(category: CategoryId): WebKey[] {
     const k = KEYS[category][f.key];
     if (!k) return [];
     const range = f.unit ? RANGE[f.unit] : undefined;
-    return [{ field: f.key, type: f.type, ...(range && { min: range[0], max: range[1] }), ...k }];
+    return [{ field: f.key, type: f.type, ...(range && { min: range[0], max: range[1] }), ...(f.none !== undefined && { none: f.none }), ...k }];
   });
 }
 
@@ -212,17 +217,21 @@ export function webKeys(category: CategoryId): WebKey[] {
  * código do fabricante do fim.
  */
 export function webProductName(title: string): string {
-  const parts = title.split(/,|\s-\s/).map((s) => s.trim()).filter(Boolean);
-  const first = parts[0];
+  // Vírgula entre números ("3,7ghz") não separa.
+  const parts = title.split(/,(?!\d)|\s-\s/).map((s) => s.trim()).filter(Boolean);
   const typeOnly = /^(?:water cooler|cooler|gabinete(?: gamer)?|placa de v[ií]deo|placa[ -]+m[aã]e|mem[oó]ria(?: ram)?|ssd|fonte|processador)$/i;
-  const head = (first && typeOnly.test(first) ? parts[1] ?? first : first ?? title)
+  let at = parts[0] && typeOnly.test(parts[0]) && parts[1] ? 1 : 0;
+  let first = parts[at] ?? title;
+  // Sem número, o nome não identifica o modelo ("Processador Intel Core - i3-6100 - ..."): junta o pedaço seguinte.
+  while (!/\d/.test(first) && parts[at + 1]) first = `${first} ${parts[++at]}`;
+  const head = first
     .replace(/^(water\s*cooler|cooler(\s+(para\s+)?processador)?|gabinete(\s+gamer)?|placa\s+de\s+v[ií]deo|placa[\s-]+m[aã]e|mem[oó]ria(\s+ram)?|ssd|fonte(\s+de\s+alimenta[cç][aã]o)?|processador)\s+/i, '')
     .replace(/\b(para\s+processador|universal|intel\s*[/&-]?\s*amd|amd\s*[/&-]?\s*intel|gamer|a?rgb|led|preto|preta|branco|branca|black|white)\b/gi, ' ')
     .replace(/\bt[dg]p\s*\d+\s*w\b|\b\d{2,3}\s*mm\b|\b\d+\s*fans?\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   // Código do fabricante no fim ("RR-212A-20PD-R1"), se não estiver no começo.
-  const last = parts.length > 1 ? parts[parts.length - 1]!.replace(/\s*-?\s*open\s*box$/i, '') : '';
+  const last = parts.length > at + 1 ? parts[parts.length - 1]!.replace(/\s*-?\s*open\s*box$/i, '') : '';
   const code = /^[A-Z0-9][A-Z0-9-]{5,}$/i.test(last) && /\d/.test(last) && !head.toLowerCase().includes(last.toLowerCase()) ? ` ${last}` : '';
   return `${head}${code}`.replace(/\s+/g, ' ').trim();
 }
@@ -250,16 +259,19 @@ export function webPrompt(category: CategoryId, title: string, fields?: readonly
     ? ` Confirme a variante pelo título ("${title.slice(0, 180)}")${identity ? ` e pela identificação ("${identity.slice(0, 100)}")` : ''}. Busque também no manual ou datasheet. `
       + (category === 'motherboard' ? 'Separe o slot gráfico x16 do M.2. ' :
         category === 'ssd' ? 'Use a mesma capacidade e o mesmo código do SSD. ' :
-        category === 'case' ? 'Procure folgas da GPU e do cooler e posições de radiador na tabela técnica. ' : '')
+        category === 'case' ? 'Procure folgas da GPU e do cooler e posições de radiador na tabela técnica. ' :
+        category === 'cpu' ? 'Sem turbo: clock_boost_ghz igual ao clock_base_ghz. ' :
+        category === 'gpu' ? 'Sem boost: clock_boost_mhz igual ao clock_base_mhz. ' : '')
     : ' ';
   const legend = keys
     .filter((k) => k.options)
     .map((k) => `${k.key}: ${[...new Set(Object.values(k.options!))].join(' | ')}`)
     .join('; ');
-  const template = JSON.stringify({ produto: name, ...Object.fromEntries(keys.map((k) => [k.key, k.type === 'list' ? [] : null])), confianca: null });
+  // Listas também começam em null: assim [] na resposta quer dizer "não tem" (e não "não preenchi").
+  const template = JSON.stringify({ produto: name, ...Object.fromEntries(keys.map((k) => [k.key, null])), confianca: null });
   return (
     `Preencha este JSON com as especificações ${NOUN[category]} ${name}, pelo site do fabricante.${search}` +
-    'Não invente: o que não achar fica null. Se o produto não tem o recurso (sem Wi-Fi, sem conector de 16 pinos), responda "Não", 0 ou false; null só quando não souber. ' +
+    'Não invente: o que não achar fica null. Se o produto não tem o recurso (sem Wi-Fi, sem conector de 16 pinos, sem suporte a radiador), responda "Não", 0, false ou []; null só quando não souber. ' +
     'Números sem unidade; listas com os itens. confianca: alta, media ou baixa. ' +
     (legend ? `Opções: ${legend}. ` : '') +
     'RESPONDA SOMENTE O JSON PREENCHIDO, VÁLIDO, SEM TEXTO ANTES OU DEPOIS. ' +
@@ -295,7 +307,7 @@ function tryJson(s: string): Record<string, unknown> | undefined {
 /** Chave a chave, quando o JSON não abre: "chave": valor (texto, lista, número, null ou booleano). */
 function looseObject(s: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const m of s.matchAll(/"(\w+)"\s*:\s*("(?:[^"\\]|\\.)*"|\[[^\]]*\]|-?\d+(?:[.,]\d+)?|null|true|false)/g)) {
+  for (const m of s.matchAll(/"\s*(\w+)\s*"\s*:\s*("(?:[^"\\]|\\.)*"|\[[^\]]*\]|-?\d+(?:[.,]\d+)?|null|true|false)/g)) {
     if (m[1]! in out) continue;
     const raw = m[2]!;
     out[m[1]!] = raw.startsWith('[')
@@ -351,13 +363,27 @@ export function acceptSheetValue(category: CategoryId, field: string, v: unknown
   return k ? acceptWebValue(k, v) : undefined;
 }
 
+/** Chaves com espaços em volta ("ventoinhas   "), como a IA às vezes devolve: valem como a chave sem eles. */
+const trimKeys = (o: Record<string, unknown>) => {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(o)) {
+    const key = k.trim();
+    if (!(key in out) || out[key] === null || out[key] === undefined) out[key] = v;
+  }
+  return out;
+};
+
+/** Sem turbo, a IA às vezes responde 0 (ou "Não") no turbo: vale o clock base. */
+const NO_BOOST = (v: unknown) => v === 0 || v === '0' || v === false || (typeof v === 'string' && NO.test(v.trim()));
+
 /**
  * A resposta no texto da página: o último JSON que começa em {"produto" (o pedido também aparece antes,
  * com tudo null) até a última } depois dele; sem o texto da tela que o buscador mistura; com as aspas de
  * polegada consertadas; se ainda não abrir, lido chave a chave. Cada chave da categoria é validada.
  * Confiança baixa: nenhum valor entra. undefined: a página não trouxe a resposta.
+ * `question`: o pedido feito. Lista vazia vale "não tem" só se o pedido trazia a chave em null (pedidos antigos traziam []).
  */
-export function parseWebReply(category: CategoryId, text: string): WebReply | undefined {
+export function parseWebReply(category: CategoryId, text: string, question?: string): WebReply | undefined {
   const clean = text.replace(SCREEN_TEXT, ' ');
   const keys = webKeys(category);
   const empty = (v: unknown) => v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length);
@@ -367,7 +393,7 @@ export function parseWebReply(category: CategoryId, text: string): WebReply | un
     if (end <= start) continue;
     const body = clean.slice(start, end + 1);
     const first = body.slice(0, body.indexOf('}') + 1);
-    const raw = tryJson(first) ?? tryJson(body) ?? looseObject(first);
+    const raw = trimKeys(tryJson(first) ?? tryJson(body) ?? looseObject(first));
     // O pedido repetido: tudo vazio e sem confiança.
     if (keys.every((k) => empty(raw[k.key])) && empty(raw.confianca)) continue;
     const conf = String(raw.confianca ?? '').toLowerCase().trim();
@@ -375,9 +401,13 @@ export function parseWebReply(category: CategoryId, text: string): WebReply | un
     const values: SheetValues = {};
     if (confidence !== 'low')
       for (const k of keys) {
-        const v = acceptWebValue(k, raw[k.key]);
+        const r = raw[k.key];
+        const v = acceptWebValue(k, r);
         if (v !== undefined) values[k.field] = v;
+        else if (Array.isArray(r) && !r.length && k.none !== undefined && !question?.includes(`"${k.key}":[]`)) values[k.field] = k.none;
       }
+    if (category === 'cpu' && values.boostGhz === undefined && values.baseGhz !== undefined && NO_BOOST(raw.clock_boost_ghz)) values.boostGhz = values.baseGhz;
+    if (category === 'gpu' && values.boostMhz === undefined && values.baseMhz !== undefined && NO_BOOST(raw.clock_boost_mhz)) values.boostMhz = values.baseMhz;
     return { values, ...(confidence && { confidence }), raw };
   }
   return undefined;

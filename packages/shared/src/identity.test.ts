@@ -148,15 +148,15 @@ describe('mesmo produto em lojas diferentes', () => {
   it('processador: mesmo modelo e a descrição do título sem contradição é o mesmo produto, com ou sem part number e com códigos de embalagem diferentes', () => {
     const cpu = (id: string, store: StoreId, title: string, mpn?: string) => item(id, store, title, { mpn, specs: extractCpuSpecs(title) });
     const r = identifyProducts([
-      cpu('pichau-pof', 's2', 'Processador AMD Ryzen 7 5800X3D, 8-Core, 16-Threads, 3.4GHz (4.5GHz Turbo), Cache 100MB, AM4, 100-100000651POF', '100-100000651POF'),
-      cpu('kabum-pof', 's1', 'Processador AMD Ryzen 7 5800X3D, 3.4GHz (4.5GHz Max Turbo), Cache 100MB, 8 Núcleos, 16 Threads, AM4, Sem Vídeo Integrado - 100-100000651POF', '100-100000651POF'),
-      cpu('pichau-wof', 's2', 'Processador AMD Ryzen 7 5800X3D, 8-Core, 16-Threads, 3.4GHz (4.5GHz Turbo), Cache 100MB, AM4, 100-100000651WOF', '100-100000651WOF'),
-      cpu('tera-aniv', 's3', 'Processador AMD Ryzen 7 5800X3D Anniversary Edition, 3.4GHz (4.5GHz Turbo), 8-Cores 16-Threads, AM4, Sem Cooler, Sem vídeo'),
-      cpu('tera', 's3', 'Processador AMD Ryzen 7 5800X3D, 3.4GHz (4.5GHz Turbo), 8-Cores 16-Threads, AM4, Sem Cooler, Sem vídeo'),
+      cpu('s2-pof', 's2', 'Processador AMD Ryzen 7 5800X3D, 8-Core, 16-Threads, 3.4GHz (4.5GHz Turbo), Cache 100MB, AM4, 100-100000651POF', '100-100000651POF'),
+      cpu('s1-pof', 's1', 'Processador AMD Ryzen 7 5800X3D, 3.4GHz (4.5GHz Max Turbo), Cache 100MB, 8 Núcleos, 16 Threads, AM4, Sem Vídeo Integrado - 100-100000651POF', '100-100000651POF'),
+      cpu('s2-wof', 's2', 'Processador AMD Ryzen 7 5800X3D, 8-Core, 16-Threads, 3.4GHz (4.5GHz Turbo), Cache 100MB, AM4, 100-100000651WOF', '100-100000651WOF'),
+      cpu('s3-aniv', 's3', 'Processador AMD Ryzen 7 5800X3D Anniversary Edition, 3.4GHz (4.5GHz Turbo), 8-Cores 16-Threads, AM4, Sem Cooler, Sem vídeo'),
+      cpu('s3', 's3', 'Processador AMD Ryzen 7 5800X3D, 3.4GHz (4.5GHz Turbo), 8-Cores 16-Threads, AM4, Sem Cooler, Sem vídeo'),
       cpu('outro', 's3', 'Processador AMD Ryzen 7 5800X, 3.8GHz (4.7GHz Turbo), 8-Cores 16-Threads, AM4, Sem Cooler, Sem vídeo'), // outro modelo
     ]);
-    expect(together(r.exact)).toEqual([['kabum-pof', 'pichau-pof', 'pichau-wof', 'tera', 'tera-aniv'], ['outro']]);
-    expect(r.exact.get('tera')).toBe('100100000651POF'); // a chave continua a do part number
+    expect(together(r.exact)).toEqual([['outro'], ['s1-pof', 's2-pof', 's2-wof', 's3', 's3-aniv']]);
+    expect(r.exact.get('s3')).toBe('100100000651POF'); // a chave continua a do part number
   });
 
   it('processador: com e sem cooler do mesmo modelo ficam separados; clock diferente no título não junta', () => {

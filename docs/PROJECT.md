@@ -220,7 +220,6 @@ ADRs completos em ARCHITECTURE §15. As principais:
 
 | Problema | Efeito | Situação |
 |---|---|---|
-| Admin arredonda o progresso das fichas para 100% com itens na fila | Confunde (os itens podem estar parados por erro) | Mostrar "X com erro, voltam às HH:MM" e não arredondar para 100% |
 | As ofertas das dicas (`picks.ts`) têm ranking próprio | Duas lógicas de escolha (dicas e orçamento) | Unificar com o motor do orçamento |
 | Texto da dica de placa de vídeo cita chips sem saber a memória de vídeo de cada um | A frase pode citar um chip sem versão com memória suficiente (as ofertas e a busca já filtram) | Falta uma tabela de memória de vídeo por chip |
 | Orçamento ainda em refino | Disponível na tela inicial e no Identificar gargalo | Refinar: preço acima do normal, qualidade por modelo, mais avaliações |
@@ -228,7 +227,6 @@ ADRs completos em ARCHITECTURE §15. As principais:
 | Processador sem informação de cooler na caixa (~100 ofertas) | O orçamento compra um cooler à parte por segurança | Ler da ficha quando houver |
 | Campos opcionais pouco publicados (fases do VRM, cache DRAM) | Depois da web, podem encher a revisão manual | Se ficar demais: marcar campos que não vão para a revisão |
 | Fila da web com ~7 mil perguntas depois dos campos novos | ~10 dias rodando no intervalo de 90–150 s | Esperado |
-| Uma memória "32GB (2x16GB)" lida como 16 GB (XPG Spectrix D35G) | Caso isolado no leitor do título | A corrigir |
 | Sem ESLint nem Prettier configurados | Estilo depende de quem escreve | Seguir o estilo dos arquivos vizinhos |
 
 ---

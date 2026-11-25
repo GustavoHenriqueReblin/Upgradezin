@@ -146,7 +146,7 @@ export const SHEET_FIELDS: Record<CategoryId, SheetField[]> = {
     f('front', 'Frente', 'text'),
     f('fansIncluded', 'Ventoinhas inclusas', 'int', undefined, undefined, NO_COUNT),
     f('fansMax', 'Ventoinhas máx.', 'int'),
-    f('radiators', 'Radiadores', 'list', 'mm'),
+    f('radiators', 'Radiadores', 'list', 'mm', undefined, NO_TEXT),
   ],
   cooler: [
     f('type', 'Tipo', 'text', undefined, M),

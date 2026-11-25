@@ -6,6 +6,7 @@ import { saveCollection } from '../prices/prices.ts';
 import { savePage } from '../prices/sheets.ts';
 import { listProducts } from './products.ts';
 import { sheetStoreStatus } from './sheets.ts';
+import { PAGE_ERROR_SKIP_MS, recordPageError } from '../prices/page-errors.ts';
 
 const offer = (store: StoreId, sku: string, title: string, specs: Specs = {}, extra: Partial<Offer> = {}): Offer =>
   ({ store, storeSku: sku, title, url: `https://${store}.example/${sku}`, priceCash: 1000, inStock: true, specs, modelKey: `m${sku}`, collectedAt: '', ...extra }) as Offer;
@@ -64,8 +65,19 @@ describe('produtos do catálogo (admin)', () => {
     recordAttempt(db, { store: 's1', at: at(5 * 60_000), kind: 'term', origin: 'routine', category: 'gpu', term: 'x', status: 'ok', count: 3, ms: 900 }); // termo não conta
     const st = sheetStoreStatus(db, [{ id: 's1', name: 'Loja S1', canRead: true }, { id: 's2', name: 'Loja S2', canRead: true }], NOW);
     expect(st).toEqual([
-      { store: 's1', name: 'Loja S1', canRead: true, read: 2, queue: 1, lastHour: 1, lastAt: at(10 * 60_000) }, // falta o g2
-      { store: 's2', name: 'Loja S2', canRead: true, read: 0, queue: 1, lastHour: 0, lastAt: null }, // o processador; o cooler saiu do catálogo
+      { store: 's1', name: 'Loja S1', canRead: true, read: 2, queue: 1, waiting: 0, retryAt: null, lastHour: 1, lastAt: at(10 * 60_000) }, // falta o g2
+      { store: 's2', name: 'Loja S2', canRead: true, read: 0, queue: 1, waiting: 0, retryAt: null, lastHour: 0, lastAt: null }, // o processador; o cooler saiu do catálogo
     ]);
+  });
+
+  it('da fila, os que deram erro na página há pouco ficam de espera, com a hora em que voltam', () => {
+    const db = catalog();
+    const at = new Date(NOW - 3_600_000);
+    recordPageError(db, 's1', 'g2', 'erro', at); // na fila, deu erro há 1 h
+    recordPageError(db, 's1', 'g1', 'erro', at); // já lida: não conta
+    recordPageError(db, 's2', 'p1', 'erro', new Date(NOW - PAGE_ERROR_SKIP_MS - 1)); // a espera já passou: volta na próxima
+    const [s1, s2] = sheetStoreStatus(db, [{ id: 's1', name: 'Loja S1', canRead: true }, { id: 's2', name: 'Loja S2', canRead: true }], NOW);
+    expect(s1).toMatchObject({ queue: 1, waiting: 1, retryAt: new Date(at.getTime() + PAGE_ERROR_SKIP_MS).toISOString() });
+    expect(s2).toMatchObject({ queue: 1, waiting: 0, retryAt: null });
   });
 });

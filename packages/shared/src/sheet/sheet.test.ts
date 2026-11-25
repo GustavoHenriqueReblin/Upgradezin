@@ -268,6 +268,11 @@ describe('leitor da ficha', () => {
     // Memória: capacidade sem rótulo, "Densidade", frequência sem unidade.
     expect(readSheet('ram', lines('- 32 GB (2 x 16 GB)', '- Velocidade: 6000'))).toMatchObject({ capacityGb: 32, modules: 2, mhz: 6000 });
     expect(readSheet('ram', 'Densidade: 4GB').capacityGb).toBe(4);
+    // Kit com a capacidade por pente na ficha e o kit só no conteúdo da embalagem (XPG Spectrix D35G na S1).
+    const d35g = lines('Geral:', '- Capacidade: 16GB', 'Conteúdo da embalagem:', '- Memória XPG Spectrix D35G, RGB, 32GB (2x16GB)');
+    expect(readSheet('ram', d35g)).toMatchObject({ capacityGb: 32, modules: 2 });
+    // Um kit citado de outro tamanho (outra versão do produto) não muda o pente avulso.
+    expect(readSheet('ram', lines('- Capacidade: 16GB', 'Veja também: 64GB (2x32GB)'))).toMatchObject({ capacityGb: 16, modules: 1 });
     // Fonte: conectores numa linha só, com vírgula; padrão solto no texto.
     expect(readSheet('psu', '- Conectores: 1x 20+4 Pinos ATX, 2x 4+4 Pinos CPU, 2x Sata com 4 portas, 1x Molex com 4 portas, 2x 6+2 Pinos PCIe')).toMatchObject({ eps: 2, sata: 8, pcie8: 2 });
     expect(readSheet('psu', 'Fonte Pcyes Atx 500w Real Electro V2').standard).toBe('ATX');
@@ -532,7 +537,7 @@ describe('busca na web: o JSON da categoria preenchido pela IA, e a estimativa',
     expect(q).toContain('Preencha este JSON com as especificações do cooler Hi Level Midnight Lite');
     expect(q).toContain('RESPONDA SOMENTE O JSON PREENCHIDO, VÁLIDO, SEM TEXTO ANTES OU DEPOIS.');
     expect(q).toContain('tipo: ar | water');
-    expect(q).toContain('{"produto":"Hi Level Midnight Lite","tipo":null,"altura_mm":null,"radiador_mm":null,"tdp_w":null,"ruido_dba":null,"soquetes":[],"ventoinhas":null,"heatpipes":null,"ventoinha_mm":null,"confianca":null}');
+    expect(q).toContain('{"produto":"Hi Level Midnight Lite","tipo":null,"altura_mm":null,"radiador_mm":null,"tdp_w":null,"ruido_dba":null,"soquetes":null,"ventoinhas":null,"heatpipes":null,"ventoinha_mm":null,"confianca":null}');
     // Todas as categorias cabem no endereço da busca.
     for (const c of ['cpu', 'motherboard', 'gpu', 'ram', 'ssd', 'psu', 'case', 'cooler'] as const) {
       expect(webKeys(c).length).toBeGreaterThan(3);
@@ -701,8 +706,30 @@ describe('"não tem" × "não sei" e os campos novos', () => {
     expect(readTitle('motherboard', 'Placa Mãe Gigabyte X870M Aorus Elite Wifi7, DDR5').wifi).toBe('Wi-Fi 7');
   });
 
+  it('web: o que o leitor da resposta perdia (fichas "precisam de você" de produtos vendidos pela loja)', () => {
+    // Chave com espaços em volta, como a IA às vezes devolve.
+    expect(parseWebReply('cooler', '{"produto":"Segotep Bezer 240","tipo":"water","radiador_mm":240,"ventoinhas   ":2,"confianca":"alta"}')?.values).toMatchObject({ fans: 2, radiatorMm: 240 });
+    expect(parseWebReply('cooler', '{"produto":"X" "ventoinhas   ": 2, "confianca":"alta"}')?.values).toMatchObject({ fans: 2 }); // JSON quebrado, lido chave a chave
+    // Processador sem turbo: 0 no turbo vale o clock base.
+    expect(parseWebReply('cpu', '{"produto":"Intel Core i3-8100","clock_base_ghz":3.6,"clock_boost_ghz":0,"cache_l3_mb":6,"confianca":"alta"}')?.values).toMatchObject({ baseGhz: 3.6, boostGhz: 3.6 });
+    expect(webPrompt('cpu', 'Processador Intel Core i3-8100', ['boostGhz'])).toContain('Sem turbo: clock_boost_ghz igual ao clock_base_ghz.');
+    expect(parseWebReply('gpu', '{"produto":"GT 730","clock_base_mhz":902,"clock_boost_mhz":"Não","confianca":"alta"}')?.values).toMatchObject({ baseMhz: 902, boostMhz: 902 });
+    expect(parseWebReply('gpu', '{"produto":"GT 730","clock_base_mhz":902,"clock_boost_mhz":null,"confianca":"alta"}')?.values.boostMhz).toBeUndefined(); // null: não sabe, não chuta
+    expect(webPrompt('gpu', 'Placa de Vídeo GT 730', ['boostMhz'])).toContain('Sem boost: clock_boost_mhz igual ao clock_base_mhz.');
+    // Lista vazia: "não tem" só quando o pedido trazia a chave em null (os pedidos antigos traziam [] no modelo).
+    const asked = webPrompt('case', 'Gabinete TGT H100, Preto, TGT-H100-BK', ['radiators']);
+    expect(asked).toContain('"radiadores_mm":null');
+    const reply = '{"produto":"TGT H100","radiadores_mm":[],"confianca":"alta"}';
+    expect(parseWebReply('case', reply, asked)?.values).toEqual({ radiators: 'Não' });
+    expect(parseWebReply('case', reply, asked.replace('"radiadores_mm":null', '"radiadores_mm":[]'))?.values).toEqual({});
+    expect(parseWebReply('case', '{"produto":"X","placas_mae":[],"confianca":"alta"}', asked)?.values).toEqual({}); // campo sem "não tem"
+    // Nome da pergunta: sem número, junta o pedaço seguinte; vírgula entre números não corta.
+    expect(webProductName('Processador Intel Core - i3-6100 - 3.7ghz - 3mb LGA  1151 Oem')).toBe('Intel Core i3-6100');
+    expect(webProductName('Processador Intel Core i3 6100 3,7ghz Cache 3mb LGA  1151 - Oem')).toBe('Intel Core i3 6100 3,7ghz Cache 3mb LGA 1151');
+  });
+
   it('web: "Não" é "não tem"; null é "não sei"; o pedido explica a diferença', () => {
-    expect(webPrompt('motherboard', 'Placa Mãe X')).toContain('responda "Não", 0 ou false; null só quando não souber');
+    expect(webPrompt('motherboard', 'Placa Mãe X')).toContain('responda "Não", 0, false ou []; null só quando não souber');
     const r = parseWebReply('motherboard', '{"produto":"X","wifi":"Não","bluetooth_versao":"não","fases_vrm":"14 + 2","bios_flashback":false,"dissipador_vrm":null,"confianca":"alta"}');
     expect(r?.values).toEqual({ wifi: 'Não', bluetooth: 'Não', vrmPhases: '14+2', biosFlashback: false });
     expect(parseWebReply('gpu', '{"produto":"X","conectores_alimentacao":"2 x 8-pin","confianca":"media"}')?.values).toEqual({ powerConnectors: '2x 8 pinos' });

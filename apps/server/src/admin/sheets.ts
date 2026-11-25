@@ -1,6 +1,7 @@
 import { ENABLED_CATEGORIES } from '@upgradezin/shared';
 import type { SheetPageText, SheetProduct, SheetProductFilter, SheetProductPage, SheetStoreStatus, StoreId } from '@upgradezin/shared';
 import type { Db } from '../db/db.ts';
+import { PAGE_ERROR_SKIP_MS } from '../prices/page-errors.ts';
 import { catalogProducts, pageText, SHEET_SCOPE_DAYS, sheetQueueSizes } from '../prices/sheets.ts';
 import { pageOf } from './paging.ts';
 
@@ -17,9 +18,18 @@ export function sheetStoreStatus(db: Db, stores: { id: StoreId; name: string; ca
   const hour = db
     .prepare(`SELECT store, sum(at >= ?) AS last_hour, max(at) AS last_at FROM store_attempts WHERE kind = 'sheet' AND status = 'ok' GROUP BY store`)
     .all(new Date(now - 3_600_000).toISOString()) as { store: string; last_hour: number | null; last_at: string | null }[];
+  // Páginas ainda não lidas que deram erro há pouco: continuam na fila, mas a rotina só tenta de novo depois da espera.
+  const errors = db.prepare(`SELECT store, count(*) AS n, min(last_at) AS first FROM page_errors e WHERE last_at > ?
+    AND NOT EXISTS (SELECT 1 FROM sheet_pages p WHERE p.store = e.store AND p.store_sku = e.store_sku) GROUP BY store`)
+    .all(new Date(now - PAGE_ERROR_SKIP_MS).toISOString()) as { store: string; n: number; first: string }[];
   return stores.map((s) => {
     const h = hour.find((x) => x.store === s.id);
-    return { store: s.id, name: s.name, canRead: s.canRead, read: read.get(s.id) ?? 0, queue: queue.get(s.id) ?? 0, lastHour: h?.last_hour ?? 0, lastAt: h?.last_at ?? null };
+    const e = errors.find((x) => x.store === s.id);
+    const q = queue.get(s.id) ?? 0;
+    return {
+      store: s.id, name: s.name, canRead: s.canRead, read: read.get(s.id) ?? 0, queue: q, waiting: Math.min(e?.n ?? 0, q),
+      retryAt: e && q ? new Date(Date.parse(e.first) + PAGE_ERROR_SKIP_MS).toISOString() : null, lastHour: h?.last_hour ?? 0, lastAt: h?.last_at ?? null,
+    };
   });
 }
 
