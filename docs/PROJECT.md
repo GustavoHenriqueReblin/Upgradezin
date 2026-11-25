@@ -127,7 +127,7 @@ Tabelas antigas (`search_terms`, `term_runs`, `listing_terms`, `parts`, `part_co
 - Cada categoria tem campos fixos (`packages/shared/src/sheet/fields.ts`), **principais** (sem eles a ficha está incompleta) e **opcionais**.
 - Junção campo a campo: à mão > páginas das lojas > título > web > estimativa > padrão da categoria.
 - **"Não tem" × "não sei":** campo que o produto pode não ter tem um valor de "não tem" (`none`: "Não", 0 ou false); vazio é "não sei". O "não tem" automático cede para um valor de verdade de outra fonte; o à mão vale contra tudo.
-- Fila: a rotina abre só páginas de produto sem ficha completa; a busca na web pergunta de produto com campo vazio (principal ou opcional) ainda não perguntado, os que falta campo principal primeiro; o que nem a web completa vai para a revisão manual ("precisa de você").
+- Fila: a rotina abre só páginas de produto sem ficha completa; a busca na web pergunta de produto com campo vazio (principal ou opcional) ainda não perguntado, os que falta campo principal primeiro. O pedido inclui somente as lacunas e orienta a conferir o modelo exato em manuais e datasheets; o que nem a web completa vai para a revisão manual ("precisa de você").
 - Mudou o leitor ou a lista de campos: sobe `READER_VERSION` (`packages/shared/src/sheet/read.ts`, hoje 15) e o servidor relê todas as páginas guardadas ao subir, sem abrir as lojas.
 
 **Compatibilidade** (`packages/shared/src/compat.ts`, §17.1.1)

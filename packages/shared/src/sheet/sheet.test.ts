@@ -518,6 +518,10 @@ describe('busca na web: o JSON da categoria preenchido pela IA, e a estimativa',
     expect(webProductName('Cooler Processador Universal Hi Level Midnight Lite Tdp 95w')).toBe('Hi Level Midnight Lite');
     expect(webProductName('Cooler para Processador Cooler Master MasterAir MA410P, RGB 120mm, Intel-AMD, MAP-T4PN-220PC-R1')).toBe('Cooler Master MasterAir MA410P MAP-T4PN-220PC-R1');
     expect(webProductName('Gabinete Gamer Atx Msi Mag Pano 100r Pz ARGB Vidro Temperado Preto')).toBe('Atx Msi Mag Pano 100r Pz Vidro Temperado');
+    const shard = webPrompt('case', 'Gabinete Gamer, Aerocool Shard Acrylic, 67989', ['mbFormats', 'maxGpuMm'], { brand: 'Aerocool' });
+    expect(shard).toContain('do gabinete Aerocool Shard Acrylic');
+    expect(shard).toContain('placa_de_video_max_mm');
+    expect(shard).not.toContain('radiadores_mm');
     const q = webPrompt('cooler', 'Cooler Processador Universal Hi Level Midnight Lite Tdp 95w');
     expect(q).toContain('Preencha este JSON com as especificações do cooler Hi Level Midnight Lite');
     expect(q).toContain('RESPONDA SOMENTE O JSON PREENCHIDO, VÁLIDO, SEM TEXTO ANTES OU DEPOIS.');

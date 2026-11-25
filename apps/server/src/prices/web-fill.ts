@@ -29,7 +29,7 @@ import { catalogProducts, ready, SHEET_SCOPE_DAYS } from './sheets.ts';
 /**
  * Busca na web: completa o que nenhuma página das lojas nem o título trouxe. Para cada produto "só a
  * web completa" (ficha incompleta, com a página de todas as lojas lida), manda à IA do Google (Modo IA)
- * o JSON de resposta da categoria, com todos os campos da ficha em null, para ela devolver preenchido
+ * o JSON de resposta da categoria, com os campos em aberto, para ela devolver preenchido
  * (webPrompt), e lê cada chave validando tipo e faixa (parseWebReply). Resposta de confiança baixa, ou
  * sem o JSON, conta como sem resposta. Cada produto é perguntado uma vez: sheet_web guarda cada campo,
  * com ou sem valor, e o JSON da resposta como veio.
@@ -123,21 +123,25 @@ export interface WebQuestion {
  * já aparece na busca do site, e a web completa a ficha. Primeiro os que falta campo principal; depois
  * em estoque; depois o achado há menos tempo.
  */
-export function webQueue(db: Db, now = Date.now()): WebQuestion[] {
+export function webQueue(db: Db, now = Date.now(), retryKey?: string): WebQuestion[] {
   const since = new Date(now - SHEET_SCOPE_DAYS * 86_400_000).toISOString();
   const out: (WebQuestion & { main: boolean; inStock: boolean; first: string })[] = [];
   const asked = new Set((ready(db).prepare("SELECT product_key || '|' || field AS k FROM sheet_web").all() as { k: string }[]).map((r) => r.k));
   for (const category of ENABLED_CATEGORIES) {
     for (const p of catalogProducts(db, category, since)) {
       if (p.completedManually || p.state === 'unread' || !p.listings.every((l) => l.read)) continue;
-      const fields = webKeys(category).map((k) => k.field);
-      if (![...p.missing, ...p.gaps].some((f) => fields.includes(f) && !asked.has(`${p.key}|${f}`))) continue;
+      if (retryKey && p.key !== retryKey) continue;
+      const gaps = new Set([...p.missing, ...p.gaps]);
+      const fields = webKeys(category).map((k) => k.field).filter((field) => retryKey
+        ? gaps.has(field) || p.origin[field]?.from === 'estimate'
+        : gaps.has(field) && !asked.has(`${p.key}|${field}`));
+      if (!fields.length) continue;
       out.push({
         key: p.key,
         category,
         fields,
         title: p.title,
-        question: webPrompt(category, p.title),
+        question: webPrompt(category, p.title, fields, p.values),
         main: p.missing.length > 0,
         inStock: p.listings.some((l) => l.inStock),
         first: p.listings.map((l) => l.firstSeenAt).sort().pop() ?? '',
@@ -288,13 +292,11 @@ export async function webFillTick(now = Date.now()): Promise<void> {
 }
 
 /**
- * Pergunta agora (botão do admin), fora da agenda; respeita a pausa. Com `key`, refaz esse produto: apaga
- * as respostas dele e pergunta de novo os campos que faltam (o pedido do formato atual).
+ * Pergunta agora (botão do admin), fora da agenda; respeita a pausa. Com `key`, refaz os campos faltantes ou estimados do produto, preservando os valores encontrados.
  */
 export async function askNextNow(db: Db, key?: string): Promise<WebAnswer | null> {
   if (busy || Date.now() < pausedUntil) return null;
-  if (key) ready(db).prepare('DELETE FROM sheet_web WHERE product_key = ?').run(key);
-  const q = webQueue(db).find((x) => !key || x.key === key);
+  const [q] = webQueue(db, Date.now(), key);
   if (!q) return null;
   busy = true;
   try {

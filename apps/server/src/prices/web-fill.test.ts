@@ -70,12 +70,14 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
     expect(webQueue(db).map((q) => q.title)).toEqual(['Gabinete Gamer Pichau XYZ, Preto, PXG-100A', 'Gabinete Gamer Outro ABC, Mid Tower, ATX']);
   });
 
-  it('um pedido por produto com o JSON da categoria; os valores entram na ficha como "web" e o produto sai da fila', async () => {
+  it('um pedido por produto com o JSON dos campos em aberto; os valores entram na ficha como "web" e o produto sai da fila', async () => {
     const db = caseDb();
     const [q] = webQueue(db);
     expect(q).toMatchObject({ category: 'case' });
-    expect(q!.fields).toEqual(expect.arrayContaining(['formFactor', 'mbFormats', 'maxGpuMm', 'radiators']));
+    expect(q!.fields).toEqual(expect.arrayContaining(['formFactor', 'maxGpuMm', 'radiators']));
     expect(q!.question).toContain('do gabinete Pichau XYZ PXG-100A');
+    expect(q!.fields).not.toContain('mbFormats');
+    expect(q!.fields).not.toContain('dimensions');
     const urls: string[] = [];
     usePageLoader(async (_s, url) => (
       urls.push(url),
@@ -121,16 +123,17 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
     expect(webFillStatus(db)).toMatchObject({ answered: 0, empty: q.fields.length });
   });
 
-  it('refazer: apaga as respostas do produto e pergunta de novo', async () => {
+  it('refazer: mantém respostas úteis e pergunta de novo os campos em aberto', async () => {
     const db = caseDb();
     const q = webQueue(db)[0]!;
-    usePageLoader(async (_s, url) => ({ html: aiPage(q.question), url, title: '' }));
-    expect(await askWeb(db, q, signal())).toMatchObject({ status: 'none' });
+    usePageLoader(async (_s, url) => ({ html: aiPage(q.question, { produto: 'X', placa_de_video_max_mm: 380, confianca: 'alta' }), url, title: '' }));
+    expect(await askWeb(db, q, signal())).toMatchObject({ status: 'ok' });
     expect(webQueue(db)).toEqual([]);
     expect(await askNextNow(db)).toBeNull(); // nada na fila
     usePageLoader(async (_s, url) => ({ html: aiPage(q.question, { produto: 'X', tamanho: 'Mid Tower', confianca: 'alta' }), url, title: '' }));
     expect(await askNextNow(db, q.key)).toMatchObject({ key: q.key, status: 'ok' });
     expect(productSheet(db, 's1', '1')!.origin.formFactor).toMatchObject({ from: 'web' });
+    expect(productSheet(db, 's1', '1')!.values.maxGpuMm).toBe(380);
   });
 
   it('o buscador pede verificação: pausa a busca na web, não guarda (a pergunta volta depois)', async () => {

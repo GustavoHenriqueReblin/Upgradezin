@@ -3,7 +3,7 @@ import { SHEET_FIELDS, type SheetField, type SheetValue, type SheetValues } from
 
 /**
  * Busca na web: o que nenhuma página das lojas nem o título trouxe. Para cada categoria há um JSON de
- * resposta fixo, com todos os campos da ficha (chaves autoexplicativas, valores null). A IA do Google
+ * resposta com chaves autoexplicativas para os campos em aberto. A IA do Google
  * recebe esse JSON e o devolve preenchido; o código lê cada chave direto, só validando o tipo (número
  * sem unidade, uma das opções, lista) e a faixa. O que vier fora disso fica de fora: nunca chuta.
  *
@@ -178,7 +178,7 @@ const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>
     maxGpuMm: { key: 'placa_de_video_max_mm', min: 150, max: 600 },
     maxCoolerMm: { key: 'cooler_max_mm', min: 50, max: 200 },
     dimensions: { key: 'dimensoes_mm' },
-    front: { key: 'frente', options: opts('Mesh', 'Vidro', 'Fechada') },
+    front: { key: 'frente', options: opts('Mesh', 'Vidro', 'Fechada', 'Acrílico', 'Acrílico e ABS') },
     fansIncluded: { key: 'ventoinhas_inclusas', min: 0, max: 12 },
     fansMax: { key: 'ventoinhas_max', min: 1, max: 20 },
     radiators: { key: 'radiadores_mm', item: radiator },
@@ -213,7 +213,9 @@ export function webKeys(category: CategoryId): WebKey[] {
  */
 export function webProductName(title: string): string {
   const parts = title.split(/,|\s-\s/).map((s) => s.trim()).filter(Boolean);
-  const head = (parts[0] ?? title)
+  const first = parts[0];
+  const typeOnly = /^(?:water cooler|cooler|gabinete(?: gamer)?|placa de v[ií]deo|placa[ -]+m[aã]e|mem[oó]ria(?: ram)?|ssd|fonte|processador)$/i;
+  const head = (first && typeOnly.test(first) ? parts[1] ?? first : first ?? title)
     .replace(/^(water\s*cooler|cooler(\s+(para\s+)?processador)?|gabinete(\s+gamer)?|placa\s+de\s+v[ií]deo|placa[\s-]+m[aã]e|mem[oó]ria(\s+ram)?|ssd|fonte(\s+de\s+alimenta[cç][aã]o)?|processador)\s+/i, '')
     .replace(/\b(para\s+processador|universal|intel\s*[/&-]?\s*amd|amd\s*[/&-]?\s*intel|gamer|a?rgb|led|preto|preta|branco|branca|black|white)\b/gi, ' ')
     .replace(/\bt[dg]p\s*\d+\s*w\b|\b\d{2,3}\s*mm\b|\b\d+\s*fans?\b/gi, ' ')
@@ -237,19 +239,26 @@ const NOUN: Record<CategoryId, string> = {
 };
 
 /**
- * O pedido: preencher o JSON da categoria (todas as chaves com null) com as especificações do produto,
+ * O pedido: preencher as chaves selecionadas da categoria com as especificações do produto,
  * com as opções das chaves fechadas e as regras curtas (o pedido vai no endereço da busca).
  */
-export function webPrompt(category: CategoryId, title: string): string {
+export function webPrompt(category: CategoryId, title: string, fields?: readonly string[], known: SheetValues = {}): string {
   const name = webProductName(title);
-  const keys = webKeys(category);
+  const keys = webKeys(category).filter((key) => !fields || fields.includes(key.field));
+  const identity = [known.brand, known.model].filter((v) => typeof v === 'string' && /[a-z]/i.test(v)).join(' ');
+  const search = fields
+    ? ` Confirme a variante pelo título ("${title.slice(0, 180)}")${identity ? ` e pela identificação ("${identity.slice(0, 100)}")` : ''}. Busque também no manual ou datasheet. `
+      + (category === 'motherboard' ? 'Separe o slot gráfico x16 do M.2. ' :
+        category === 'ssd' ? 'Use a mesma capacidade e o mesmo código do SSD. ' :
+        category === 'case' ? 'Procure folgas da GPU e do cooler e posições de radiador na tabela técnica. ' : '')
+    : ' ';
   const legend = keys
     .filter((k) => k.options)
     .map((k) => `${k.key}: ${[...new Set(Object.values(k.options!))].join(' | ')}`)
     .join('; ');
   const template = JSON.stringify({ produto: name, ...Object.fromEntries(keys.map((k) => [k.key, k.type === 'list' ? [] : null])), confianca: null });
   return (
-    `Preencha este JSON com as especificações ${NOUN[category]} ${name}, pelo site do fabricante. ` +
+    `Preencha este JSON com as especificações ${NOUN[category]} ${name}, pelo site do fabricante.${search}` +
     'Não invente: o que não achar fica null. Se o produto não tem o recurso (sem Wi-Fi, sem conector de 16 pinos), responda "Não", 0 ou false; null só quando não souber. ' +
     'Números sem unidade; listas com os itens. confianca: alta, media ou baixa. ' +
     (legend ? `Opções: ${legend}. ` : '') +

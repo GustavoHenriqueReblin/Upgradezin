@@ -4,6 +4,8 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+- A busca na web envia só os campos em aberto e usa a identificação disponível para confirmar a variante em manuais e datasheets. Refazer uma consulta preserva os valores encontrados.
+
 - O comando `pnpm budget-test` gera o relatório de referência com 120 cenários. A opção `--expanded` cobre 4.104 combinações, simulações de mercado, upgrades e pontos de transição. A auditoria roda em uma cópia da base.
 
 ### Corrigido
