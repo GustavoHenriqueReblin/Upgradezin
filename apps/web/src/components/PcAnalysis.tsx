@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowRight, ChevronDown, FileText, Gauge, Trash2, Wallet, Wrench } from 'lucide-react';
+import { ArrowRight, ChevronDown, FileText, Gauge, Trash2, Wallet } from 'lucide-react';
 import { analyzePc, CATEGORY_DEFS, CPU_BOUND, GPU_BOUND, type PcPart, type PcProfile, type Specs, type UpgradeAction, type Verdict } from '@upgradezin/shared';
 import { PC_SLOTS } from '../pc.ts';
 import { CATEGORY_ICONS } from './CategoryPicker.tsx';
@@ -15,6 +15,7 @@ interface Props {
   onImport: (pc: PcProfile) => void;
   onPsu?: (psu: PcPart | undefined) => void;
   onUpgrade: (action: UpgradeAction) => void;
+  /** Abre a montagem para marcar as peças como Já tenho ("Informar peças manualmente"). */
   onToBuild: () => void;
   onForget: () => void;
   /** Abre o Montar pelo orçamento no modo upgrade (sem ela, o card não aparece). */
@@ -99,12 +100,6 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onPsu, 
           </button>
           <button onClick={() => setImporting('file')} className="flex items-center gap-1.5 text-sm text-zinc-500 hover:underline">
             <FileText className="h-4 w-4" /> {pc.source === 'manual' ? 'Importar relatório' : 'Trocar relatório'}
-          </button>
-          <button
-            onClick={onToBuild}
-            className="inline-flex items-center gap-2 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-medium transition hover:border-zinc-500 focus-visible:outline-2 focus-visible:outline-accent-500 dark:border-zinc-700 dark:bg-zinc-900"
-          >
-            <Wrench className="h-4 w-4" /> Levar para a montagem
           </button>
         </div>
       </div>

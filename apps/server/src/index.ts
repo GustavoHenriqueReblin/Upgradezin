@@ -22,6 +22,7 @@ import { browserOpen, closeBrowser } from './browser.ts';
 import { BUILD_ID, findSharedBuild, getSharedBuild, saveSharedBuild, SharedBuildSchema } from './builds/builds.ts';
 import { config } from './config.ts';
 import { configureGoogleLogin, registerAccountRoutes } from './account.ts';
+import { registerAlertRoutes, startAlertChecks } from './alerts.ts';
 import { emitChange } from './changes.ts';
 import { closeServer } from './shutdown.ts';
 import { deleteMeta, getMeta, metaByPrefix, setMeta } from './db/db.ts';
@@ -133,6 +134,7 @@ if (!googleLogin && (config.GOOGLE_CLIENT_ID || config.GOOGLE_CLIENT_SECRET || c
   app.log.warn('Login com Google desligado: confira o cliente OAuth e a URI de redirecionamento.');
 }
 registerAccountRoutes(app, getDb, googleLogin);
+registerAlertRoutes(app, getDb, ACTIVE_STORES, !!googleLogin);
 
 /** Últimas buscas do site, para a atividade do admin (sem IP). */
 const activity = new ActivityLog();
@@ -471,6 +473,8 @@ if (existsSync(webDist)) {
 
 /** Para o recálculo das chaves de produto (ligado depois de subir). */
 let stopProductKeys = () => {};
+/** Para a conferência dos alertas de preço (ligada depois de subir). */
+let stopAlertChecks = () => {};
 
 const shutdown = async () => {
   // Garantia: se algo travar ao fechar, sai mesmo assim (antes do SIGKILL do systemd, 90 s).
@@ -480,6 +484,7 @@ const shutdown = async () => {
   stopWebFill();
   stopNightlySweep();
   stopProductKeys();
+  stopAlertChecks();
   stopAdminJobs();
   stopBackgroundSearches();
   await closeBrowser();
@@ -513,3 +518,5 @@ startNightlySweep(
 );
 // Mesmo produto em lojas diferentes: chaves recalculadas ao subir e depois das coletas.
 stopProductKeys = startProductKeys(getDb);
+// Alertas de preço: conferidos ao subir e depois das coletas; as notificações ficam no banco para o site ler.
+stopAlertChecks = startAlertChecks(getDb, ACTIVE_STORES);

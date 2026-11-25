@@ -25,12 +25,13 @@ it('padroniza as ações de informar o PC no orçamento e no diagnóstico', () =
 
 it('mantém as ações principais da montagem manual e da identificação de gargalo', () => {
   const noop = () => {};
-  const edit = { onOpen: noop, onRemove: noop, onQty: noop, onClear: noop, onImport: noop, onOwned: noop };
+  const edit = { onOpen: noop, onRemove: noop, onQty: noop, onClear: noop, onOwned: noop };
   const build = renderToStaticMarkup(createElement(BuildView, { build: {}, edit }));
   expect(build).toContain('>Montar peça por peça</h2>');
   expect(build).toContain('aria-label="Escolher Processador"');
   expect(build).toMatch(/<button[^>]+aria-label="Escolher Processador"[^>]+class="[^"]*accent-control/);
-  expect(build).toContain('Importar meu PC');
+  // A montagem é manual: o CPU-Z não monta nada.
+  expect(build).not.toContain('Importar meu PC');
   const analysis = renderToStaticMarkup(createElement(PcAnalysis, { pc: null, onImport: noop, onUpgrade: noop, onToBuild: noop, onForget: noop }));
   expect(analysis).toContain('>Identificar gargalo</h2>');
   expect(analysis).toContain('Relatório automático');
@@ -217,7 +218,7 @@ it('alinha as categorias do cabeçalho logo depois do logo, sem centralizar', ()
   }
 });
 
-it('mostra os mesmos quatro atalhos em todo cabeçalho, e a montagem aberta sem nome em tela menor', () => {
+it('mostra os mesmos atalhos em todo cabeçalho, e a montagem aberta sem nome em tela menor', () => {
   vi.stubGlobal('__APP_VERSION__', '0.0.0');
   const at = (pathname: string) => {
     vi.stubGlobal('location', { pathname, search: '' });

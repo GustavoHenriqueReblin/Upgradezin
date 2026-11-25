@@ -43,3 +43,36 @@ it('abre a conta pela base e salva apenas mudanças feitas após o login', async
     vi.unstubAllGlobals();
   }
 });
+
+it('alteração que o servidor recusa (chave que deixou de sincronizar) sai da fila e não trava as outras', async () => {
+  vi.resetModules();
+  const prefix = 'upgradezin.account.pending.abc.';
+  const values = new Map([[`${prefix}upgradezin.alerts.v1`, '"[]"'], [`${prefix}upgradezin.build.v1`, '"nova"']]);
+  vi.stubGlobal('localStorage', {
+    get length() { return values.size; },
+    key: (index: number) => [...values.keys()][index] ?? null,
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => values.delete(key),
+  });
+  vi.stubGlobal('window', { addEventListener: vi.fn() });
+  vi.stubGlobal('location', { href: 'https://app.example/' });
+  vi.stubGlobal('BroadcastChannel', undefined);
+  const saved: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method !== 'PUT') return Response.json({ enabled: true, user: { id: 'abc', name: 'Teste', email: 'teste@example.com' }, data: {} });
+    const { key } = JSON.parse(String(init.body)) as { key: string };
+    if (key === 'upgradezin.alerts.v1') return Response.json({ error: 'invalid' }, { status: 400 });
+    saved.push(key);
+    return new Response(null, { status: 204 });
+  }));
+  try {
+    const { accountStatus, loadAccount } = await import('./account.ts');
+    await loadAccount();
+    await vi.waitFor(() => expect(values.size).toBe(0));
+    expect(saved).toEqual(['upgradezin.build.v1']);
+    expect(accountStatus().error).toBeUndefined();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

@@ -4,6 +4,18 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+- Card da busca: as ações viraram três botões só com ícone e do mesmo tamanho (adicionar ou trocar na montagem, acompanhar preço e comparar), com o nome na dica e no leitor de tela.
+
+- Conta: uma alteração que o servidor recusa como inválida (uma chave que deixou de ser sincronizada, por exemplo) sai da fila de sincronização em vez de travar as outras com "Sincronização pendente".
+
+- Montar pelo orçamento: ao terminar o cálculo (Montar o PC, Montar o upgrade ou Refazer cálculo), a tela desce sozinha até o resultado.
+
+- Alertas de preço: o sino no card da busca (entre Adicionar à montagem e Comparar) e na página do produto abre "Acompanhar preço", com três opções: quando chegar a um preço (sugestão de 5% abaixo do atual), em qualquer queda ou quando voltar ao estoque. Os alertas ficam na conta, no servidor (tabela `price_alerts`; precisa de login, e sem login o sino convida a entrar). Uma rotina do servidor confere os preços ao subir e depois de cada coleta da categoria e, quando a condição vale, grava uma notificação (`notifications`, as 50 últimas por conta). Funciona com o site fechado. O site só lê: o sino do cabeçalho, ao lado da conta (só o ícone, com selo das não lidas), busca as notificações ao abrir, a cada 5 min e ao voltar para a aba, e, se a pessoa permitir, mostra as novas como notificação do navegador. Preço-alvo e estoque avisam uma vez e rearmam quando a condição deixa de valer; na queda, o preço avisado vira a nova referência. Até 30 produtos por conta. E-mail fica para depois.
+
+- Importar o relatório do CPU-Z não mexe mais na montagem: o relatório vira só o Meu PC, e as peças marcadas como Já tenho saem da montagem (o espaço fica vazio; as compradas ficam). Saíram os botões "Importar meu PC" da montagem e "Levar para a montagem" do Gargalo. As peças que versões anteriores copiavam do CPU-Z para a montagem são limpas ao abrir. Uma sugestão de upgrade confere a compatibilidade contra o seu PC sem gravar nada na montagem, e o upgrade do orçamento leva à montagem só as peças novas e as marcadas à mão.
+
+- Rotina de fichas: três páginas seguidas com erro na mesma loja são tratadas como rede (ou loja) fora. Os erros dessa sequência são desfeitos (os produtos voltam à fila e ao site) e a loja espera 10 min antes de tentar de novo.
+
 - Todo cabeçalho tem os mesmos quatro atalhos: Meu PC, Comparar, Montagem e a conta. A tela inicial e as páginas de produto e de comparação ganharam o atalho da montagem (link para `/montagem`). Com a montagem aberta, o atalho fica em laranja e o nome só aparece em telas bem largas, como nos outros; na página de comparação, o atalho Comparar fica ativo do mesmo jeito. A página de comparação ganhou título, como as demais telas.
 
 - A janela de importar o relatório do CPU-Z aberta pelo atalho Meu PC aparecia cortada no topo da tela e sem o fundo escurecido. Ela passa a abrir direto no corpo da página.

@@ -20,12 +20,13 @@ import { settleStatus, useSearch, type Fresh, type SearchSnapshot } from './useS
 import { BuildView } from './components/BuildView.tsx';
 import { loadSharedBuild, sharedIdFromUrl, type SharedBuild } from './share.ts';
 import { loadUi, saveUi, screenFromUrl, screenUrl, type Screen } from './uiState.ts';
-import { applyPc, clearPc, currentPc, fillPc, forgetPcBuild, loadPc, savePc } from './pc.ts';
+import { clearPc, currentPc, fillPc, forgetPcBuild, loadPc, savePc, withoutOwned, withoutPcItems } from './pc.ts';
 import { PcAnalysis } from './components/PcAnalysis.tsx';
 import { CompareLink } from './components/CompareControls.tsx';
 import { AccountControl } from './components/AccountControl.tsx';
 import { MyPcButton } from './components/MyPc.tsx';
 import { BuildAction } from './components/HeaderActions.tsx';
+import { AlertsShortcut } from './components/PriceAlerts.tsx';
 import { BudgetView } from './components/BudgetView.tsx';
 import { BUDGET_VISIBLE, lastBudgetMode, type BudgetMode } from './budget.ts';
 import { CategoryPicker } from './components/CategoryPicker.tsx';
@@ -97,14 +98,16 @@ export function App() {
   const [hasResults, setHasResults] = useState(false);
 
   /** Montagem do PC: fica no navegador. buildSlot = escolhendo essa peça no resultado. */
-  const [build, setBuild] = useState<SavedBuild>(loadBuild);
+  // Peças copiadas do CPU-Z por versões antigas saem: a montagem é só o que a pessoa escolheu.
+  const [build, setBuild] = useState<SavedBuild>(() => withoutPcItems(loadBuild()));
   /** PC importado do CPU-Z (Identificar gargalo). */
   const [report, setReport] = useState(loadPc);
   const pc = useMemo(() => currentPc(report, build), [report, build]);
   const cpuLabel = pc?.cpu && ([pc.cpu.specs.cpuLine, pc.cpu.specs.cpuModel].filter(Boolean).join(' ') || pc.cpu.title);
   const importPc = (next: NonNullable<typeof report>) => {
     setReport(savePc(next));
-    setBuild((current) => applyPc(current, next));
+    // O relatório vira o Meu PC e não monta nada; as marcações Já tenho (o PC informado à mão) saem da montagem.
+    setBuild(withoutOwned);
   };
   const [pcOpen, setPcOpen] = useState(initialScreen?.kind === 'pc');
   const [buildOpen, setBuildOpen] = useState(initialScreen?.kind === 'build');
@@ -113,6 +116,8 @@ export function App() {
   const [buildSlot, setBuildSlot] = useState<BuildSlot | null>(null);
   const [driveIndex, setDriveIndex] = useState(0);
   const [onlyCompatible, setOnlyCompatible] = useState(true);
+  /** Busca aberta por uma sugestão do Gargalo: a compatibilidade confere contra o PC da pessoa (sem gravar na montagem). */
+  const [fromUpgrade, setFromUpgrade] = useState(false);
   useEffect(() => saveBuild(build), [build]);
 
   /** Montagem aberta por link (/m/<id>): só leitura, até "Usar esta montagem" ou voltar. */
@@ -196,12 +201,14 @@ export function App() {
   };
 
   const pickCategory = (c: CategoryId) => {
+    setFromUpgrade(false);
     setBuildSlot(null);
     openCategory(c);
   };
 
   /** Escolher/trocar uma peça da montagem: a busca já vem filtrada pelas outras peças. */
   const openSlot = (slot: BuildSlot, index = 0) => {
+    setFromUpgrade(false);
     const base = slot === category ? filters : (cacheRef.current.get(slot)?.filters ?? DEFAULT_FILTERS);
     setBuildSlot(slot);
     setDriveIndex(index);
@@ -210,6 +217,7 @@ export function App() {
   };
 
   const openBuild = () => {
+    setFromUpgrade(false);
     setBuildSlot(null);
     setPcOpen(false);
     setBudgetOpen(null);
@@ -244,8 +252,9 @@ export function App() {
    * compatibilidade conferir contra o que a pessoa tem.
    */
   const openUpgrade = (action: UpgradeAction) => {
+    // As peças do PC só entram na conta da compatibilidade e dos filtros; a montagem não muda.
     const next = report ? fillPc(build, report) : build;
-    setBuild(next);
+    setFromUpgrade(true);
     const f: Filters = { ...slotFilters(action.slot, next, DEFAULT_FILTERS), ...action.filters };
     setBuildSlot(action.slot);
     setDriveIndex(action.slot === 'ssd' ? buildDrives(next).length : 0);
@@ -260,6 +269,7 @@ export function App() {
   };
 
   const goHome = () => {
+    setFromUpgrade(false);
     saveCurrent();
     restore(null);
     setCategory(null);
@@ -383,10 +393,11 @@ export function App() {
   // A checagem só aparece quando há outra peça para comparar.
   const choosing = buildSlot && buildSlot === category ? buildSlot : null;
   const pickSlot = category && (BUILD_SLOTS as readonly string[]).includes(category) ? (category as BuildSlot) : null;
-  const hasOthers = !!pickSlot && BUILD_SLOTS.some((s) => s !== pickSlot && build[s]);
+  const checkBuild = fromUpgrade && report ? fillPc(build, report) : build;
+  const hasOthers = !!pickSlot && BUILD_SLOTS.some((s) => s !== pickSlot && checkBuild[s]);
   const slot = choosing ?? (hasOthers ? pickSlot : null);
   const activeDrive = choosing === 'ssd' ? driveIndex : 0;
-  const compat = useMemo(() => (slot ? new Map(groups.map((g) => [g.key, checkCandidate(build, slot, g.specs, activeDrive)])) : null), [groups, build, slot, activeDrive]);
+  const compat = useMemo(() => (slot ? new Map(groups.map((g) => [g.key, checkCandidate(checkBuild, slot, g.specs, activeDrive)])) : null), [groups, checkBuild, slot, activeDrive]);
   const shown = compat && onlyCompatible ? groups.filter((g) => compat.get(g.key)!.status !== 'error') : groups;
   const hiddenIncompatible = groups.length - shown.length;
   const buildCount = buildPartCount(build);
@@ -475,7 +486,7 @@ export function App() {
               {myPcButton(true)}
               <CompareLink showLabel />
               {buildButton(true)}
-              <AccountControl showLabel separated />
+              <AccountControl showLabel separated><AlertsShortcut /></AccountControl>
             </div>
           </div>
           <p className="mb-8 mt-1 text-zinc-500">Qual peça você quer trocar?</p>
@@ -544,7 +555,7 @@ export function App() {
             {myPcButton()}
             <CompareLink />
             {buildButton()}
-            <AccountControl separated />
+            <AccountControl separated><AlertsShortcut /></AccountControl>
           </div>
         </div>
         {choosing && !buildOpen && (
@@ -590,10 +601,7 @@ export function App() {
               });
             }}
             onUpgrade={openUpgrade}
-            onToBuild={() => {
-              if (report) setBuild((b) => fillPc(b, report));
-              openBuild();
-            }}
+            onToBuild={openBuild}
             onForget={forgetPc}
             onBudget={BUDGET_VISIBLE && (pc?.cpu || pc?.gpu) ? () => openBudget('upgrade') : undefined}
           />
@@ -613,7 +621,6 @@ export function App() {
                 }),
               onQty: (s, qty) => setBuild((b) => (b[s] ? { ...b, [s]: { ...b[s]!, qty: Math.min(MAX_QTY, Math.max(1, qty)) } } : b)),
               onClear: () => setBuild({}),
-              onImport: importPc,
               onOwned: (s, owned, index = 0) =>
                 setBuild((b) => {
                   const selected = s === 'ssd' ? buildDrives(b)[index] : b[s];

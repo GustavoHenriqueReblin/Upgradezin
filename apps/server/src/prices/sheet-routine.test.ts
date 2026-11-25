@@ -7,7 +7,7 @@ import { clearBackoff, pauseStore, useBackoffStorage, useIntervalStorage } from 
 import { useStoreStorage } from '../stores.ts';
 import { saveCollection } from './prices.ts';
 import { routineNextAt, setRoutineSettings, stopRoutine } from './routine.ts';
-import { PAGE_ERROR_SKIP_MS } from './page-errors.ts';
+import { NETWORK_PAUSE_MS, PAGE_ERROR_SKIP_MS, recordPageError } from './page-errors.ts';
 import { productPage } from './product-page.ts';
 import { recentOffers } from './prices.ts';
 import { setSheetRoutine, sheetNextAt, sheetRoutineSettings, sheetTick, stopSheetRoutine, useSheetRoutineStorage } from './sheet-routine.ts';
@@ -149,5 +149,42 @@ describe('rotina de fichas técnicas (separada da coleta)', () => {
     expect(urls.filter((u) => u.endsWith('/701'))).toHaveLength(3);
     expect(inApp()).toBe(true);
     expect(db.prepare('SELECT count(*) AS n FROM page_errors').get()).toEqual({ n: 0 });
+  });
+
+  it('três páginas seguidas com erro na mesma loja são a rede fora: desfaz os erros da sequência e pausa a loja 10 min', async () => {
+    useStoreStorage(getDb());
+    useBackoffStorage([], () => {});
+    const db = getDb();
+    db.exec('DELETE FROM page_errors');
+    // As esperas de verdade entre páginas viram 0 no teste (só conta o tempo pedido).
+    const realTimeout = globalThis.setTimeout;
+    const timers = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => realTimeout(fn, ms && ms >= 1000 ? 0 : ms)) as typeof setTimeout);
+    onTestFinished(() => timers.mockRestore());
+    // Um erro antigo, de horas atrás, numa página que de fato estava com problema: volta como estava, não some.
+    const old = new Date(Date.now() - 2 * PAGE_ERROR_SKIP_MS);
+    recordPageError(db, 's1', '803', 'erro antigo', old);
+    let offline = true;
+    const urls: string[] = [];
+    usePageLoader(async (_store, url) => {
+      urls.push(url);
+      if (offline) throw new Error('net::ERR_INTERNET_DISCONNECTED');
+      return { html: sheetPage(250), url, title: '' };
+    });
+    gpusInCatalog('801', '802', '803', '804');
+    setSheetRoutine({ enabled: true, stores: ['s1'] });
+    await sheetTick(sheetNextAt('s1')!);
+    await sheetTick(sheetNextAt('s1')!);
+    expect(db.prepare('SELECT count(*) AS n FROM page_errors').get()).toEqual({ n: 3 }); // duas novas + a antiga
+    await sheetTick(sheetNextAt('s1')!);
+    expect(urls).toHaveLength(3);
+    // Terceira seguida: tudo volta como estava e a loja espera 10 min.
+    expect(db.prepare('SELECT store_sku, fails, last_at FROM page_errors').all()).toEqual([{ store_sku: '803', fails: 1, last_at: old.toISOString() }]);
+    const wait = sheetNextAt('s1')! - Date.now();
+    expect(wait).toBeGreaterThan(NETWORK_PAUSE_MS - 5_000);
+    expect(wait).toBeLessThanOrEqual(NETWORK_PAUSE_MS);
+    // A rede voltou: lê normalmente, e uma falha isolada depois de um acerto conta como erro da página.
+    offline = false;
+    await sheetTick(sheetNextAt('s1')!);
+    expect(db.prepare('SELECT count(*) AS n FROM page_errors').get()).toEqual({ n: 1 });
   });
 });

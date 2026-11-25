@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { Check, Cpu, Link2, Minus, Plus, RefreshCw, Trash2, Zap } from 'lucide-react';
-import { BUILD_SLOTS, CATEGORY_DEFS, checkBuild, effectiveCash, MAX_BUILD_DRIVES, type BuildIssue, type BuildSlot, type PcProfile } from '@upgradezin/shared';
+import { Check, Link2, Minus, Plus, RefreshCw, Trash2, Zap } from 'lucide-react';
+import { BUILD_SLOTS, CATEGORY_DEFS, checkBuild, effectiveCash, MAX_BUILD_DRIVES, type BuildIssue, type BuildSlot } from '@upgradezin/shared';
 import { bestOffer, buildDrives, buildTotals, MAX_QTY, QTY_SLOTS, qtyOf, toBuild, type SavedBuild } from '../build.ts';
 import { ago, brl } from '../format.ts';
 import { shareBuild, shareUrl } from '../share.ts';
@@ -9,8 +9,6 @@ import { productHref } from '../product.ts';
 import { StoreDot } from './StoreDot.tsx';
 import { CATEGORY_ICONS } from './CategoryPicker.tsx';
 import { CompatBadge, IssueList } from './Compat.tsx';
-import { ImportPc } from './ImportPc.tsx';
-import { loadPc, PC_SLOTS } from '../pc.ts';
 
 interface Props {
   build: SavedBuild;
@@ -20,8 +18,6 @@ interface Props {
     onRemove: (slot: BuildSlot, driveIndex?: number) => void;
     onQty: (slot: BuildSlot, qty: number) => void;
     onClear: () => void;
-    /** Peças atuais lidas do relatório do CPU-Z. */
-    onImport: (pc: PcProfile) => void;
     /** "Já tenho": a peça sai do total e conta como parte do PC atual. */
     onOwned: (slot: BuildSlot, owned: boolean, driveIndex?: number) => void;
   };
@@ -51,7 +47,6 @@ export function BuildView({ build, edit, header }: Props) {
   const errors = check.issues.filter((i) => i.level === 'error').length;
   const warns = check.issues.filter((i) => i.level === 'warn').length;
   const hasItems = totals.parts + totals.current > 0;
-  const [importing, setImporting] = useState(false);
 
   return (
     <div className="mx-auto w-full max-w-4xl pb-28">
@@ -68,26 +63,8 @@ export function BuildView({ build, edit, header }: Props) {
                   Limpar montagem
                 </button>
               )}
-              <button
-                onClick={() => setImporting(true)}
-                className="inline-flex items-center gap-2 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-medium transition hover:border-accent-500 focus-visible:outline-2 focus-visible:outline-accent-500 dark:border-zinc-700 dark:bg-zinc-900"
-              >
-                <Cpu className="h-4 w-4" /> Importar meu PC
-              </button>
               {hasItems && <ShareButton build={build} />}
             </div>
-          )}
-          {edit && importing && (
-            <ImportPc
-              // PC já importado (no Identificar gargalo ou antes): abre direto na prévia, com "Escolher outro arquivo".
-              initial={loadPc()}
-              onClose={() => setImporting(false)}
-              replacing={PC_SLOTS.filter((s) => build[s] && !build[s]!.current).map((s) => `a ${CATEGORY_DEFS[s].name.toLowerCase()}`)}
-              onApply={(pc) => {
-                edit.onImport(pc);
-                setImporting(false);
-              }}
-            />
           )}
         </div>
       )}

@@ -300,6 +300,37 @@ const MIGRATIONS: (string | Rebuild)[] = [
   `
   ALTER TABLE accounts ADD COLUMN cep TEXT;
   `,
+  // 19: alertas de preço da conta (a rotina confere depois das coletas) e as notificações que ela grava para o site ler.
+  `
+  CREATE TABLE price_alerts (
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    product_key TEXT NOT NULL,
+    category TEXT NOT NULL,
+    title TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    target REAL,
+    base REAL,
+    price REAL,
+    checked_at INTEGER,
+    armed INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (account_id, product_key)
+  );
+  CREATE INDEX price_alerts_product ON price_alerts (product_key);
+  CREATE TABLE notifications (
+    id INTEGER PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    product_key TEXT NOT NULL,
+    category TEXT NOT NULL,
+    title TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    price REAL,
+    reference REAL,
+    created_at INTEGER NOT NULL,
+    read_at INTEGER
+  );
+  CREATE INDEX notifications_account ON notifications (account_id, id);
+  `,
 ];
 
 export type Db = DatabaseSync;

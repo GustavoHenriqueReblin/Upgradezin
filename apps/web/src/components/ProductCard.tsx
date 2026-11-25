@@ -5,6 +5,7 @@ import type { CandidateCheck } from '../build.ts';
 import { productHref, productKeyOf } from '../product.ts';
 import type { CategoryId } from '@upgradezin/shared';
 import { CompareButton } from './CompareControls.tsx';
+import { AlertButton } from './PriceAlerts.tsx';
 import { CompatBadge, IssueList } from './Compat.tsx';
 import { PriceHistory } from './PriceHistory.tsx';
 import { storeName } from '../stores.ts';
@@ -52,7 +53,7 @@ export function ProductCard({ group, compareCategory, compat, onPick, picked, re
   if (specs.ramSpeed) chips.push({ label: `${specs.ramSpeed} MHz` });
   if (specs.ramLatency) chips.push({ label: `CL${specs.ramLatency}` });
   // Processador
-  if (specs.cores) chips.push({ label: `${specs.cores} Núcleos${specs.threads ? ` / ${specs.threads} Threads` : ''}` });
+  if (specs.cores) chips.push({ label: `${specs.cores} núcleos${specs.threads ? ` / ${specs.threads} threads` : ''}` });
   if (specs.cpuGen) chips.push({ label: specs.cpuGen });
   if (specs.igpu !== undefined && specs.cpuLine) chips.push({ label: specs.igpu ? 'Vídeo integrado' : 'Sem vídeo integrado' });
   if (specs.cooler !== undefined) chips.push({ label: specs.cooler ? 'Com cooler' : 'Sem cooler' });
@@ -101,6 +102,7 @@ export function ProductCard({ group, compareCategory, compat, onPick, picked, re
   const href = productHref(group);
   const compareKey = compareCategory ? productKeyOf(group) : undefined;
 
+  const pickLabel = compat?.status === 'error' ? 'Escolher mesmo assim' : replacing ? 'Trocar na montagem' : 'Adicionar à montagem';
   return (
     <article className="relative flex flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
       {discount >= 5 && (
@@ -188,23 +190,30 @@ export function ProductCard({ group, compareCategory, compat, onPick, picked, re
       </div>
       {historyOpen && <PriceHistory title={group.title} offers={group.offers} onClose={() => setHistoryOpen(false)} />}
       {(onPick || compareKey) && (
-        <div className="flex items-center justify-end gap-2 border-t border-zinc-100 p-3 dark:border-zinc-800">
+        // Três botões só com ícone, do mesmo tamanho (o nome fica na dica e no leitor de tela).
+        <div className="flex items-center gap-2 border-t border-zinc-100 p-3 dark:border-zinc-800 [&>*]:flex-1">
           {onPick && (picked ? (
-            <div className="flex flex-1 items-center justify-center gap-1.5 py-1.5 text-sm font-medium text-accent-600 dark:text-accent-400">
-              <Check className="h-4 w-4" /> Na montagem
+            <div role="img" aria-label="Na montagem" title="Na montagem" className="flex items-center justify-center py-1.5 text-accent-600 dark:text-accent-400">
+              <Check aria-hidden="true" className="h-4 w-4" />
             </div>
           ) : (
             <button
+              type="button"
               onClick={onPick}
-              className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium ${
+              aria-label={pickLabel}
+              title={pickLabel}
+              className={`flex items-center justify-center rounded-lg px-2 py-1.5 ${
                 compat?.status === 'error'
                   ? 'border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40'
                   : 'accent-control'
               }`}
             >
-              <Plus className="h-4 w-4" /> {compat?.status === 'error' ? 'Escolher mesmo assim' : replacing ? 'Trocar na montagem' : 'Adicionar à montagem'}
+              <Plus aria-hidden="true" className="h-4 w-4" />
             </button>
           ))}
+          {compareCategory && compareKey && (
+            <AlertButton iconOnly product={{ productKey: compareKey, category: compareCategory, title: group.title, ...(best.inStock && { price: effectiveCash(best) }) }} />
+          )}
           {compareCategory && compareKey && <CompareButton category={compareCategory} productKey={compareKey} iconOnly />}
         </div>
       )}

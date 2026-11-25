@@ -25,7 +25,7 @@ Fora do escopo: marketplaces abertos, usado/recondicionado, checkout, afiliados,
 - **Em produção** num servidor Ubuntu doméstico, com acesso público por túnel. A rotina de coleta, a varredura completa da madrugada e a rotina de fichas rodam lá. O servidor pode estar alguns commits atrás do `main`: o deploy é manual (seção 12).
 - **Catálogo** (snapshot local de 25/11/2026) com 19.067 anúncios catalogados e 14.456 páginas de produto lidas.
 - **Versão 0.3.0.** O `[Não lançado]` do CHANGELOG lista o que já está no código e ainda não virou versão.
-- **Próximo marco:** configurar e validar o login com Google, completar o histórico da conta e implementar alertas de preço para a 1ª versão (seção 11).
+- **Próximo marco:** motor único de recomendação e ajuste fino com um dump atualizado, a última entrega da 1ª versão (seção 11). Login e alertas de preço já estão no código.
 
 ---
 
@@ -33,7 +33,7 @@ Fora do escopo: marketplaces abertos, usado/recondicionado, checkout, afiliados,
 
 No admin, fichas em revisão podem ser concluídas com campos pendentes e reabertas. O monitoramento do servidor continua ativo em qualquer aba do painel.
 
-O PC atual pode ser informado marcando Já tenho nas peças da montagem ou importando um relatório do CPU-Z. Os dois caminhos alimentam o diagnóstico e as sugestões de upgrade. A importação coloca as peças na montagem automaticamente.
+O PC atual pode ser informado marcando Já tenho nas peças da montagem ou importando um relatório do CPU-Z. Os dois caminhos alimentam o diagnóstico e as sugestões de upgrade. O relatório vira só o Meu PC e não mexe na montagem: ao importar, as peças marcadas como Já tenho saem da montagem (o espaço fica vazio).
 
 ### Implementadas
 
@@ -45,7 +45,7 @@ O PC atual pode ser informado marcando Já tenho nas peças da montagem ou impor
 | Comparador | Seleção de peças de várias categorias (até 5 por categoria), com tabelas separadas e rolagem horizontal, remover e limpar na página e link compartilhado só para ver. CPUs e GPUs têm índices de jogos e, com o PC atual informado, estimativas de ganho, equilíbrio e a coluna da peça atual | §14 |
 | Montagem do PC | Oito categorias, com múltiplos discos NVMe e SATA. Busca e compatibilidade por peça, quantidade na memória, total por loja e na melhor combinação e compartilhamento por link (`/m/<id>`) | §17.1 |
 | Montar pelo orçamento | PC completo ou upgrade do PC atual, com até 3 opções. Acesso pela tela inicial e pelo Identificar gargalo | §17.4 |
-| Informar o PC atual | Marcação Já tenho na montagem ou importação do relatório `.txt` do CPU-Z no navegador. O relatório preenche a montagem automaticamente | §17.2 |
+| Informar o PC atual | Marcação Já tenho na montagem ou importação do relatório `.txt` do CPU-Z no navegador. O relatório vira só o Meu PC (não preenche a montagem) | §17.2 |
 | Identificar gargalo | Equilíbrio processador × placa de vídeo na tela da pessoa (resolução e Hz do monitor), dicas (upgrade, grátis, atenção, observação) e as 3 melhores ofertas de cada dica | §17.3 |
 | Admin (`/admin`) | Lojas, rotina por loja, intervalos, fila, pausas, registro de consultas, cobertura, produtos, fichas (lista, "Ler ficha", preencher/editar à mão, revisão), busca na web, monitor do servidor (CPU, memória, disco, rede), backups e merge de bancos | §9.3 |
 | Rotinas no servidor | Coleta das páginas de categoria, varredura completa (também de madrugada), rotina de fichas, busca na web das fichas, backup noturno | §8.2, §8.3 |
@@ -106,12 +106,14 @@ Migrações por `PRAGMA user_version` em `apps/server/src/db/db.ts`: só acresce
 | `sheet_web_transition` | situação da ficha antes e depois de cada consulta registrada (migração 16) |
 | `sheet_manual` | campos preenchidos à mão no admin (têm prioridade) |
 | `sheet_completion` | fichas concluídas manualmente por categoria e produto (migração 15) |
-| `page_errors` | páginas de produto que deram erro (fora da fila de fichas por 6 h; com 2 falhas seguidas, a oferta sai do app) |
+| `page_errors` | páginas de produto que deram erro (fora da fila de fichas por 6 h; com 2 falhas seguidas, a oferta sai do app; 3 erros seguidos na mesma loja são a rede fora e são desfeitos) |
 | `shared_builds` | montagens compartilhadas por link |
+| `price_alerts` | alertas de preço de cada conta (um por produto; preço visto e se está armado) |
+| `notifications` | avisos que a rotina dos alertas grava para o site ler (as 50 últimas por conta, com a data de leitura) |
 
 Tabelas antigas (`search_terms`, `term_runs`, `listing_terms`, `parts`, `part_codes`, `product_sheets`) foram removidas por migrações.
 
-**No navegador** (localStorage, só da pessoa): montagem e marcações Já tenho (`upgradezin.build.v1`), perfil lido do CPU-Z (`upgradezin.pc.v1`, só os dados tratados, nunca o arquivo), categoria e filtros (`upgradezin.ui.v1`), preferências do orçamento (`upgradezin.budget.v1`), último resultado de cada aba do orçamento (`upgradezin.budget.result.v1`) e peças selecionadas para comparar (`upgradezin.compare.v1`). O plano de sincronização está na seção 11.
+**No navegador** (localStorage, só da pessoa): montagem e marcações Já tenho (`upgradezin.build.v1`), perfil lido do CPU-Z (`upgradezin.pc.v1`, só os dados tratados, nunca o arquivo), categoria e filtros (`upgradezin.ui.v1`), preferências do orçamento (`upgradezin.budget.v1`), último resultado de cada aba do orçamento (`upgradezin.budget.result.v1`) e peças selecionadas para comparar (`upgradezin.compare.v1`). Os alertas de preço ficam só na conta, no servidor (`price_alerts`). O plano de sincronização está na seção 11.
 
 ---
 
@@ -218,7 +220,6 @@ ADRs completos em ARCHITECTURE §15. As principais:
 
 | Problema | Efeito | Situação |
 |---|---|---|
-| Queda de internet vira "página com erro" | Produtos bons ficam 6 h fora da fila de fichas; se pegar o mesmo produto duas vezes, ele sai do site até a página abrir | Correção proposta, não feita: 3 erros seguidos na mesma loja = rede fora, apagar os erros da sequência e pausar a loja ~10 min |
 | Admin arredonda o progresso das fichas para 100% com itens na fila | Confunde (os itens podem estar parados por erro) | Mostrar "X com erro, voltam às HH:MM" e não arredondar para 100% |
 | As ofertas das dicas (`picks.ts`) têm ranking próprio | Duas lógicas de escolha (dicas e orçamento) | Unificar com o motor do orçamento |
 | Texto da dica de placa de vídeo cita chips sem saber a memória de vídeo de cada um | A frase pode citar um chip sem versão com memória suficiente (as ofertas e a busca já filtram) | Falta uma tabela de memória de vídeo por chip |
@@ -238,18 +239,15 @@ ADRs completos em ARCHITECTURE §15. As principais:
 1. ~~Montar pelo orçamento~~ (disponível na tela inicial e no diagnóstico de gargalo).
 2. ~~Comparador de hardware~~ (seleção por categoria, com desempenho estimado para processadores e placas de vídeo).
 3. ~~Mais de um disco na montagem~~ (NVMe, SATA e discos importados do CPU-Z).
-4. **Login com Google e sincronização da conta:** autenticação e sessão implementadas, assim como a gravação dos dados que o app já persistia. Resta configurar o cliente OAuth e validar o login real, além de ampliar o histórico registrado conforme a lista abaixo.
-5. **Alertas de preço:** acompanhar produtos e enviar e-mail quando o preço atingir um valor definido ou o menor preço em 30 dias.
+4. ~~Login com Google e sincronização da conta~~ (validado em produção, com CEP de entrega).
+5. **Alertas de preço:** acompanhar um produto (preço-alvo, qualquer queda ou volta ao estoque). Os alertas ficam na conta; uma rotina do servidor confere depois das coletas e grava as notificações, que o site só lê (sino ao lado da conta e notificação do navegador). E-mail fica para depois.
+6. **Motor único de recomendação:** unificar as ofertas das dicas do Gargalo (`picks.ts`) com o motor do orçamento e fazer o ajuste fino com um dump atualizado. É a última entrega da 1ª versão.
 
-No primeiro login, os dados vêm da conta no SQLite. Os dados antigos do visitante ficam no navegador. A partir do login, sincronizar entre dispositivos:
+A conta guarda, entre dispositivos: Meu PC (com as peças marcadas Já tenho e os dados tratados do CPU-Z), a montagem atual, os filtros e a categoria de cada busca, o último resultado de cada aba do orçamento (com a data e os preços do dia; Refazer cálculo roda de novo) e as peças do comparador. As buscas não guardam o resultado: abrem sempre com o preço mais atual do banco, e o histórico de cada produto mostra a evolução. Guardar várias montagens ficou de fora (pouco uso esperado).
 
-- **Meu PC**, com as peças marcadas Já tenho e os dados tratados do CPU-Z.
-- **Montagens feitas**, incluindo as peças, quantidades e indicações de peças atuais.
-- **Última busca de cada categoria de hardware**, com categoria, filtros, ordenação, resultado e data da consulta.
-- **Último Montar pelo orçamento**, incluindo o valor informado, as opções usadas, os preços e as recomendações mostradas, com a data do cálculo.
-- **Peças adicionadas ao comparador**, numa lista com a categoria de cada peça.
-
-Ao reabrir uma busca ou um orçamento antigo, mostrar quando foi feito, avisar que preços e disponibilidade podem ter mudado e orientar a atualizar a busca ou refazer o cálculo. Antes do login, o armazenamento continua local.
+### Em espera
+- Prévia de link (título, imagem e preço) para compartilhar produto e montagem.
+- Cotação de frete por loja usando o CEP de entrega.
 
 ### Próximos passos
 
@@ -259,9 +257,7 @@ Ao reabrir uma busca ou um orçamento antigo, mostrar quando foi feito, avisar q
 
 ### Melhorias
 - Cupons da S2 e da S3 (hoje só a S1).
-- Cotação de frete por loja usando o CEP de entrega já disponível em Minha conta.
 - Variantes do mesmo modelo por part number (cor, versão OC).
-- Detectar queda de rede na rotina de fichas (seção 10).
 - Marcar "preço acima do normal" pelo histórico de 30 dias (já está no banco).
 - Refinar a calibração do Montar pelo orçamento e ampliar as referências de desempenho sustentado por modelo.
 - Usar mais campos da ficha no ranking, como BIOS Flashback na placa-mãe e cache DRAM e TBW no SSD.

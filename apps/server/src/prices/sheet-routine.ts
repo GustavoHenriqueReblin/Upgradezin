@@ -4,7 +4,7 @@ import { getDb } from '../db/instance.ts';
 import { backoffInfo, BlockedError, PageLimitError, pageLimitUntil, pagesUsed, registerSuccess, storeGap } from '../pace.ts';
 import { ACTIVE_STORES } from '../stores.ts';
 import { canReadSheet, sheetOf, withBrowserSession } from './collect.ts';
-import { BROKEN_AFTER, PAGE_ERROR_SKIP_MS, recentPageErrors, recordPageError } from './page-errors.ts';
+import { BROKEN_AFTER, NETWORK_PAUSE_MS, NETWORK_STREAK, PAGE_ERROR_SKIP_MS, pageErrorState, recentPageErrors, recordPageError, restorePageError, type PageErrorState } from './page-errors.ts';
 import { nextSheets, SHEET_SCOPE_DAYS } from './sheets.ts';
 
 /**
@@ -30,6 +30,8 @@ let timer: NodeJS.Timeout | undefined;
 let ac = new AbortController();
 const nextAt = new Map<StoreId, number>();
 const busy = new Set<StoreId>();
+/** Erros seguidos de página em cada loja, com o registro de antes: se viram uma sequência, era a rede e são desfeitos. */
+const streaks = new Map<StoreId, { sku: string; before: PageErrorState }[]>();
 
 /** Junta o enviado com o que já valia; o que falta ou é inválido fica como estava (ou o padrão). */
 const sanitize = (s: SheetRoutineInput, base: SheetRoutineSettings): SheetRoutineSettings => ({
@@ -86,6 +88,7 @@ export function stopSheetRoutine(): void {
   clearInterval(timer);
   timer = undefined;
   nextAt.clear();
+  streaks.clear();
   ac.abort();
 }
 
@@ -121,12 +124,24 @@ async function readOne(store: StoreId, signal: AbortSignal): Promise<void> {
   try {
     const r = await sheetOf(store, next.sku, next.category, signal, { origin: 'routine' });
     registerSuccess(store);
+    streaks.delete(store);
     console.info(`[ficha ${store}] ${next.category} ${next.sku}: ${!r?.hasSheet ? 'página sem ficha' : `${Object.keys(r.values).length} campos`}`);
   } catch (err) {
     if (!signal.aborted && !(err instanceof BlockedError) && !(err instanceof PageLimitError)) {
       // Erro da página (não da loja): fica de fora por um tempo, para não travar a fila nela; com
       // falhas seguidas, a oferta sai do app até a página abrir de novo.
+      const before = pageErrorState(getDb(), store, next.sku);
       const fails = recordPageError(getDb(), store, next.sku, err instanceof Error ? err.message : String(err));
+      const streak = [...(streaks.get(store) ?? []), { sku: next.sku, before }];
+      if (streak.length >= NETWORK_STREAK) {
+        // Várias páginas seguidas falhando: é a rede (ou a loja) fora. Os produtos voltam como estavam e a loja espera.
+        for (const { sku, before: state } of streak.reverse()) restorePageError(getDb(), store, sku, state);
+        streaks.delete(store);
+        console.warn(`[ficha ${store}] ${NETWORK_STREAK} páginas seguidas com erro: rede ou loja fora; erros desfeitos, pausa de ${NETWORK_PAUSE_MS / 60_000} min.`);
+        nextAt.set(store, Date.now() + NETWORK_PAUSE_MS);
+        return;
+      }
+      streaks.set(store, streak);
       const hidden = fails >= BROKEN_AFTER ? ', oferta fora do app' : '';
       console.error(`[ficha ${store}] ${next.category} ${next.sku} (falha ${fails}, fora da fila por ${PAGE_ERROR_SKIP_MS / 3_600_000} h${hidden}):`, err);
     }

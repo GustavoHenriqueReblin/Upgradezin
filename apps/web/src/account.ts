@@ -48,7 +48,9 @@ function flush(): Promise<void> | undefined {
           show({ enabled: true, user, reauthenticate: true, error: 'A sessão mudou. Entre novamente para salvar as alterações.' });
           return;
         }
-        if (!res.ok) throw new Error(String(res.status));
+        // 400: o servidor nunca vai aceitar (chave que deixou de ser sincronizada, valor grande demais). Tentar de novo
+        // travaria a fila inteira, então a alteração sai da fila e as próximas seguem.
+        if (!res.ok && res.status !== 400) throw new Error(String(res.status));
         if (pending.get(key) === value) {
           pending.delete(key);
           try {

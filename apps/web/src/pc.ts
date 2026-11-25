@@ -73,6 +73,25 @@ export function forgetPcBuild(build: SavedBuild): SavedBuild {
   return withDrives(next, buildDrives(build).map(forget).filter((item) => item !== undefined));
 }
 
+/** Tira da montagem as peças que passam a pergunta: `keep` decide, peça por peça (discos inclusive). */
+function filterBuild(build: SavedBuild, keep: (item: BuildItem) => boolean): SavedBuild {
+  const next: SavedBuild = {};
+  for (const slot of BUILD_SLOTS) {
+    const item = build[slot];
+    if (item && slot !== 'ssd' && keep(item)) next[slot] = item;
+  }
+  return withDrives(next, buildDrives(build).filter(keep));
+}
+
+/**
+ * Importar o CPU-Z não monta nada: o relatório vira o Meu PC, e as peças marcadas como Já tenho (que eram o PC
+ * informado à mão) saem da montagem, deixando o espaço vazio. As peças compradas ficam.
+ */
+export const withoutOwned = (build: SavedBuild): SavedBuild => filterBuild(build, (item) => !item.current);
+
+/** Peças que versões antigas copiavam do CPU-Z para a montagem (chave "pc:..."): saem ao abrir o app. */
+export const withoutPcItems = (build: SavedBuild): SavedBuild => filterBuild(build, (item) => !item.key.startsWith('pc:'));
+
 function importDrives(build: SavedBuild, pc: PcProfile): SavedBuild {
   const selected = buildDrives(build).filter((item) => !item.key.startsWith('pc:ssd:'));
   const imported = pc.drives.map((drive, index) => ({

@@ -9,6 +9,7 @@ import { CouponLine, lowBadge, PromoLine } from './ProductCard.tsx';
 import { StoreDot } from './StoreDot.tsx';
 import { fetchProduct } from '../compare.ts';
 import { CompareButton } from './CompareControls.tsx';
+import { AlertButton } from './PriceAlerts.tsx';
 import { CatalogHeader } from './CatalogHeader.tsx';
 
 /**
@@ -89,6 +90,7 @@ function Content({ page }: { page: ProductPageData }) {
                 >
                   Ver na loja <ExternalLink className="h-4 w-4" />
                 </a>
+                <AlertButton product={{ productKey: page.key, category: page.category, title: page.title, price: effectiveCash(best) }} />
                 <CompareButton category={page.category} productKey={page.key} />
               </div>
             </div>
@@ -100,7 +102,10 @@ function Content({ page }: { page: ProductPageData }) {
                   {othersInStock === 1 ? 'Há 1 oferta' : `Há ${othersInStock} ofertas`} de produto aberto ou de outros vendedores abaixo.
                 </div>
               )}
-              <div className="mt-2"><CompareButton category={page.category} productKey={page.key} /></div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <AlertButton product={{ productKey: page.key, category: page.category, title: page.title }} />
+                <CompareButton category={page.category} productKey={page.key} />
+              </div>
             </div>
           )}
         </div>

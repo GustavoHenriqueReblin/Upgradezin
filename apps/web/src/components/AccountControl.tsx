@@ -1,13 +1,16 @@
-import { useId, useRef, useState, useSyncExternalStore } from 'react';
+import { useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { LogIn, LogOut, MapPin, UserRound, X } from 'lucide-react';
-import { headerAction } from './HeaderActions.tsx';
+import { actionLabel, headerAction } from './HeaderActions.tsx';
 import { accountStatus, firstName, guestAccountStatus, logoutAccount, retryAccountSync, saveAccountCep, subscribeAccount } from '../account.ts';
 
 const button = 'button-link inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-zinc-300 px-3 text-sm font-medium hover:border-accent-500 dark:border-zinc-700';
 const formatCep = (value: string) => value.replace(/\D/g, '').slice(0, 8).replace(/^(\d{5})(\d)/, '$1-$2');
 
-/** separated: traço antes da conta, separando a pessoa dos atalhos de ferramenta (só aparece quando o login está ativo). */
-export function AccountControl({ showLabel = false, separated = false }: { showLabel?: boolean; separated?: boolean }) {
+/**
+ * separated: traço antes da conta, separando a pessoa dos atalhos de ferramenta (só aparece quando o login está ativo).
+ * children: o que fica do lado da conta, depois do traço (o sino dos alertas); sem login, aparece sozinho.
+ */
+export function AccountControl({ showLabel = false, separated = false, children }: { showLabel?: boolean; separated?: boolean; children?: ReactNode }) {
   const { enabled, user, error, reauthenticate } = useSyncExternalStore(subscribeAccount, accountStatus, guestAccountStatus);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -15,7 +18,7 @@ export function AccountControl({ showLabel = false, separated = false }: { showL
   const [feedback, setFeedback] = useState<{ text: string; error: boolean }>();
   const details = useRef<HTMLDialogElement>(null);
   const id = useId();
-  if (!enabled) return null;
+  if (!enabled) return children ? <>{children}</> : null;
   const greeting = firstName(user?.name);
   const leave = async () => {
     setBusy(true);
@@ -39,6 +42,7 @@ export function AccountControl({ showLabel = false, separated = false }: { showL
   return (
     <div className="relative flex items-center gap-2">
       {separated && <span aria-hidden="true" className="mx-1 h-6 w-px bg-zinc-200 dark:bg-zinc-800" />}
+      {children}
       {user ? (
         <>
           <button type="button" onClick={() => {
@@ -50,7 +54,7 @@ export function AccountControl({ showLabel = false, separated = false }: { showL
             <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-500/15 text-sm font-semibold text-accent-700 dark:text-accent-300">
               {greeting ? greeting[0]!.toUpperCase() : <UserRound className="h-4 w-4" />}
             </span>
-            {(greeting || showLabel) && <span className="hidden max-w-32 truncate sm:inline">{greeting ?? 'Minha conta'}</span>}
+            <span className={`${actionLabel(showLabel)} max-w-32 truncate`}>{greeting ?? 'Minha conta'}</span>
           </button>
           <dialog ref={details} aria-labelledby={`${id}-title`}
             className="m-auto w-[calc(100%-2rem)] max-w-sm rounded-2xl border border-zinc-200 bg-white p-5 text-zinc-900 backdrop:bg-black/60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100">
@@ -86,8 +90,8 @@ export function AccountControl({ showLabel = false, separated = false }: { showL
           </dialog>
         </>
       ) : (
-        <a href="/api/account/google" className={button} title="Entrar com Google" aria-label="Entrar com Google">
-          <LogIn aria-hidden="true" className="h-4 w-4" /> {showLabel && <span className="hidden sm:inline">Entrar com Google</span>}
+        <a href="/api/account/google" className={button} title="Entrar" aria-label="Entrar">
+          <LogIn aria-hidden="true" className="h-4 w-4" /> <span className={actionLabel(showLabel)}>Entrar</span>
         </a>
       )}
       {error && (

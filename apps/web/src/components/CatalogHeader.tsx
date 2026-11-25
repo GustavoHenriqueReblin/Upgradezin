@@ -5,6 +5,7 @@ import { CompareLink } from './CompareControls.tsx';
 import { AccountControl } from './AccountControl.tsx';
 import { MyPcButton } from './MyPc.tsx';
 import { BuildAction } from './HeaderActions.tsx';
+import { AlertsShortcut } from './PriceAlerts.tsx';
 import { searchCategoryHref } from '../uiState.ts';
 import { buildPartCount, loadBuild } from '../build.ts';
 import { currentPc, loadPc } from '../pc.ts';
@@ -33,7 +34,7 @@ export function CatalogHeader({ title, category = 'gpu', comparing = false }: { 
           <MyPcButton pc={pc} />
           <CompareLink active={comparing} />
           <BuildAction count={buildPartCount(build)} />
-          <AccountControl separated />
+          <AccountControl separated><AlertsShortcut /></AccountControl>
         </div>
       </div>
     </header>

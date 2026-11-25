@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
 import { CATEGORIES } from '@upgradezin/shared';
@@ -27,7 +27,27 @@ function tokenFrom(header: string | undefined, name: string): string | undefined
 
 type GoogleProfile = { sub: string; email: string; name: string };
 type GoogleLogin = { clientId: string; redirectUri: string; exchange: (code: string, verifier: string, nonce: string) => Promise<GoogleProfile> };
-type Account = { id: number; google_sub: string; name: string; email: string; cep: string | null };
+export type Account = { id: number; google_sub: string; name: string; email: string; cep: string | null };
+
+const accountByToken = (db: Db, token: string | undefined): Account | undefined => token
+  ? db.prepare(`SELECT a.id, a.google_sub, a.name, a.email, a.cep FROM accounts a JOIN account_sessions s ON s.account_id = a.id
+      WHERE s.token_hash = ? AND s.expires_at > ?`).get(digest(token), Date.now()) as Account | undefined
+  : undefined;
+
+/** A conta da sessão do cookie (undefined: sem sessão válida). */
+export const sessionAccount = (db: Db, cookieHeader: string | undefined) => accountByToken(db, tokenFrom(cookieHeader, SESSION));
+
+/**
+ * A conta do pedido, ou a resposta de erro já enviada (undefined). Gravações (`write`) pedem os cabeçalhos do site:
+ * x-account (não vem de um formulário de outro site) e x-account-id (uma guia antiga não grava na conta nova).
+ */
+export function requestAccount(db: Db, req: FastifyRequest, reply: FastifyReply, write = false): Account | undefined {
+  if (write && req.headers['x-account'] !== '1') return void reply.code(403).send({ error: 'forbidden' });
+  const user = sessionAccount(db, req.headers.cookie);
+  if (!user) return void reply.code(401).send({ error: 'unauthorized' });
+  if (write && req.headers['x-account-id'] !== digest(user.google_sub)) return void reply.code(409).send({ error: 'account-changed' });
+  return user;
+}
 
 export function configureGoogleLogin(clientId?: string, secret?: string, redirectUri?: string): GoogleLogin | undefined {
   if (!clientId || !secret || !redirectUri) return;
@@ -57,10 +77,7 @@ const dataBody = z.object({ key: z.string().refine((key) => dataKeys.has(key)), 
 const cepBody = z.object({ cep: z.string().trim().regex(/^\d{5}-?\d{3}$/).transform((value) => value.replace('-', '')).nullable() }).strict();
 
 export function registerAccountRoutes(app: FastifyInstance, getDb: () => Db, google?: GoogleLogin): void {
-  const accountFor = (db: Db, token: string | undefined): Account | undefined => token
-    ? db.prepare(`SELECT a.id, a.google_sub, a.name, a.email, a.cep FROM accounts a JOIN account_sessions s ON s.account_id = a.id
-        WHERE s.token_hash = ? AND s.expires_at > ?`).get(digest(token), Date.now()) as Account | undefined
-    : undefined;
+  const accountFor = accountByToken;
 
   app.get('/api/account', async (req, reply) => {
     reply.header('Cache-Control', 'no-store');

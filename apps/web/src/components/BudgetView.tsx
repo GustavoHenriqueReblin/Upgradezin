@@ -4,6 +4,7 @@ import { analyzePc, BUILD_SLOTS, CATEGORY_DEFS, CPU_BOUND, GPU_BOUND, productPat
 import { BudgetError, budgetRequest, fetchPlan, formatBudget, loadBudgetResult, loadBudgetUi, NOTE_TEXT, optionHeadline, optionLabels, optionsOf, ownedBuild, parseBudget, planToBuild,
   saveBudgetResult, saveBudgetUi, stretchGain, type BudgetMode, type BudgetWorkload } from '../budget.ts';
 import { CompareButton } from './CompareControls.tsx';
+import { withoutPcItems } from '../pc.ts';
 import type { SavedBuild } from '../build.ts';
 import { brl } from '../format.ts';
 import { storeName } from '../stores.ts';
@@ -70,6 +71,14 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
   }, [mode]);
   const pending = useRef<AbortController>(undefined);
   useEffect(() => () => pending.current?.abort(), []);
+  // Ao terminar um cálculo pedido agora (não o resultado guardado), a tela desce até o resultado.
+  const resultRef = useRef<HTMLDivElement>(null);
+  const scrollNext = useRef(false);
+  useEffect(() => {
+    if (!scrollNext.current || state.kind === 'loading' || state.kind === 'idle') return;
+    scrollNext.current = false;
+    if (resultRef.current) scrollToResult(resultRef.current);
+  }, [state]);
   const [importing, setImporting] = useState(false);
   /** Peças do PC: recolhidas por padrão (só o resumo); expandir mostra tudo. */
   const [pcOpen, setPcOpen] = useState(false);
@@ -106,6 +115,7 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
     const controller = new AbortController();
     pending.current = controller;
     setState({ kind: 'loading' });
+    scrollNext.current = true;
     fetchPlan(req, controller.signal)
       .then((plan) => {
         if (controller.signal.aborted) return;
@@ -308,6 +318,7 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
         </div>
       </section>
 
+      <div ref={resultRef} className="scroll-mt-20 space-y-5">
       {state.kind === 'error' && <p role="status" className="text-sm text-red-600 dark:text-red-400">{state.invalid
         ? 'O servidor não aceitou os dados do pedido. Revise o valor e as peças do seu PC.'
         : 'Não deu para montar agora. Tente de novo em instantes.'}</p>}
@@ -324,6 +335,7 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
             onBuyable={() => { setPriceMode('buyable'); run('buyable'); }} />
         </>
       )}
+      </div>
 
       {importing && (
         <ImportPc
@@ -339,6 +351,12 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
       )}
     </div>
   );
+}
+
+/** Leva o resultado para o topo da tela (abaixo do cabeçalho fixo), sem animação para quem pediu menos movimento. */
+export function scrollToResult(el: Pick<HTMLElement, 'scrollIntoView'>): void {
+  const reduce = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
 }
 
 /** "25/11 às 14:30" */
@@ -556,7 +574,7 @@ function OptionDetail({ opt, first, n, budget, owned, screen, profile, onToBuild
           </>
         ) : (
           <>
-            <button onClick={() => onToBuild(planToBuild(opt, owned))} className="inline-flex items-center gap-1.5 rounded-lg accent-control px-4 py-2 text-sm font-medium">
+            <button onClick={() => onToBuild(planToBuild(opt, owned && withoutPcItems(owned)))} className="inline-flex items-center gap-1.5 rounded-lg accent-control px-4 py-2 text-sm font-medium">
               Levar para a montagem <ArrowRight className="h-4 w-4" />
             </button>
             <p className="text-xs text-zinc-500">Na montagem dá para trocar as peças e conferir a compatibilidade. Os preços são à vista.</p>

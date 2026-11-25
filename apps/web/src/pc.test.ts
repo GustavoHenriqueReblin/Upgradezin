@@ -4,7 +4,7 @@ import { analyzePc } from '@upgradezin/shared';
 import amd from '../../../packages/shared/fixtures/cpuz/amd-am4-rx6600.txt?raw';
 import intel from '../../../packages/shared/fixtures/cpuz/intel-lga1700-rtx4060ti.txt?raw';
 import { buildTotals, checkCandidate, type BuildItem } from './build.ts';
-import { applyPc, currentPc, forgetPcBuild, loadPc, readReportFile, savePc, validPc } from './pc.ts';
+import { applyPc, currentPc, forgetPcBuild, loadPc, readReportFile, savePc, validPc, withoutOwned, withoutPcItems } from './pc.ts';
 
 const pc = parseCpuzReport(amd)!;
 const file = (text: BlobPart, name = 'PC.txt') => new File([text], name, { type: 'text/plain' });
@@ -90,4 +90,22 @@ it('guarda a data da importação e a mantém ao regravar o mesmo PC', () => {
   } finally {
     vi.unstubAllGlobals();
   }
+});
+
+it('importar o CPU-Z tira da montagem as peças marcadas como Já tenho e mantém as compradas', () => {
+  const owned = (key: string, current?: true): BuildItem => ({ key, title: key, specs: {}, offers: [], ...(current && { current }) });
+  const build = { cpu: owned('cpu:1', true), gpu: owned('gpu:nova'), ssd: owned('ssd:a', true), extraDrives: [owned('ssd:b'), owned('ssd:c', true)] };
+  const next = withoutOwned(build);
+  expect(next.cpu).toBeUndefined();
+  expect(next.gpu?.key).toBe('gpu:nova');
+  expect([next.ssd?.key, ...(next.extraDrives ?? []).map((d) => d.key)]).toEqual(['ssd:b']);
+});
+
+it('ao abrir, tira as peças que versões antigas copiavam do CPU-Z para a montagem', () => {
+  const imported = { ...applyPc({}, pc), case: { key: 'case:novo', title: 'Gabinete novo', specs: {}, offers: [] } };
+  const clean = withoutPcItems(imported);
+  expect(clean.case?.key).toBe('case:novo');
+  expect(clean.gpu).toBeUndefined();
+  expect(clean.cpu).toBeUndefined();
+  expect(clean.ssd).toBeUndefined();
 });

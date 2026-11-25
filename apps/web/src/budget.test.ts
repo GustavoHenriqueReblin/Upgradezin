@@ -4,7 +4,7 @@ import amd from '../../../packages/shared/fixtures/cpuz/amd-am4-rx6600.txt?raw';
 import type { BuildItem } from './build.ts';
 import { BUDGET_VISIBLE, budgetRequest, defaultBudgetUi, formatBudget, lastBudgetMode, loadBudgetResult, optionHeadline, optionLabels, optionsOf, ownedBuild, parseBudget, planToBuild,
   sanitizeBudgetUi, saveBudgetResult, stretchGain } from './budget.ts';
-import { resultDate } from './components/BudgetView.tsx';
+import { resultDate, scrollToResult } from './components/BudgetView.tsx';
 
 const pc = parseCpuzReport(amd)!;
 const offer = (store: Offer['store'], sku: string, title: string, priceCash: number, specs: Offer['specs']): Offer =>
@@ -155,5 +155,18 @@ describe('montar pelo orçamento: ajustes da tela', () => {
 
   it('mostra a data do resultado no horário de Brasília', () => {
     expect(resultDate(Date.UTC(2026, 10, 25, 17, 30))).toBe('25/11 às 14:30');
+  });
+});
+
+describe('rolar até o resultado', () => {
+  it('desce suave até o resultado, sem animação para quem pediu menos movimento', () => {
+    const el = { scrollIntoView: vi.fn() };
+    vi.stubGlobal('window', { matchMedia: () => ({ matches: false }) });
+    scrollToResult(el);
+    expect(el.scrollIntoView).toHaveBeenLastCalledWith({ behavior: 'smooth', block: 'start' });
+    vi.stubGlobal('window', { matchMedia: () => ({ matches: true }) });
+    scrollToResult(el);
+    expect(el.scrollIntoView).toHaveBeenLastCalledWith({ behavior: 'auto', block: 'start' });
+    vi.unstubAllGlobals();
   });
 });
