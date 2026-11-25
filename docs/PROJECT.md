@@ -33,6 +33,8 @@ Fora do escopo: marketplaces abertos, usado/recondicionado, checkout, afiliados,
 
 No admin, fichas em revisão podem ser concluídas com campos pendentes e reabertas. O monitoramento do servidor continua ativo em qualquer aba do painel.
 
+O PC atual pode ser informado marcando Já Tenho nas peças da montagem ou importando um relatório do CPU-Z. Os dois caminhos alimentam o diagnóstico e as sugestões de upgrade. A importação coloca as peças na montagem automaticamente.
+
 ### Implementadas
 
 | Área | O que faz | Referência |
@@ -40,10 +42,10 @@ No admin, fichas em revisão podem ser concluídas com campos pendentes e reaber
 | Busca por categoria | Formulário por categoria (potência, soquete, chipset, memória, linha de processador, fabricante de placa de vídeo, capacidade etc.) com a contagem de produtos em estoque em cada opção; o resultado vem do banco, filtrado pelas specs da ficha | §7, §9 |
 | Filtros do resultado | Calculados dos próprios resultados, com contagem; filtros genéricos para cada campo da ficha; ordenações por categoria (R$ por watt, por GB, por TB…) | §7 |
 | Produto | Página do produto (`/produto/<chave>`) com as ofertas de todas as lojas, a ficha completa e o histórico de preço (30/90 dias/tudo), selo "Menor Preço em 30 Dias" | §9 |
-| Comparador | Seleção de peças de várias categorias, com tabelas separadas e rolagem horizontal. CPUs e GPUs têm índices de jogos e, com PC importado, estimativas de ganho e equilíbrio | §14 |
+| Comparador | Seleção de peças de várias categorias, com tabelas separadas e rolagem horizontal. CPUs e GPUs têm índices de jogos e, com o PC atual informado, estimativas de ganho e equilíbrio | §14 |
 | Montagem do PC | Oito categorias, com múltiplos discos NVMe e SATA. Busca e compatibilidade por peça, quantidade na memória, total por loja e na melhor combinação e compartilhamento por link (`/m/<id>`) | §17.1 |
-| Montar pelo Orçamento | PC completo ou upgrade do PC importado, com até 3 opções. Acesso pela tela inicial e pelo Identificar Gargalo | §17.4 |
-| Importar o PC (CPU-Z) | Lê o relatório `.txt` do CPU-Z **no navegador** (o arquivo não vai ao servidor); as peças viram "Atual" na montagem; a fonte é informada à mão | §17.2 |
+| Montar pelo Orçamento | PC completo ou upgrade do PC atual, com até 3 opções. Acesso pela tela inicial e pelo Identificar Gargalo | §17.4 |
+| Informar o PC atual | Marcação Já Tenho na montagem ou importação do relatório `.txt` do CPU-Z no navegador. O relatório preenche a montagem automaticamente | §17.2 |
 | Identificar Gargalo | Equilíbrio processador × placa de vídeo na tela da pessoa (resolução e Hz do monitor), dicas (upgrade, grátis, atenção, observação) e as 3 melhores ofertas de cada dica | §17.3 |
 | Admin (`/admin`) | Lojas, rotina por loja, intervalos, fila, pausas, registro de consultas, cobertura, produtos, fichas (lista, "Ler ficha", preencher/editar à mão, revisão), busca na web, monitor do servidor (CPU, memória, disco, rede), backups e merge de bancos | §9.3 |
 | Rotinas no servidor | Coleta das páginas de categoria, varredura completa (também de madrugada), rotina de fichas, busca na web das fichas, backup noturno | §8.2, §8.3 |
@@ -109,7 +111,7 @@ Migrações por `PRAGMA user_version` em `apps/server/src/db/db.ts`: só acresce
 
 Tabelas antigas (`search_terms`, `term_runs`, `listing_terms`, `parts`, `part_codes`, `product_sheets`) foram removidas por migrações.
 
-**No navegador** (localStorage, só da pessoa): montagem (`upgradezin.build.v1`), PC importado (`upgradezin.pc.v1`, só as peças lidas, nunca o arquivo), categoria e filtros (`upgradezin.ui.v1`), últimas buscas por orçamento (`upgradezin.budget.v1`). Com o login (planejado), vão para a conta.
+**No navegador** (localStorage, só da pessoa): montagem e marcações Já Tenho (`upgradezin.build.v1`), perfil lido do CPU-Z (`upgradezin.pc.v1`, só os dados tratados, nunca o arquivo), categoria e filtros (`upgradezin.ui.v1`), últimas buscas por orçamento (`upgradezin.budget.v1`). Com o login planejado, o PC atual e as montagens vão para a conta.
 
 ---
 
@@ -232,10 +234,16 @@ ADRs completos em ARCHITECTURE §15. As principais:
 
 ## 11. Melhorias planejadas
 
-### Para lançar a 1ª versão, nesta ordem (ARCHITECTURE §14)
+### Entregas da 1ª versão (ARCHITECTURE §14)
 1. ~~Montar pelo orçamento~~ (disponível na tela inicial e no diagnóstico de gargalo).
 2. ~~Comparador de hardware~~ (seleção por categoria, com desempenho estimado para processadores e placas de vídeo).
 3. ~~Mais de um disco na montagem~~ (NVMe, SATA e discos importados do CPU-Z).
+
+### Próximos passos
+
+1. Subir a versão e conferir a criação automática das novas colunas e a releitura das fichas guardadas.
+2. Validar com o catálogo de produção os fluxos de comparação, busca e montagem com vários discos. Corrigir o que aparecer nessa validação antes de fechar a 1ª versão.
+3. Quando a complementação das fichas terminar, rodar a matriz ampliada de orçamento com um dump atualizado. Comparar com o JSON de referência antes de retomar a calibração.
 
 ### Depois do lançamento
 4. **Login com Google** (gratuito; projeto no Google Cloud e tela de consentimento): PC importado, montagens, buscas por orçamento e alertas na conta; o que está no navegador sobe no primeiro login.

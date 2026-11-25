@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, ChevronDown, Cpu, FileText, Loader2, Monitor, Wallet } from 'lucide-react';
+import { ArrowRight, ChevronDown, FileText, Loader2, Monitor, Wallet } from 'lucide-react';
 import { analyzePc, BUILD_SLOTS, CATEGORY_DEFS, CPU_BOUND, GPU_BOUND, productPath, type BudgetMode as PriceMode, type BudgetOption, type BudgetPlan, type BudgetProfile, type PcProfile, type Resolution } from '@upgradezin/shared';
 import { budgetRequest, fetchPlan, formatBudget, loadBudgetUi, NOTE_TEXT, optionLabels, optionsOf, ownedBuild, parseBudget, planToBuild, saveBudgetUi, stretchGain, type BudgetMode } from '../budget.ts';
 import type { SavedBuild } from '../build.ts';
 import { brl } from '../format.ts';
 import { storeName } from '../stores.ts';
 import { CATEGORY_ICONS } from './CategoryPicker.tsx';
-import { ImportPc } from './ImportPc.tsx';
+import { ImportPc, PcInputActions } from './ImportPc.tsx';
 import { KIND, useCpuSheet, VERDICT, verdictSummary } from './PcAnalysis.tsx';
 import { pcSummary, PcSpecs } from './PcSpecs.tsx';
 import { StoreDot } from './StoreDot.tsx';
@@ -17,6 +17,7 @@ interface Props {
   pc: PcProfile | null;
   build: SavedBuild;
   onImport: (pc: PcProfile) => void;
+  onManual?: () => void;
   /** Leva o plano para a montagem (onde cada peça pode ser trocada). */
   onToBuild: (build: SavedBuild) => void;
 }
@@ -41,7 +42,7 @@ type State = { kind: 'idle' } | { kind: 'loading' } | { kind: 'error' } | { kind
  * Montar pelo orçamento: um ponto de entrada ("quanto quer gastar?") para o PC inteiro ou o upgrade do PC
  * importado. O servidor escolhe as peças (packages/shared/src/budget.ts); o resultado vai para a montagem.
  */
-export function BudgetView({ mode, onMode, pc, build, onImport, onToBuild }: Props) {
+export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBuild }: Props) {
   // O que a pessoa preencheu da última vez, salvo no navegador.
   const [saved] = useState(loadBudgetUi);
   const [text, setText] = useState<Record<BudgetMode, string>>(saved.text);
@@ -57,6 +58,7 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onToBuild }: Pro
   /** Peças do PC: recolhidas por padrão (só o resumo); expandir mostra tudo. */
   const [pcOpen, setPcOpen] = useState(false);
   const budget = parseBudget(text[mode]);
+  const hasUpgradeBase = !!(pc?.cpu || pc?.gpu);
 
   // Upgrade: desempenho atual e tela, como no Identificar Gargalo (processador pela ficha do modelo).
   const cpuSheet = useCpuSheet(mode === 'upgrade' ? pc?.cpu?.specs.cpuModel : undefined);
@@ -75,7 +77,7 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onToBuild }: Pro
   const showBudget = (amount: number) => setText((values) => ({ ...values, [mode]: formatBudget(amount) }));
 
   const run = () => {
-    if (!budget || (mode === 'upgrade' && (!pc || !owned || !balance))) return;
+    if (!budget || (mode === 'upgrade' && (!hasUpgradeBase || !owned || !balance))) return;
     showBudget(budget);
     const req =
       mode === 'full'
@@ -197,7 +199,7 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onToBuild }: Pro
                   Monitor de 144 Hz ou mais
                 </label>
               </fieldset>
-            ) : pc ? (
+            ) : pc && hasUpgradeBase ? (
               <div className="space-y-4">
                 <div className="rounded-xl border border-zinc-200 dark:border-zinc-800">
                   <div className="flex items-center gap-3 px-3 py-2.5">
@@ -243,14 +245,9 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onToBuild }: Pro
               </div>
             ) : (
               <div className="rounded-xl border border-dashed border-zinc-300 p-4 text-center text-sm text-zinc-500 dark:border-zinc-700">
-                Para sugerir o upgrade, o Upgradezin precisa saber as peças do seu PC: ele lê o relatório do CPU-Z (o arquivo não sai do seu navegador).
-                <div>
-                  <button
-                    onClick={() => setImporting(true)}
-                    className="mt-3 inline-flex items-center gap-2 rounded-lg border border-zinc-300 px-3 py-1.5 font-medium text-zinc-800 hover:border-accent-500 dark:border-zinc-700 dark:text-zinc-200"
-                  >
-                    <Cpu className="h-4 w-4" /> Importar Meu PC
-                  </button>
+                Importe o relatório do CPU-Z ou marque Já Tenho nas peças da sua montagem para receber sugestões de upgrade.
+                <div className="mt-3">
+                  <PcInputActions onImport={() => setImporting(true)} onManual={onManual} />
                 </div>
               </div>
             )}
@@ -279,7 +276,7 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onToBuild }: Pro
 
             <button
               onClick={run}
-              disabled={!budget || state.kind === 'loading' || (mode === 'upgrade' && !pc)}
+              disabled={!budget || state.kind === 'loading' || (mode === 'upgrade' && !hasUpgradeBase)}
               className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl accent-control px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {state.kind === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}

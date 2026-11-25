@@ -1,12 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeListing, parseCpuzReport } from '@upgradezin/shared';
+import { analyzePc } from '@upgradezin/shared';
 import amd from '../../../packages/shared/fixtures/cpuz/amd-am4-rx6600.txt?raw';
 import intel from '../../../packages/shared/fixtures/cpuz/intel-lga1700-rtx4060ti.txt?raw';
 import { buildTotals, checkCandidate, type BuildItem } from './build.ts';
-import { applyPc, readReportFile, validPc } from './pc.ts';
+import { applyPc, currentPc, forgetPcBuild, readReportFile, validPc } from './pc.ts';
 
 const pc = parseCpuzReport(amd)!;
 const file = (text: BlobPart, name = 'PC.txt') => new File([text], name, { type: 'text/plain' });
+
+it('usa peças marcadas manualmente no diagnóstico e mantém as compras fora do perfil', () => {
+  const mark = (key: string, part: NonNullable<typeof pc.cpu>): BuildItem => ({ key, ...part, current: true, offers: [] });
+  const slots = { cpu: mark('cpu', pc.cpu!), gpu: mark('gpu', pc.gpu!), ram: { ...mark('ram', pc.ram!), qty: 2 } };
+  const manual = currentPc(null, slots)!;
+  expect(manual).toMatchObject({ source: 'manual', monitors: [], ram: { specs: { ramCapacity: pc.ram!.specs.ramCapacity! * 2 } } });
+  expect(analyzePc(manual).balance.verdict).toBe(analyzePc(pc, {}).balance.verdict);
+  expect(currentPc(null, forgetPcBuild(slots))).toBeNull();
+  expect(currentPc(null, { cpu: { ...slots.cpu, current: undefined } })).toBeNull();
+});
+
+it('preserva os dados medidos e usa a peça marcada como Atual quando ela substitui a do relatório', () => {
+  const imported = applyPc({}, pc);
+  const manualGpu: BuildItem = { key: 'gpu:nova', title: 'Outra GPU', specs: { gpuModel: 'RTX 4060' }, current: true, offers: [] };
+  const mixed = currentPc(pc, { ...imported, gpu: manualGpu })!;
+  expect(mixed.gpu?.title).toBe('Outra GPU');
+  expect(mixed.monitors).toEqual(pc.monitors);
+  expect(mixed.drives).toEqual(pc.drives);
+  expect(currentPc(pc, { ...imported, gpu: { ...manualGpu, current: undefined } })?.gpu).toEqual(pc.gpu);
+  expect(forgetPcBuild({ ...imported, gpu: manualGpu })).toEqual({ gpu: { ...manualGpu, current: undefined } });
+});
 
 describe('importar o PC pelo relatório do CPU-Z', () => {
   it('lê o arquivo (UTF-8 e UTF-16) e recusa o que não é do CPU-Z', async () => {

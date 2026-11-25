@@ -56,6 +56,13 @@ describe('montar pelo orçamento: tela', () => {
     expect(ownedBuild(pc, { psu: { ...psu, current: undefined } }).psu).toBeUndefined();
   });
 
+  it('usa gabinete e cooler marcados como atuais e preserva a quantidade do kit de RAM', () => {
+    const item: BuildItem = { key: 'atual', title: 'Peça Atual', specs: {}, offers: [], current: true };
+    const owned = ownedBuild(pc, { case: item, cooler: item, ram: { ...item, qty: 2, specs: { ramCapacity: 8 } } });
+    const req = budgetRequest(2500, { res: '1080p' }, owned);
+    expect(req.owned).toMatchObject({ case: { current: true }, cooler: { current: true }, ram: { specs: { ramCapacity: 8 }, qty: 2 } });
+  });
+
   it('as opções do plano: a melhor e as alternativas; sem plano, nenhuma', () => {
     const opt = { parts: {}, total: 1000, fps: 100, notes: [], issues: [] };
     const plan: BudgetPlan = { status: 'ok', budget: 2000, ...opt, total: 1500, alternatives: [opt, { ...opt, total: 900 }] };

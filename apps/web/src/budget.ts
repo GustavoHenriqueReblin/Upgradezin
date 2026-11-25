@@ -1,4 +1,4 @@
-import { groupOffers, type BudgetMode as PriceMode, type BudgetNote, type BudgetOption, type BudgetPlan, type BudgetProfile, type BudgetRequest, type PcProfile, type Resolution } from '@upgradezin/shared';
+import { BUILD_SLOTS, groupOffers, type BudgetMode as PriceMode, type BudgetNote, type BudgetOption, type BudgetPlan, type BudgetProfile, type BudgetRequest, type PcProfile, type Resolution } from '@upgradezin/shared';
 import { itemFromGroup, toBuild, type BuildItem, type SavedBuild } from './build.ts';
 import { applyPc } from './pc.ts';
 
@@ -63,10 +63,11 @@ export function sanitizeBudgetUi(raw: unknown): SavedBudget {
   return out;
 }
 
-/** Aba ao abrir pela tela inicial: a última usada (upgrade só com PC importado); sem histórico, upgrade se há PC. */
+/** Aba ao abrir pela tela inicial: a última usada; o upgrade precisa de CPU ou GPU atual. */
 export function lastBudgetMode(pc: PcProfile | null, saved: SavedBudget = loadBudgetUi()): BudgetMode {
-  if (saved.mode === 'upgrade' && !pc) return 'full';
-  return saved.mode ?? (pc ? 'upgrade' : 'full');
+  const canUpgrade = !!(pc?.cpu || pc?.gpu);
+  if (saved.mode === 'upgrade' && !canUpgrade) return 'full';
+  return saved.mode ?? (canUpgrade ? 'upgrade' : 'full');
 }
 
 export function loadBudgetUi(): SavedBudget {
@@ -94,10 +95,13 @@ export function parseBudget(text: string): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
-/** As peças que a pessoa já tem: as do relatório do CPU-Z, mais a fonte marcada como "Já Tenho" na montagem. */
+/** Peças atuais do perfil e peças marcadas na montagem, com as quantidades escolhidas. */
 export function ownedBuild(pc: PcProfile, build: SavedBuild): SavedBuild {
   const owned = applyPc({}, pc);
-  if (!owned.psu && build.psu?.current) owned.psu = build.psu;
+  for (const slot of BUILD_SLOTS) {
+    const item = build[slot];
+    if (slot !== 'ssd' && item?.current) owned[slot] = item;
+  }
   return owned;
 }
 

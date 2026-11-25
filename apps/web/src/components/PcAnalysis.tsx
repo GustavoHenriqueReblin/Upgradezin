@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, ChevronDown, Cpu, FileText, Gauge, Trash2, Wallet, Wrench } from 'lucide-react';
-import { analyzePc, CATEGORY_DEFS, CPU_BOUND, GPU_BOUND, type Balance, type PcProfile, type Specs, type TipKind, type UpgradeAction, type Verdict } from '@upgradezin/shared';
+import { ArrowRight, ChevronDown, FileText, Gauge, Trash2, Wallet, Wrench } from 'lucide-react';
+import { analyzePc, CATEGORY_DEFS, CPU_BOUND, GPU_BOUND, type Balance, type PcPart, type PcProfile, type Specs, type TipKind, type UpgradeAction, type Verdict } from '@upgradezin/shared';
 import { PC_SLOTS } from '../pc.ts';
 import { CATEGORY_ICONS } from './CategoryPicker.tsx';
-import { ImportPc } from './ImportPc.tsx';
+import { ImportPc, PcInputActions } from './ImportPc.tsx';
 import { UpgradePicks } from './UpgradePicks.tsx';
 
 interface Props {
@@ -12,6 +12,7 @@ interface Props {
   psu?: Specs;
   psuTitle?: string;
   onImport: (pc: PcProfile) => void;
+  onPsu?: (psu: PcPart | undefined) => void;
   onUpgrade: (action: UpgradeAction) => void;
   onToBuild: () => void;
   onForget: () => void;
@@ -77,7 +78,7 @@ export function verdictSummary(pc: PcProfile, balance: Balance): string {
 }
 
 /** "Identificar Gargalo": o PC importado do CPU-Z, o que segura o desempenho e o que vale fazer. */
-export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onUpgrade, onToBuild, onForget, onBudget }: Props) {
+export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onPsu, onUpgrade, onToBuild, onForget, onBudget }: Props) {
   /** 'file': importar de novo; 'psu': só informar a fonte (abre na prévia). */
   const [importing, setImporting] = useState<false | 'file' | 'psu'>(false);
   const [tipsOpen, setTipsOpen] = useState(false);
@@ -89,8 +90,9 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onUpgra
       applyLabel="Analisar Meu PC"
       initial={importing === 'psu' ? pc : null}
       onClose={() => setImporting(false)}
-      onApply={(p) => {
-        onImport(p);
+      onApply={(p, fromFile) => {
+        if (importing === 'psu' && !fromFile && onPsu) onPsu(p.psu);
+        else onImport(p);
         setImporting(false);
         setTipsOpen(false);
       }}
@@ -112,15 +114,12 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onUpgra
             <div>
               <h3 className="font-semibold">Relatório do CPU-Z</h3>
               <p className="mt-1 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                O Upgradezin usa o relatório para identificar as peças. O arquivo fica no seu navegador.
+                Importe o relatório ou selecione as peças na montagem e marque Já Tenho. O arquivo fica no seu navegador.
               </p>
             </div>
           </div>
           <div className="flex flex-col justify-center border-t border-zinc-200 bg-zinc-50 p-4 sm:p-6 dark:border-zinc-800 dark:bg-zinc-950/45 md:border-l md:border-t-0">
-            <button onClick={() => setImporting('file')}
-              className="inline-flex items-center justify-center gap-2 rounded-xl accent-control px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600">
-              <Cpu className="h-4 w-4" /> Importar Meu PC
-            </button>
+            <PcInputActions onImport={() => setImporting('file')} onManual={onToBuild} />
           </div>
         </div>
         {importModal}
@@ -139,14 +138,17 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onUpgra
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Identificar Gargalo</h2>
-          <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">Diagnóstico a partir do relatório do CPU-Z.</p>
+          <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">Diagnóstico com as peças do seu PC.</p>
+          {pc.source === 'manual' && !pc.monitors.length && (
+            <p className="mt-1 text-xs text-zinc-500">Sem dados do monitor, a análise considera Full HD a 60 Hz.</p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <button onClick={onForget} className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-red-600 hover:underline">
             <Trash2 className="h-4 w-4" /> Esquecer Meu PC
           </button>
           <button onClick={() => setImporting('file')} className="flex items-center gap-1.5 text-sm text-zinc-500 hover:underline">
-            <FileText className="h-4 w-4" /> Trocar Relatório
+            <FileText className="h-4 w-4" /> {pc.source === 'manual' ? 'Importar Relatório' : 'Trocar Relatório'}
           </button>
           <button
             onClick={onToBuild}

@@ -56,7 +56,7 @@ export interface PcMonitor {
 }
 
 export interface PcProfile {
-  source: 'cpu-z';
+  source: 'cpu-z' | 'manual';
   version?: string;
   cpu?: PcPart;
   motherboard?: PcPart;

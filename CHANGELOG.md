@@ -4,6 +4,12 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+- O card Identificar Gargalo exibe o modelo curto do processador sem comprimir a descrição.
+
+- Os botões para informar o PC usam o mesmo visual nas telas de gargalo e orçamento.
+
+- Peças marcadas como Já Tenho alimentam o diagnóstico, o comparador e as sugestões de upgrade sem depender do CPU-Z. Importar um relatório preenche a montagem a partir de qualquer tela de entrada.
+
 - A marca da fonte no formulário do CPU-Z usa o select do sistema, com menu compacto e opção para digitar outra marca.
 
 - A tela inicial exibe o texto Comparar junto ao ícone. Na busca, o atalho de montagem fica compacto, com ícone e contagem.
@@ -44,7 +50,7 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 - A ficha de GPU reconhece NVIDIA Kepler e exibe o código GK208 quando informado.
 
-- Comparador de dois ou três processadores ou placas de vídeo pela busca, página de produto e sugestões de upgrade. Mostra ficha, preço em estoque, desempenho estimado e, com PC importado, o ganho e o equilíbrio estimados.
+- Comparador de hardware pela busca, página de produto e sugestões de upgrade. Mostra fichas e preços. Para processadores e placas de vídeo, também apresenta desempenho estimado e, com PC importado, o ganho e o equilíbrio estimados.
 - A montagem aceita vários discos NVMe e SATA. Soma os discos comprados, importa os discos do CPU-Z como atuais, valida as conexões da placa-mãe e inclui todos os discos no compartilhamento.
 
 - A lista Fichas por Produto pode ser filtrada por estoque e vendedor. Os campos de texto e selects do admin seguem a mesma altura mínima.

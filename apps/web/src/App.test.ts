@@ -14,6 +14,15 @@ vi.mock('react', async (importOriginal) => ({
   useEffect: vi.fn(),
 }));
 
+it('padroniza as ações de informar o PC no orçamento e no diagnóstico', () => {
+  const noop = () => {};
+  const analysis = renderToStaticMarkup(createElement(PcAnalysis, { pc: null, onImport: noop, onUpgrade: noop, onToBuild: noop, onForget: noop }));
+  const budget = renderToStaticMarkup(createElement(BudgetView, { mode: 'upgrade', pc: null, build: {}, onImport: noop, onManual: noop, onMode: noop, onToBuild: noop }));
+  const actions = (html: string) => [...html.matchAll(/<button\b[^>]*>(?:(?!<\/button>)[\s\S])*?(?:Importar Meu PC|Informar Peças Manualmente)<\/button>/g)].map(([button]) => button);
+  expect(actions(analysis)).toHaveLength(2);
+  expect(actions(budget)).toEqual(actions(analysis));
+});
+
 it('mantém as ações principais da montagem manual e da identificação de gargalo', () => {
   const noop = () => {};
   const edit = { onOpen: noop, onRemove: noop, onQty: noop, onClear: noop, onImport: noop, onOwned: noop };
@@ -132,6 +141,24 @@ it('usa o mesmo estilo nos três atalhos da tela inicial', () => {
     expect(budget[1]).toContain('text-zinc-500');
     expect(budget).toEqual(classes('Montar Peça por Peça'));
     expect(budget).toEqual(classes('Identificar Gargalo'));
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it('resume o processador no atalho de gargalo quando a peça marcada tem um título de anúncio longo', () => {
+  const title = 'Processador AMD Ryzen 7 5700, 3.7 GHz, Cache 20 MB, 8 Núcleos, AM4';
+  vi.stubGlobal('location', { pathname: '/', search: '' });
+  vi.stubGlobal('__APP_VERSION__', '0.0.0');
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => key === 'upgradezin.build.v1' ? JSON.stringify({
+      cpu: { key: 'cpu:5700', title, specs: { cpuLine: 'Ryzen 7', cpuModel: '5700' }, offers: [], current: true },
+    }) : null,
+  });
+  try {
+    const html = renderToStaticMarkup(createElement(App));
+    expect(html).toMatch(/class="hidden max-w-\[28%\][^"]*truncate[^"]*" title="[^"]+">Ryzen 7 5700<\/span>/);
+    expect(html).not.toContain(`>${title}<`);
   } finally {
     vi.unstubAllGlobals();
   }

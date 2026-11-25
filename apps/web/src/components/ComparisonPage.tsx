@@ -5,7 +5,8 @@ import { budgetIgpuScore, CATEGORIES, CATEGORY_DEFS, cpuNeeded, cpuScore, CPU_BO
 import { applyComparisonSelection, compareKeys, compareUrl, comparisonComputer, comparisonCpuCompatibility, comparisonName, comparisonSelectionKey,
   fetchProduct, groupComparison, rankComparison, relativeGain, type ComparisonSort } from '../compare.ts';
 import { brl } from '../format.ts';
-import { loadPc } from '../pc.ts';
+import { currentPc, loadPc } from '../pc.ts';
+import { loadBuild } from '../build.ts';
 import { searchCategoryHref } from '../uiState.ts';
 import { CatalogHeader } from './CatalogHeader.tsx';
 import { CATEGORY_ICONS } from './CategoryPicker.tsx';
@@ -30,7 +31,7 @@ const delta = (score?: number, reference?: number) => {
 export function ComparisonPage() {
   const [keys, setKeys] = useState(() => compareKeys(new URLSearchParams(location.search)));
   const [products, setProducts] = useState<(ProductPage | null)[] | null>(null);
-  const [pc] = useState(loadPc);
+  const [pc] = useState(() => currentPc(loadPc(), loadBuild()));
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>();
   const [sorts, setSorts] = useState<Partial<Record<CategoryId, ComparisonSort>>>({});
   useEffect(() => {

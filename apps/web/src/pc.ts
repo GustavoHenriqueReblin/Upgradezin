@@ -1,5 +1,5 @@
-import { MAX_BUILD_DRIVES, parseCpuzReport, PC_LIMITS, type BuildSlot, type PcPart, type PcProfile } from '@upgradezin/shared';
-import { buildDrives, itemFromPc, withDrives, type SavedBuild } from './build.ts';
+import { BUILD_SLOTS, MAX_BUILD_DRIVES, parseCpuzReport, PC_LIMITS, type BuildSlot, type PcPart, type PcProfile } from '@upgradezin/shared';
+import { buildDrives, itemFromPc, qtyOf, withDrives, type BuildItem, type SavedBuild } from './build.ts';
 
 /**
  * "Meu PC": o relatório do CPU-Z lido no navegador (o arquivo nunca vai para o servidor).
@@ -33,6 +33,45 @@ export async function readReportFile(file: File): Promise<ReadResult> {
 /** Peças do relatório que entram na montagem (fonte e cooler não aparecem no CPU-Z). */
 export const PC_SLOTS = ['motherboard', 'cpu', 'ram', 'gpu'] as const satisfies readonly BuildSlot[];
 
+/** As peças marcadas prevalecem sobre a categoria lida. O relatório continua a fornecer os dados medidos. */
+export function currentPc(report: PcProfile | null, build: SavedBuild): PcProfile | null {
+  const pc: PcProfile = report ? { ...report } : { source: 'manual', drives: [], monitors: [] };
+  const selected = (slot: typeof PC_SLOTS[number] | 'psu') =>
+    build[slot]?.current && (!report?.[slot] || build[slot]?.key !== `pc:${slot}`) ? build[slot] : undefined;
+  for (const slot of ['cpu', 'motherboard', 'gpu', 'psu'] as const) {
+    const item = selected(slot);
+    if (item) pc[slot] = { title: item.title, brand: item.brand, specs: item.specs };
+  }
+  const ram = selected('ram');
+  if (ram) {
+    const capacity = ram.specs.ramCapacity;
+    const qty = qtyOf(ram);
+    pc.ram = { title: ram.title, brand: ram.brand, modules: [], ratedSpeed: ram.specs.ramSpeed,
+      specs: { ...ram.specs, ...(capacity && { ramCapacity: capacity * qty }), ...(ram.specs.ramModules && { ramModules: ram.specs.ramModules * qty }) } };
+  }
+  const manualDrives = buildDrives(build).filter((item) => item.current && (!report || !item.key.startsWith('pc:ssd:')));
+  if (manualDrives.length) pc.drives = [...pc.drives, ...manualDrives.map(({ title, specs }): PcProfile['drives'][number] => ({
+    name: title, kind: specs.ssdInterface === 'nvme' ? 'nvme' : 'ssd', interface: specs.ssdInterface,
+    capacityGb: specs.ssdCapacity ?? 0, system: false,
+  }))];
+  return pc.cpu || pc.gpu || pc.motherboard || pc.ram || pc.psu || pc.drives.length || build.cooler?.current || build.case?.current ? pc : null;
+}
+
+export function forgetPcBuild(build: SavedBuild): SavedBuild {
+  const forget = (item: BuildItem | undefined) => {
+    if (!item?.current) return item;
+    if (item.key.startsWith('pc:')) return undefined;
+    const { current: _, ...part } = item;
+    return part;
+  };
+  const next: SavedBuild = {};
+  for (const slot of BUILD_SLOTS) {
+    const item = forget(build[slot]);
+    if (item) next[slot] = item;
+  }
+  return withDrives(next, buildDrives(build).map(forget).filter((item) => item !== undefined));
+}
+
 function importDrives(build: SavedBuild, pc: PcProfile): SavedBuild {
   const selected = buildDrives(build).filter((item) => !item.key.startsWith('pc:ssd:'));
   const imported = pc.drives.map((drive, index) => ({
@@ -54,7 +93,7 @@ export function applyPc(build: SavedBuild, pc: PcProfile): SavedBuild {
   for (const slot of PC_SLOTS) {
     const part = pc[slot];
     if (part) next[slot] = itemFromPc(slot, part);
-    else if (next[slot]?.current) delete next[slot];
+    else if (next[slot]?.key === `pc:${slot}`) delete next[slot];
   }
   // Fonte informada na importação: entra como "Atual" (sem ela, a da montagem fica).
   if (pc.psu) next.psu = itemFromPc('psu', pc.psu);

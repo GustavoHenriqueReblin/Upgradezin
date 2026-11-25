@@ -638,19 +638,19 @@ Variáveis em `.env.example`.
 | 8 | Deploy no servidor Linux | feito ([§13](#13-execução-e-deploy)) |
 | — | Montar o PC, peça por peça (ver [§17.1](#171-montar-o-pc-montagem-dinâmica)) | feito, com compartilhamento por link |
 | — | Importar setup atual pelo CPU-Z ([§17.2](#172-importar-setup-atual-cpu-z)) | feito |
-| — | Identificar gargalo e sugerir upgrades a partir do setup importado ([§17.3](#173-identificar-gargalo-e-sugerir-upgrades)) | feito |
-| — | Montar pelo orçamento: PC completo ou upgrade do PC importado ([§17.4](#174-montar-pelo-orçamento)) | feito |
+| — | Identificar gargalo e sugerir upgrades a partir do PC atual ([§17.3](#173-identificar-gargalo-e-sugerir-upgrades)) | feito |
+| — | Montar pelo orçamento: PC completo ou upgrade do PC atual ([§17.4](#174-montar-pelo-orçamento)) | feito |
 | 7.4 | Varredura de categoria: histórico de todo produto à venda (S1) | feito ([§8.2](#82-preços-e-rotina-de-coleta)) |
 
 ### A fazer
 
-#### Para lançar a 1ª versão, nesta ordem
+#### Entregas da 1ª versão
 
-1. **Montar pelo orçamento.** Feito em nov/2026 ([§17.4](#174-montar-pelo-orçamento)): um ponto de entrada ("quanto quer gastar?") para o PC completo e o upgrade do PC importado, só com peças compatíveis pela ficha, e o resultado vai para a montagem. Falta: as "melhores ofertas" de cada dica do gargalo (`picks.ts`, §17.3) ainda têm ranking próprio; passar a usar o mesmo motor.
-2. **Comparador de hardware.** Disponível pelo ícone no cabeçalho, com a contagem total das peças. A seleção vem da busca, da página do produto ou das sugestões de upgrade. A URL `/comparar` carrega as chaves do catálogo e a tela reutiliza a API dos produtos para mostrar ficha e preço em tabelas separadas por categoria, com rolagem horizontal quando as colunas ocupam mais espaço. Para CPU e GPU, mostra desempenho relativo em jogos, diferença sobre a primeira peça e pontos por R$ 1.000. Com o PC importado, também estima ganho sobre a peça atual e equilíbrio com a outra peça.
+1. **Montar pelo orçamento.** Feito em nov/2026 ([§17.4](#174-montar-pelo-orçamento)): um ponto de entrada ("quanto quer gastar?") para o PC completo e o upgrade do PC atual, só com peças compatíveis pela ficha, e o resultado vai para a montagem. Falta: as "melhores ofertas" de cada dica do gargalo (`picks.ts`, §17.3) ainda têm ranking próprio; passar a usar o mesmo motor.
+2. **Comparador de hardware.** Disponível pelo ícone no cabeçalho, com a contagem total das peças. A seleção vem da busca, da página do produto ou das sugestões de upgrade. A URL `/comparar` carrega as chaves do catálogo e a tela reutiliza a API dos produtos para mostrar ficha e preço em tabelas separadas por categoria, com rolagem horizontal quando as colunas ocupam mais espaço. Para CPU e GPU, mostra desempenho relativo em jogos, diferença sobre a primeira peça e pontos por R$ 1.000. Com o PC atual informado, também estima ganho sobre a peça atual e equilíbrio com a outra peça.
 3. **Mais de um disco na montagem.** Implementado. A montagem aceita NVMe e SATA e importa os discos do CPU-Z como "Atual". Total, compartilhamento e validação incluem todos os discos. O orçamento inclui os discos existentes ao validar upgrades e continua selecionando um SSD nos PCs completos.
 
-Com o comparador e os discos, a 1ª versão pode ser lançada.
+Os recursos planejados da 1ª versão estão implementados. Falta validar as mudanças com o catálogo de produção antes de lançar. A calibração do orçamento fica pausada enquanto as fichas são complementadas. Depois, a matriz ampliada deve ser executada com um dump atualizado e comparada ao JSON de referência.
 
 Comparações de GPU exibem separadamente o modelo comercial, a arquitetura e o código do chip quando a ficha os informa. O leitor reconhece NVIDIA Kepler a partir de GK208/GK208B ou de uma declaração explícita de arquitetura e guarda a contagem CUDA quando consta no texto.
 
@@ -662,7 +662,7 @@ As páginas de produto e comparação compartilham o cabeçalho fixo no topo ao 
 
 Em Identificar Gargalo, Comparar Alternativas abre o comparador com os produtos daquela dica. O nome curto da GPU inclui VRAM quando disponível. O ganho no PC compara o índice de jogos combinado antes e depois de trocar uma peça, com resolução e frequência do monitor importado, usando a mesma função do orçamento para combinar os índices.
 
-Na aba de processadores, a última coluna destaca a CPU importada, com o índice em jogos e as especificações disponíveis. Ela permanece fora da ordenação, das notas e dos destaques das alternativas.
+Na aba de processadores, a última coluna destaca a CPU atual, com o índice em jogos e as especificações disponíveis. Ela permanece fora da ordenação, das notas e dos destaques das alternativas.
 
 Na mesma aba, Compatibilidade Direta e Componentes Adicionais Necessários usam o socket, o chipset e o tipo de memória do PC importado. O comparador indica mudança de plataforma, troca de placa-mãe ou memória e possível atualização de BIOS. Cooler e fonte ficam na análise de compatibilidade da montagem.
 
@@ -746,11 +746,11 @@ Abas ativas e botões em destaque do app e do admin usam a classe compartilhada 
 - **Consequências:** todo produto da categoria na S1 ganha um ponto de histórico por dia, no mínimo. Caminhos de categoria no `.env` (`STORE_Sx_SWEEP`), como o resto do que identifica a loja; hoje ficam no banco, editados no admin ([§4.7](#47-lojas-por-id)).
 - **Revisão (nov/2026, só páginas de categoria):** os termos automáticos traziam kits, PCs montados e acessórios junto e cobriam só o topo de cada busca (na S2, ~140 placas-mãe de mais de mil). A rotina passou a ler só as páginas de categoria, nas três lojas e em todos os modos, e só o que está em estoque (a lista acaba na primeira página sem estoque; no fim da volta, o que sumiu vira "sem estoque"). A busca do formulário responde pelo banco; só o "Não achou? Buscar nas lojas" vai às lojas. As tabelas de termos saíram (migração 12).
 
-### ADR-007: CPU-Z como única entrada do setup atual
+### ADR-007: CPU-Z para leitura automática do setup atual
 
 - **Contexto:** para sugerir upgrades, o app precisa saber o PC atual. O navegador só entrega uma parte: o nome da placa de vídeo em alguns navegadores (Firefox, Safari e Brave escondem), núcleos, memória arredondada e o monitor; nunca o modelo do processador nem a placa-mãe, que definem o que dá para trocar. Outras entradas possíveis: relatório do dxdiag (sem placa-mãe nem detalhe de memória), um comando do PowerShell para colar no terminal ou um programa próprio.
-- **Decisão:** só o relatório do CPU-Z, lido no navegador. Um formato só, estável entre versões, de um programa conhecido e gratuito, com tudo o que importa (placa-mãe, cada pente com XMP, PCIe, discos, monitor). Comando para colar no terminal fica fora: é o mesmo gesto do golpe do falso CAPTCHA ("aperte Win+R e cole"), e um site não deve ensinar isso; um programa próprio teria o mesmo problema de confiança e seria barrado por antivírus.
-- **Consequências:** um passo a mais para a pessoa (baixar o CPU-Z e salvar o relatório), com o passo a passo na tela; só Windows (o CPU-Z é de Windows); um leitor e duas fixtures para manter.
+- **Decisão:** usar o relatório do CPU-Z para leitura automática no navegador. O formato fornece dados de placa-mãe, pentes e perfis de memória, PCIe, discos e monitor. A alternativa manual é marcar Já Tenho na montagem.
+- **Consequências:** a leitura automática precisa de um relatório gerado no Windows. O fluxo manual funciona sem instalar o CPU-Z e usa as especificações conhecidas das peças.
 
 ## 16. Questões em aberto
 
@@ -773,6 +773,12 @@ Abas ativas e botões em destaque do app e do admin usam a classe compartilhada 
 ```
 
 ### 17.1 Montar o PC (montagem dinâmica)
+
+Peças marcadas como Já Tenho alimentam o PC atual usado no diagnóstico, no comparador e no orçamento. A peça marcada prevalece na sua categoria. O relatório do CPU-Z complementa com as demais peças e com dados medidos, como monitor, frequência em uso e erros WHEA. Ao importar pela montagem, pelo diagnóstico ou pelo orçamento, as peças lidas entram na montagem como Atual.
+
+Diagnóstico e orçamento compartilham os botões Importar Meu PC e Informar Peças Manualmente.
+
+Na tela inicial, o card Identificar Gargalo mostra o modelo curto do processador quando há espaço ao lado da descrição.
 
 A tela Montar Peça por Peça agrupa os componentes em uma lista única, com as ações de cada peça junto dela e o total fixo no rodapé. O título abre a página do produto quando alguma oferta tem a chave do catálogo, seguindo a mesma regra da busca.
 
@@ -839,7 +845,7 @@ Observações que não mudam o selo: processador sem vídeo integrado e sem plac
 - Specs do título: socket, chipset e tipo de memória em 100% das 392 placas-mãe, formato em 98%; socket, modelo e vídeo integrado em 100% dos 295 processadores; chip e VRAM em 100% das 380 placas de vídeo; tipo, frequência e pentes em 100% das 66 memórias.
 - Fatos de plataforma: geração, consumo e memória oficial em 295/295 processadores; chipset na tabela em 392/392 placas-mãe; consumo do chip em 374/380 placas de vídeo (faltam modelos profissionais e um chip não identificado, que ficam cinza).
 
-Lacunas conhecidas: slots de memória só aparecem no título de 1% das placas (Mini-ITX = 2 e ATX = 4 são deduções seguras; Micro-ATX varia); cooler incluso só quando o anúncio diz. Medidas físicas (comprimento da placa de vídeo, altura do cooler, máximos e radiadores do gabinete, conector 12V-2x6) não aparecem nos títulos: vêm da ficha técnica da página do produto, nas três lojas ([§8.3](#83-fichas-técnicas)): a S1 tem o campo de texto da ficha no `__NEXT_DATA__`, juntado com a descrição do produto (`s1SheetFromHtml`); a S2, a tabela de especificações (`s2SheetFromHtml`); a S3, o bloco "Especificações Técnicas" (`#esptec`, `s3SheetFromHtml`). Enquanto o banco de fichas é montado (nov/2026), o site fica em manutenção e a montagem não consulta ficha; a checagem física volta a usar a ficha quando a busca for refeita sobre ela. Conferido contra os ≈4 mil anúncios do banco (nov/2026): encaixe, geração, TDP e consumo do processador, chipset e memória da placa-mãe e tipo da memória reconhecidos em 99–100%; RX 9050 fora da tabela de consumo (sem valor oficial conferido).
+Lacunas conhecidas: slots de memória só aparecem no título de 1% das placas (Mini-ITX = 2 e ATX = 4 são deduções seguras; Micro-ATX varia); cooler incluso só quando o anúncio diz. Medidas físicas (comprimento da placa de vídeo, altura do cooler, máximos e radiadores do gabinete, conector 12V-2x6) não aparecem nos títulos: vêm da ficha técnica da página do produto, nas três lojas ([§8.3](#83-fichas-técnicas)): a S1 tem o campo de texto da ficha no `__NEXT_DATA__`, juntado com a descrição do produto (`s1SheetFromHtml`); a S2, a tabela de especificações (`s2SheetFromHtml`); a S3, o bloco "Especificações Técnicas" (`#esptec`, `s3SheetFromHtml`). A montagem usa as medidas disponíveis nas fichas. Quando uma medida está ausente, a interface pede conferência. Conferido contra os ≈4 mil anúncios do banco (nov/2026): encaixe, geração, TDP e consumo do processador, chipset e memória da placa-mãe e tipo da memória reconhecidos em 99–100%; RX 9050 fora da tabela de consumo (sem valor oficial conferido).
 - **Total sempre à mostra:** barra fixa com o total à vista com cupom, a soma por loja ("tudo na S1: R$ X") e a melhor combinação entre lojas.
 - **Ordem flexível:** começar pela placa de vídeo, por exemplo, é permitido; a montagem só avisa as dependências que ficaram para trás.
 - **Sem conta:** a montagem fica no navegador (`localStorage`). Compartilhar grava uma cópia no servidor e gera um link curto (`/m/<id>`), aberto só para leitura e com preços atualizados pelo banco.
@@ -847,9 +853,9 @@ Lacunas conhecidas: slots de memória só aparecem no título de 1% das placas (
 
 ### 17.2 Importar setup atual (CPU-Z)
 
-> **Implementado** (`packages/shared/src/cpuz.ts`, `apps/web/src/pc.ts`, `ImportPc`). Ver [ADR-007](#adr-007-cpu-z-como-única-entrada-do-setup-atual).
+> **Implementado** (`packages/shared/src/cpuz.ts`, `apps/web/src/pc.ts`, `ImportPc`). Ver [ADR-007](#adr-007-cpu-z-para-leitura-automática-do-setup-atual).
 
-A pessoa gera o relatório no CPU-Z (aba **About** → **Save Report (.TXT)**) e solta o arquivo na montagem. A montagem passa a ter **as peças que ela tem hoje**, marcadas como "Atual": sem preço, fora do total, mas conferidas na compatibilidade. A partir daí, troca o que quiser e vê o custo só do que muda.
+A pessoa pode marcar Já Tenho nas peças da montagem ou gerar o relatório no CPU-Z (aba **About** → **Save Report (.TXT)**) e importá-lo pela montagem, pelo diagnóstico ou pelo orçamento. O relatório preenche os espaços correspondentes da montagem. As peças atuais contam na verificação de compatibilidade e ficam fora do custo de compra.
 
 - **Lido no navegador, nunca enviado ao servidor** (proteções contra arquivo forjado em [§10](#10-segurança-e-privacidade)). O leitor guarda só campos de peça: números de série, UUID, caminhos de dispositivo, datas e nome da máquina ficam de fora. O perfil completo (com discos, monitor e erros WHEA, para as sugestões) fica em `localStorage` (`upgradezin.pc.v1`).
 - **Formato:** seções com o título sublinhado por traços; em cada linha, `Chave<TABs>Valor`, com subitens indentados por TAB. Arquivo em UTF-8/ANSI ou UTF-16.
@@ -869,7 +875,7 @@ A pessoa gera o relatório no CPU-Z (aba **About** → **Save Report (.TXT)**) e
 
 ### 17.3 Identificar gargalo e sugerir upgrades
 
-A entrada do Identificar Gargalo separa a explicação do relatório e a ação de importar. Depois da importação, o diagnóstico e a lista de peças ficam lado a lado em telas largas e empilhados em telas estreitas. O atalho de orçamento ocupa a largura toda. O card O Que Fazer começa recolhido e carrega as sugestões de ofertas quando é aberto.
+A entrada do Identificar Gargalo oferece importação do relatório e preenchimento manual. Com as peças atuais informadas, o diagnóstico e a lista de peças ficam lado a lado em telas largas e empilhados em telas estreitas. Sem dados do monitor, a estimativa usa Full HD a 60 Hz. O atalho de orçamento ocupa a largura toda. O card O Que Fazer começa recolhido e carrega as sugestões de ofertas quando é aberto.
 
 > **Implementado** (`packages/shared/src/perf.ts`, `packages/shared/src/upgrade.ts`, `PcAnalysis`). Entrada "Identificar Gargalo" na tela inicial.
 
@@ -879,7 +885,7 @@ A entrada do Identificar Gargalo separa a explicação do relatório e a ação 
 - **Placa de vídeo:** pela tabela do chip, que é a média de análises de jogos; consumo e linhas PCIe vêm da ficha.
 - **Sugestões (`picks.ts`):** uma por modelo, só as compatíveis pela ficha. Primeiro as que resolvem o gargalo, com nota de pelo menos 90% da meta de equilíbrio (`cpuNeeded` ou `gpuMatching` na tela da pessoa), da mais barata; depois mais desempenho por real.
 
-Com o PC importado (17.2), o app diz o que segura o desempenho e o que vale fazer. Cada sugestão de peça abre a busca já filtrada e roda; as peças do PC entram na montagem onde ela estiver vazia, para a compatibilidade conferir contra o que a pessoa tem, e escolher um produto troca a peça na montagem.
+Com o PC atual informado (17.2), o app indica o que limita o desempenho e sugere o que trocar. Cada sugestão abre a busca com os filtros do upgrade. Ao escolher um produto, ele ocupa o espaço da peça correspondente na montagem.
 
 **Equilíbrio processador × placa de vídeo (`perf.ts`):**
 
@@ -948,7 +954,7 @@ Na auditoria da mesma janela, entre os anúncios de CPU em estoque, com preço �
 
 **Comparação local de 24/11/2026.** A mesma cópia do catálogo, janela de 72 horas e relógio fixo na última observação serviram para comparar 21 pedidos de PC completo a 144 Hz (sete orçamentos entre R$ 3 mil e R$ 18 mil, em 1080p, 1440p e 4K). A primeira opção ficou igual em 20 casos. No pedido de R$ 18 mil em 1080p, mudou de 7800X3D para 9800X3D com a mesma RX 9070 XT. O total subiu de R$ 14.315,32 para R$ 14.774,32 e o índice combinado exibido ficou em 240. A nota anterior permitia ao 7800X3D atingir esse índice no cálculo de 144 Hz. A nova nota reduz o teto estimado desse par e o ranking passa a escolher a opção mais cara. A bancada mede o efeito no motor, sem medir desempenho físico das montagens.
 
-O card da tela inicial e o atalho no Identificar Gargalo abrem `BudgetView.tsx` para PC completo ou upgrade. A rota `POST /api/budget/plan` roda a função pura `planBudget` sobre o catálogo local com a ficha. No upgrade, as peças atuais vão ao servidor como especificações do PC importado e índices calculados na tela.
+O card da tela inicial e o atalho no Identificar Gargalo abrem `BudgetView.tsx` para PC completo ou upgrade. A rota `POST /api/budget/plan` roda a função pura `planBudget` sobre o catálogo local com a ficha. No upgrade, as especificações das peças atuais e os índices calculados na tela vão ao servidor.
 
 No PC completo, o formulário agrupa as preferências e separa o valor e a ação de montar em um painel. Os tipos de recomendação usam botões de opção com uma explicação abaixo de cada título. Em telas estreitas, os campos ficam empilhados. No upgrade, o painel do valor vem depois do resumo do PC.
 
@@ -999,7 +1005,7 @@ A triagem térmica e elétrica usa TDP e uma estimativa de consumo por família.
 - `no-gain`: nenhuma combinação elegível atingiu o ganho mínimo estimado para o pedido.
 - `no-data`: faltam dados do PC atual, ofertas ou candidatos que atendam às exigências.
 
-**Lembra entre visitas** (`upgradezin.budget.v1` no navegador, `loadBudgetUi`): a aba, o valor de cada aba, a tela do PC completo e o tipo de recomendação. Ao voltar, a tela abre preenchida na última aba usada (upgrade só com PC importado). Para buscar, a pessoa escolhe Montar ou pressiona Enter no campo de valor.
+**Lembra entre visitas** (`upgradezin.budget.v1` no navegador, `loadBudgetUi`): a aba, o valor de cada aba, a tela do PC completo e o tipo de recomendação. Ao voltar, a tela abre preenchida na última aba usada. Para calcular um upgrade, é preciso informar uma CPU ou GPU atual. Para buscar, a pessoa escolhe Montar ou pressiona Enter no campo de valor.
 
 **Limites.** A placa de vídeo e o gabinete mais baratos de cada modelo nem sempre são os melhores (falta uma lista de qualidade, como na fonte). A estimativa de produtividade considera CPU. Aceleração específica pela GPU, benchmarks por aplicativo e requisitos de estações de trabalho estão fora do cálculo. Preços sem frete.
 

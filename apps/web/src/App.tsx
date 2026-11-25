@@ -11,7 +11,7 @@ import {
   type Offer,
   type UpgradeAction,
 } from '@upgradezin/shared';
-import { buildDrives, checkCandidate, editDrive, itemFromGroup, loadBuild, MAX_QTY, sanitizeBuild, saveBuild, slotFilters, type SavedBuild } from './build.ts';
+import { buildDrives, checkCandidate, editDrive, itemFromGroup, itemFromPc, loadBuild, MAX_QTY, sanitizeBuild, saveBuild, slotFilters, type SavedBuild } from './build.ts';
 import { discountOf, SORT_LABEL } from './format.ts';
 import { applyFilters, CATEGORY_SORTS, commonWords, DEFAULT_FILTERS, resetResultFilters, type Filters } from './filters.ts';
 import { MAX_TERMS, planSearch } from './searchPlan.ts';
@@ -20,7 +20,7 @@ import { settleStatus, useSearch, type Fresh, type SearchSnapshot } from './useS
 import { BuildView } from './components/BuildView.tsx';
 import { loadSharedBuild, sharedIdFromUrl, type SharedBuild } from './share.ts';
 import { loadUi, saveUi, searchCategoryFromUrl, withoutSearchCategory } from './uiState.ts';
-import { applyPc, clearPc, fillPc, loadPc, savePc } from './pc.ts';
+import { applyPc, clearPc, currentPc, fillPc, forgetPcBuild, loadPc, savePc } from './pc.ts';
 import { PcAnalysis } from './components/PcAnalysis.tsx';
 import { CompareLink } from './components/CompareControls.tsx';
 import { BudgetView } from './components/BudgetView.tsx';
@@ -99,7 +99,14 @@ export function App() {
   /** Montagem do PC: fica no navegador. buildSlot = escolhendo essa peça no resultado. */
   const [build, setBuild] = useState<SavedBuild>(loadBuild);
   /** PC importado do CPU-Z (Identificar Gargalo). */
-  const [pc, setPc] = useState(loadPc);
+  const [report, setReport] = useState(loadPc);
+  const pc = useMemo(() => currentPc(report, build), [report, build]);
+  const cpuLabel = pc?.cpu && ([pc.cpu.specs.cpuLine, pc.cpu.specs.cpuModel].filter(Boolean).join(' ') || pc.cpu.title);
+  const importPc = (next: NonNullable<typeof report>) => {
+    savePc(next);
+    setReport(next);
+    setBuild((current) => applyPc(current, next));
+  };
   const [pcOpen, setPcOpen] = useState(false);
   const [buildOpen, setBuildOpen] = useState(false);
   /** Montar pelo Orçamento aberto, e em que modo (PC inteiro ou upgrade do PC importado). */
@@ -238,7 +245,7 @@ export function App() {
    * compatibilidade conferir contra o que a pessoa tem.
    */
   const openUpgrade = (action: UpgradeAction) => {
-    const next = pc ? fillPc(build, pc) : build;
+    const next = report ? fillPc(build, report) : build;
     setBuild(next);
     const f: Filters = { ...slotFilters(action.slot, next, DEFAULT_FILTERS), ...action.filters };
     setBuildSlot(action.slot);
@@ -477,11 +484,12 @@ export function App() {
             className="group mt-3 flex w-full items-center gap-4 rounded-2xl border border-zinc-200 bg-white px-5 py-4 text-left transition hover:border-accent-500 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
           >
             <Gauge className="h-8 w-8 shrink-0 text-zinc-500 transition group-hover:text-accent-500" strokeWidth={1.5} />
-            <span className="flex-1">
+            <span className="min-w-0 flex-1">
               <span className="block font-medium">Identificar Gargalo</span>
-              <span className="block text-sm text-zinc-500">Importe o seu PC e veja qual peça segura o desempenho e o que vale trocar.</span>
+              <span className="block text-sm text-zinc-500">Veja qual peça limita o desempenho do seu PC e o que vale trocar.</span>
             </span>
-            {pc?.cpu && <span className="hidden text-sm text-zinc-500 sm:block">{pc.cpu.title}</span>}
+            {cpuLabel && <span className="hidden max-w-[28%] shrink-0 truncate rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 sm:block"
+              title={pc?.cpu?.title}>{cpuLabel}</span>}
           </button>
           <p className="mt-8 text-center text-xs text-zinc-400 dark:text-zinc-600">v{__APP_VERSION__}</p>
         </div>
@@ -521,10 +529,8 @@ export function App() {
             onMode={setBudgetOpen}
             pc={pc}
             build={build}
-            onImport={(p) => {
-              savePc(p);
-              setPc(p);
-            }}
+            onImport={importPc}
+            onManual={openBuild}
             onToBuild={budgetToBuild}
           />
         </main>
@@ -534,20 +540,31 @@ export function App() {
             pc={pc}
             psu={!pc?.psu && build.psu?.current ? build.psu.specs : undefined}
             psuTitle={!pc?.psu && build.psu?.current ? build.psu.title : undefined}
-            onImport={(p) => {
-              savePc(p);
-              setPc(p);
+            onImport={importPc}
+            onPsu={(psu) => {
+              if (report) {
+                const next = { ...report, psu };
+                savePc(next);
+                setReport(next);
+              }
+              setBuild((current) => {
+                if (psu) return { ...current, psu: itemFromPc('psu', psu) };
+                if (!current.psu?.current) return current;
+                const { psu: _, ...withoutPsu } = current;
+                return withoutPsu;
+              });
             }}
             onUpgrade={openUpgrade}
             onToBuild={() => {
-              if (pc) setBuild((b) => applyPc(b, pc));
+              if (report) setBuild((b) => fillPc(b, report));
               openBuild();
             }}
             onForget={() => {
               clearPc();
-              setPc(null);
+              setReport(null);
+              setBuild(forgetPcBuild);
             }}
-            onBudget={BUDGET_VISIBLE ? () => openBudget('upgrade') : undefined}
+            onBudget={BUDGET_VISIBLE && (pc?.cpu || pc?.gpu) ? () => openBudget('upgrade') : undefined}
           />
         </main>
       ) : buildOpen || !category ? (
@@ -565,11 +582,7 @@ export function App() {
                 }),
               onQty: (s, qty) => setBuild((b) => (b[s] ? { ...b, [s]: { ...b[s]!, qty: Math.min(MAX_QTY, Math.max(1, qty)) } } : b)),
               onClear: () => setBuild({}),
-              onImport: (pc) => {
-                savePc(pc);
-                setPc(pc);
-                setBuild((b) => applyPc(b, pc));
-              },
+              onImport: importPc,
               onOwned: (s, owned, index = 0) =>
                 setBuild((b) => {
                   const selected = s === 'ssd' ? buildDrives(b)[index] : b[s];

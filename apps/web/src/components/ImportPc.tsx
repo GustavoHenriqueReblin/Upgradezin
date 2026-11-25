@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
-import { ExternalLink, FileText, Upload, X } from 'lucide-react';
+import { Cpu, ExternalLink, FileText, Upload, Wrench, X } from 'lucide-react';
 import { EFFICIENCY_LEVELS, normalizeBrand, PSU_POWERS, type Efficiency, type PcPart, type PcProfile } from '@upgradezin/shared';
 import { loadPc, readReportFile, type ReadResult } from '../pc.ts';
 import { EFF_LABEL } from '../format.ts';
@@ -9,7 +9,7 @@ import { PcSpecs } from './PcSpecs.tsx';
 interface Props {
   onClose: () => void;
   /** Colocar as peças lidas na montagem. */
-  onApply: (pc: PcProfile) => void;
+  onApply: (pc: PcProfile, fromFile: boolean) => void;
   /** Peças que já estão na montagem e serão trocadas. */
   replacing?: string[];
   /** Texto do botão final (padrão: "Usar na Montagem"). */
@@ -19,6 +19,23 @@ interface Props {
 }
 
 const CPUZ_URL = 'https://www.cpuid.com/softwares/cpu-z.html';
+
+export function PcInputActions({ onImport, onManual }: { onImport: () => void; onManual?: () => void }) {
+  const button = 'inline-flex items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold';
+  return (
+    <div className="flex flex-wrap justify-center gap-2">
+      <button type="button" onClick={onImport} className={`${button} accent-control`}>
+        <Cpu aria-hidden="true" className="h-4 w-4 shrink-0" /> Importar Meu PC
+      </button>
+      {onManual && (
+        <button type="button" onClick={onManual}
+          className={`${button} border border-zinc-300 text-zinc-800 hover:border-accent-500 dark:border-zinc-700 dark:text-zinc-100`}>
+          <Wrench aria-hidden="true" className="h-4 w-4 shrink-0" /> Informar Peças Manualmente
+        </button>
+      )}
+    </div>
+  );
+}
 
 const ERRORS: Record<Exclude<ReadResult, { ok: true }>['reason'], string> = {
   'not-cpuz': 'Esse arquivo não é um relatório do CPU-Z. Confira se salvou pelo botão "Save Report (.TXT)".',
@@ -138,7 +155,7 @@ export function ImportPc({ onClose, onApply, replacing = [], applyLabel = 'Usar 
                 onClick={() => {
                   const part = psuPart(psu);
                   const { psu: _old, ...rest } = pc;
-                  onApply(part ? { ...rest, psu: part } : rest);
+                  onApply(part ? { ...rest, psu: part } : rest, pc !== initial);
                 }}
                 className="rounded-lg accent-control px-4 py-2 text-sm font-medium"
               >
