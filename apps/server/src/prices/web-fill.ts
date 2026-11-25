@@ -14,6 +14,7 @@ import {
   type WebAnswerFilter,
   type WebAnswerPage,
   type WebFillStatus,
+  type WebQueuePriority,
 } from '@upgradezin/shared';
 import { pageOf } from '../admin/paging.ts';
 import { loadPage, saveDebugHtml } from '../browser.ts';
@@ -120,12 +121,12 @@ export interface WebQuestion {
 /**
  * Perguntas na fila: um produto com as páginas todas lidas por pergunta, se algum campo vazio (principal
  * ou opcional, o "não sei") ainda não foi perguntado. O produto completo com opcional vazio também vai:
- * já aparece na busca do site, e a web completa a ficha. Primeiro os que falta campo principal; depois
- * em estoque; depois o achado há menos tempo.
+ * já aparece na busca do site, e a web completa a ficha. A melhor oferta do produto define a prioridade.
+ * Dentro de cada prioridade, campo principal primeiro, depois estoque e descoberta mais recente.
  */
-export function webQueue(db: Db, now = Date.now(), retryKey?: string): WebQuestion[] {
+export function webQueue(db: Db, now = Date.now(), retryKey?: string): (WebQuestion & { priority: WebQueuePriority })[] {
   const since = new Date(now - SHEET_SCOPE_DAYS * 86_400_000).toISOString();
-  const out: (WebQuestion & { main: boolean; inStock: boolean; first: string })[] = [];
+  const out: (WebQuestion & { priority: WebQueuePriority; main: boolean; inStock: boolean; first: string })[] = [];
   const asked = new Set((ready(db).prepare("SELECT product_key || '|' || field AS k FROM sheet_web").all() as { k: string }[]).map((r) => r.k));
   for (const category of ENABLED_CATEGORIES) {
     for (const p of catalogProducts(db, category, since)) {
@@ -136,7 +137,10 @@ export function webQueue(db: Db, now = Date.now(), retryKey?: string): WebQuesti
         ? gaps.has(field) || p.origin[field]?.from === 'estimate'
         : gaps.has(field) && !asked.has(`${p.key}|${field}`));
       if (!fields.length) continue;
+      const ownRetail = p.listings.filter((listing) => listing.ownRetail);
+      const priority = ownRetail.some((listing) => listing.inStock) ? 1 : ownRetail.length ? 2 : 3;
       out.push({
+        priority,
         key: p.key,
         category,
         fields,
@@ -148,7 +152,7 @@ export function webQueue(db: Db, now = Date.now(), retryKey?: string): WebQuesti
       });
     }
   }
-  out.sort((a, b) => Number(b.main) - Number(a.main) || Number(b.inStock) - Number(a.inStock) || b.first.localeCompare(a.first));
+  out.sort((a, b) => a.priority - b.priority || Number(b.main) - Number(a.main) || Number(b.inStock) - Number(a.inStock) || b.first.localeCompare(a.first));
   return out.map(({ main: _m, inStock: _i, first: _f, ...q }) => q);
 }
 
@@ -328,9 +332,13 @@ type WebRow = {
 /** Situação para o admin: configuração, fila, totais e pausa. */
 export function webFillStatus(db: Db): WebFillStatus {
   const totals = ready(db).prepare("SELECT sum(status = 'ok') AS ok, sum(status = 'none') AS none FROM sheet_web").get() as { ok: number | null; none: number | null };
+  const queue = webQueue(db);
+  const queueByPriority = { 1: 0, 2: 0, 3: 0 };
+  for (const { priority } of queue) queueByPriority[priority]++;
   return {
     ...webFillSettings(),
-    queue: webQueue(db).length,
+    queue: queue.length,
+    queueByPriority,
     answered: totals.ok ?? 0,
     empty: totals.none ?? 0,
     pausedUntil: pausedUntil > Date.now() ? new Date(pausedUntil).toISOString() : null,

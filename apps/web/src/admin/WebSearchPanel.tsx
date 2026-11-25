@@ -48,7 +48,7 @@ export function WebSearchPanel({ onUnauthorized }: { onUnauthorized: () => void 
   useEffect(load, [load]);
   useLiveReload(['admin'], load, { delayMs: 1_000, fallbackMs: 30_000 });
 
-  /** Pergunta a próxima da fila agora, ou refaz o produto `key` (apaga as respostas dele e pergunta de novo). */
+  /** Pergunta a próxima da fila agora, ou refaz os campos em aberto do produto `key`. */
   const ask = (key?: string) => {
     setAsking(true);
     adminApi<{ answer: WebAnswer | null }>('/sheets/web/ask', { method: 'POST', body: key ? { key } : {} })
@@ -123,8 +123,8 @@ function Routine({
       }
     >
       <p className="text-sm text-zinc-500">
-        Para os produtos só a web completa, manda à IA do Google (Modo IA) o JSON da categoria, com todos os campos da ficha em branco, para ela devolver preenchido; cada valor é validado (tipo, opções e
-        faixa) e só preenche o que a ficha não tem. Resposta de confiança baixa não entra. Cada produto é perguntado uma vez; o que continuar faltando vai para "precisa de você" (aba Fichas). Usa o
+        Para os produtos só a web completa, manda à IA do Google (Modo IA) o JSON da categoria, com os campos em aberto, para ela devolver preenchido; cada valor é validado (tipo, opções e
+        faixa) e só preenche o que a ficha não tem. Resposta de confiança baixa não entra. Cada campo é perguntado automaticamente uma vez; o que continuar faltando vai para "precisa de você" (aba Fichas). Usa o
         navegador de uma loja, na fila dela. Se o Google pedir verificação ou confirmação, a busca para por 6 h, sem clicar nem tentar resolver.
       </p>
       {status.pausedUntil && (
@@ -160,6 +160,18 @@ function Routine({
           {asking || status.busy ? 'Perguntando…' : 'Perguntar agora'}
         </button>
       </div>
+      <ol aria-label="Prioridades da fila" className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+        {([
+          [1, 'Com Estoque · Vendido pela Própria Loja'],
+          [2, 'Sem Estoque · Vendido pela Própria Loja'],
+          [3, 'Demais Produtos'],
+        ] as const).map(([priority, label]) => (
+          <li key={priority} className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-800">
+            <span>{label}</span>
+            <strong className="tabular-nums">{status.queueByPriority[priority].toLocaleString('pt-BR')}</strong>
+          </li>
+        ))}
+      </ol>
     </Box>
   );
 }

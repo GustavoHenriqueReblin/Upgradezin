@@ -1,4 +1,4 @@
-import { effectiveCash, productPath, type Offer, type ProductGroup } from '@upgradezin/shared';
+import { effectiveCash, isOwnRetailOffer, productPath, type Offer, type ProductGroup } from '@upgradezin/shared';
 
 /** Chave do produto no endereço (/produto/<chave>, codificada como em productPath). null: não é a página do produto. */
 export function productKeyFromUrl(path = location.pathname): string | null {
@@ -12,7 +12,7 @@ export function productKeyFromUrl(path = location.pathname): string | null {
 }
 
 /** Novo e vendido pela própria loja (o padrão da busca: "Só Vendido pela Própria Loja"). */
-export const trustedOffer = (o: Offer) => !o.marketplace && !o.openbox;
+export const trustedOffer = isOwnRetailOffer;
 
 const byStockThenPrice = (a: Offer, b: Offer) => Number(b.inStock) - Number(a.inStock) || effectiveCash(a) - effectiveCash(b);
 

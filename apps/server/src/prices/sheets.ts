@@ -2,6 +2,7 @@ import {
   CATEGORY_DEFS,
   ENABLED_CATEGORIES,
   fieldColumn,
+  isOwnRetailOffer,
   missingMain,
   missingOptional,
   READER_VERSION,
@@ -434,6 +435,7 @@ export function catalogProducts(db: Db, category: CategoryId, since: string): Sh
   const rows = ready(db)
     .prepare(
       `SELECT s.*, l.id, l.store, l.store_sku, l.title, l.url, l.product_key, l.first_seen_at, json_extract(l.offer, '$.inStock') AS in_stock,
+              json_extract(l.offer, '$.marketplace') AS marketplace, json_extract(l.offer, '$.openbox') AS openbox,
               p.fetched_at, p.text IS NOT NULL AS has_sheet, p.store_sku AS page
        FROM listings l
        LEFT JOIN sheet_pages p ON p.store = l.store AND p.store_sku = l.store_sku
@@ -450,6 +452,8 @@ export function catalogProducts(db: Db, category: CategoryId, since: string): Sh
     product_key: string | null;
     first_seen_at: string;
     in_stock: number;
+    marketplace: number | null;
+    openbox: number | null;
     fetched_at: string | null;
     has_sheet: number | null;
     page: string | null;
@@ -490,6 +494,7 @@ export function catalogProducts(db: Db, category: CategoryId, since: string): Sh
         title: r.title,
         url: r.url,
         inStock: !!r.in_stock,
+        ownRetail: isOwnRetailOffer({ marketplace: !!r.marketplace, openbox: !!r.openbox }),
         firstSeenAt: r.first_seen_at,
         read: r.page !== null,
         ...(r.page !== null && { at: r.fetched_at!, hasSheet: !!r.has_sheet }),

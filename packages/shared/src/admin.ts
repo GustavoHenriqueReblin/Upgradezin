@@ -370,6 +370,7 @@ export interface SheetProduct {
     title: string;
     url: string;
     inStock: boolean;
+    ownRetail: boolean;
     firstSeenAt: string;
     /** A página já foi lida (e quando; hasSheet: tinha ficha). */
     read: boolean;
@@ -411,9 +412,12 @@ export interface WebAnswer {
   at: string;
 }
 
+export type WebQueuePriority = 1 | 2 | 3;
+
 export interface WebFillStatus extends WebFillSettings {
-  /** Produtos na fila agora (só a web completa, com campo principal que falta ainda não perguntado). */
+  /** Produtos com campo em aberto ainda não perguntado, no total e por prioridade. */
   queue: number;
+  queueByPriority: Record<WebQueuePriority, number>;
   /** Campos perguntados: com valor lido e sem. */
   answered: number;
   empty: number;

@@ -70,6 +70,28 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
     expect(webQueue(db).map((q) => q.title)).toEqual(['Gabinete Gamer Pichau XYZ, Preto, PXG-100A', 'Gabinete Gamer Outro ABC, Mid Tower, ATX']);
   });
 
+  it('prioriza a melhor oferta da própria loja e conta produtos em vez de anúncios', () => {
+    const db = openDb(':memory:');
+    const at = new Date().toISOString();
+    const add = (sku: string, inStock: boolean, marketplace: boolean, openbox: boolean, complete: boolean) => {
+      const offer = { store: 's1', storeSku: sku, title: `Gabinete Teste ${sku}`, url: `https://s1.example/${sku}`, priceCash: 300,
+        inStock, marketplace, openbox, seller: '', specs: {}, modelKey: sku, collectedAt: at } as Offer;
+      saveCollection(db, { store: 's1', category: 'case', offers: [offer], at });
+      savePage(db, { store: 's1', sku, category: 'case', text: complete ? 'Tipo: Mid Tower\nPlacas-mãe: ATX, Micro-ATX' : 'Dimensões: 450 x 210 x 480 mm' });
+    };
+    add('parceiro', true, true, false, false);
+    add('open-box', true, false, true, false);
+    add('propria-esgotada', false, false, false, true);
+    add('parceiro-agrupado', true, true, false, true);
+    add('propria-estoque', true, false, false, true);
+    db.prepare("UPDATE listings SET product_key = 'case:agrupado' WHERE store_sku IN ('propria-esgotada', 'parceiro-agrupado')").run();
+
+    expect(webQueue(db).map((q) => q.priority)).toEqual([1, 2, 3, 3]);
+    expect(webQueue(db)[1]?.key).toBe('case:agrupado');
+    expect(webFillStatus(db)).toMatchObject({ queue: 4, queueByPriority: { 1: 1, 2: 1, 3: 2 } });
+    db.close();
+  });
+
   it('um pedido por produto com o JSON dos campos em aberto; os valores entram na ficha como "web" e o produto sai da fila', async () => {
     const db = caseDb();
     const [q] = webQueue(db);

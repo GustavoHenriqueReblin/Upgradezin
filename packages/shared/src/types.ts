@@ -302,6 +302,9 @@ export interface CaseSpecs {
 
 export type Specs = PsuSpecs & MotherboardSpecs & LookSpecs & CpuSpecs & GpuSpecs & RamSpecs & SsdSpecs & CoolerSpecs & CaseSpecs;
 
+/** Mesmo critério do filtro de ofertas novas vendidas pela própria loja. */
+export const isOwnRetailOffer = (offer: Pick<Offer, 'marketplace' | 'openbox'>): boolean => !offer.marketplace && !offer.openbox;
+
 export interface Offer {
   store: StoreId;
   /** Identificador do produto na loja. */

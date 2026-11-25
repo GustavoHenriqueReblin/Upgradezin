@@ -2,6 +2,7 @@ import {
   EFFICIENCY_LEVELS,
   effectiveCash,
   FORM_FACTORS,
+  isOwnRetailOffer,
   ssdTier,
   SHEET_FIELDS,
   stripAccents,
@@ -287,7 +288,7 @@ function predicates(f: Filters): Record<string, (o: Offer) => boolean> {
     price: (o) => (f.priceMin == null || effectiveCash(o) >= f.priceMin) && (f.priceMax == null || effectiveCash(o) <= f.priceMax),
     stock: (o) => !f.inStockOnly || o.inStock,
     coupon: (o) => !f.couponOnly || effectiveCash(o) < o.priceCash,
-    trusted: (o) => !f.trustedOnly || (!o.marketplace && !o.openbox),
+    trusted: (o) => !f.trustedOnly || isOwnRetailOffer(o),
   };
 }
 
