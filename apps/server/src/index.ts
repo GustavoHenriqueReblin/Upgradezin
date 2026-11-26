@@ -3,10 +3,10 @@ import { join, resolve } from 'node:path';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { z } from 'zod';
-import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, cpuSheetFor, gpuSheetFor, pickUpgrades, searchOptionCounts, STORES, type CategoryId, type Offer, type SearchOptionCounts, type SheetRoutineStatus, type StoreId } from '@upgradezin/shared';
+import { ENABLED_CATEGORIES, isFormTerm, isTextTerm, cpuSheetFor, gpuSheetFor, pickSlots, pickUpgrades, searchOptionCounts, type PickRequest, STORES, type CategoryId, type Offer, type SearchOptionCounts, type SheetRoutineStatus, type StoreId } from '@upgradezin/shared';
 import { fullSweep, fullSweepAll, probePage, readSheetNow, resumeRoutines, saveFullSweepSettings, useStoreIntervals, stopAdminJobs, stopFullSweep, storesState } from './admin/actions.ts';
 import { clearFullSweeps } from './prices/sweep.ts';
-import { budgetOffers, budgetPlan } from './budget.ts';
+import { BudgetBody, budgetOffers, budgetPlan } from './budget.ts';
 import { nightlySchedule, startNightlySweep, stopNightlySweep } from './admin/nightly.ts';
 import { listProducts } from './admin/products.ts';
 import { listSheetProducts, sheetPageText, sheetStoreStatus } from './admin/sheets.ts';
@@ -226,9 +226,9 @@ app.get('/api/brands', async (req, reply) => {
 });
 
 /**
- * As melhores ofertas de agora para uma dica de upgrade do "Identificar Gargalo" (picks.ts): só do
- * banco, sem consultar loja. Ofertas da categoria vistas nas últimas SEARCH_DB_MAX_AGE_H horas,
- * nas lojas ligadas; lidas de novo no máximo a cada minuto.
+ * As melhores ofertas de agora para uma dica de upgrade do "Identificar Gargalo" (picks.ts): só do banco, sem consultar
+ * loja, pelo motor do Montar pelo orçamento (as mesmas ofertas, compráveis agora, das lojas ligadas). Processador e
+ * placa de vídeo levam o PC da pessoa (peças atuais e tela), como o upgrade do orçamento.
  */
 const ids = z.array(z.string().max(40)).max(80).optional();
 const nums = z.array(z.number()).max(20).optional();
@@ -249,17 +249,11 @@ const PicksBody = z.object({
       ssdCapacity: nums,
     })
     .strict(),
-  context: z
-    .object({
-      current: z.number().positive().optional(),
-      chipset: z.string().max(20).optional(),
-      maxGpuPower: z.number().positive().optional(),
-      minVram: z.number().positive().max(64).optional(),
-      minWatts: z.number().positive().optional(),
-      certified: z.boolean().optional(),
-    })
-    .strict()
-    .optional(),
+  context: z.object({ minWatts: z.number().positive().optional(), certified: z.boolean().optional() }).strict().optional(),
+  owned: BudgetBody.shape.owned,
+  res: BudgetBody.shape.res.optional(),
+  hz: BudgetBody.shape.hz,
+  current: BudgetBody.shape.current,
 });
 /** Ofertas da categoria nas lojas ligadas, com a ficha, guardadas por 1 min (upgrades e opções do formulário). */
 const offersCache = new Map<CategoryId, { at: number; value: Offer[]; options?: SearchOptionCounts }>();
@@ -275,7 +269,9 @@ function categoryOffers(category: CategoryId) {
 app.post('/api/upgrade/picks', { bodyLimit: 16 * 1024 }, async (req, reply) => {
   const parsed = PicksBody.safeParse(req.body);
   if (!parsed.success) return reply.code(400).send({ error: z.prettifyError(parsed.error) });
-  return pickUpgrades(parsed.data as Parameters<typeof pickUpgrades>[0], categoryOffers(parsed.data.slot).value);
+  const now = Date.now();
+  const offers = Object.fromEntries(pickSlots(parsed.data as PickRequest).map((slot) => [slot, ENABLED_CATEGORIES.includes(slot) ? budgetOffers(getDb(), slot, 'buyable', ACTIVE_STORES, now) : []]));
+  return pickUpgrades(parsed.data as PickRequest, offers, now);
 });
 
 /** Montar pelo orçamento: o PC inteiro ou o upgrade do PC importado, com as ofertas de agora (budget.ts). */

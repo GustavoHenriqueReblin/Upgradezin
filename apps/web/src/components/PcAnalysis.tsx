@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ArrowRight, ChevronDown, FileText, Gauge, Trash2, Wallet } from 'lucide-react';
-import { analyzePc, CATEGORY_DEFS, CPU_BOUND, GPU_BOUND, type PcPart, type PcProfile, type Specs, type UpgradeAction, type Verdict } from '@upgradezin/shared';
+import { analyzePc, CATEGORY_DEFS, CPU_BOUND, GPU_BOUND, type Build, type PcPart, type PcProfile, type Specs, type UpgradeAction, type Verdict } from '@upgradezin/shared';
 import { PC_SLOTS } from '../pc.ts';
 import { CATEGORY_ICONS } from './CategoryPicker.tsx';
 import { ImportPc, PcInputActions } from './ImportPc.tsx';
@@ -20,6 +20,8 @@ interface Props {
   onForget: () => void;
   /** Abre o Montar pelo orçamento no modo upgrade (sem ela, o card não aparece). */
   onBudget?: () => void;
+  /** As peças que a pessoa tem (do CPU-Z e as marcadas Já tenho): as dicas comparam com elas pelo motor do orçamento. */
+  owned?: Build;
 }
 
 const PART_ROW = 'flex min-h-10 items-center gap-3 px-4 text-sm';
@@ -29,7 +31,7 @@ const SPAN = Math.log(1.7);
 const pos = (ratio: number) => Math.min(1, Math.max(0, 0.5 + Math.log(ratio) / (2 * SPAN)));
 
 /** "Identificar gargalo": o PC importado do CPU-Z, o que segura o desempenho e o que vale fazer. */
-export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onPsu, onUpgrade, onToBuild, onForget, onBudget }: Props) {
+export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onPsu, onUpgrade, onToBuild, onForget, onBudget, owned }: Props) {
   /** 'file': importar de novo; 'psu': só informar a fonte (abre na prévia). */
   const [importing, setImporting] = useState<false | 'file' | 'psu'>(false);
   const [tipsOpen, setTipsOpen] = useState(false);
@@ -178,7 +180,10 @@ export function PcAnalysis({ pc, psu, psuTitle: buildPsuTitle, onImport, onPsu, 
                 <h4 className="font-medium">{t.title}</h4>
               </div>
               <p className="mt-1.5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">{t.text}</p>
-              {t.action && <UpgradePicks action={t.action} />}
+              {t.action && <UpgradePicks action={t.action} pc={owned && {
+                owned, res: analysis.balance.res, ...(analysis.balance.hz && { hz: analysis.balance.hz }),
+                current: { ...(analysis.balance.cpu && { cpu: analysis.balance.cpu }), ...(analysis.balance.gpu && { gpu: analysis.balance.gpu }) },
+              }} />}
               {t.action && (
                 <button
                   onClick={() => onUpgrade(t.action!)}

@@ -39,7 +39,7 @@ describe('análise do PC importado', () => {
     expect(gpu.text).toContain('RTX 4070');
     expect(gpu.text).toContain('fonte a partir de 500 W');
     // RX 6600 de 8 GB: ofertas e busca só com 8 GB ou mais.
-    expect(gpu.action?.context?.minVram).toBe(8);
+    expect(gpu.action?.context).toBeUndefined(); // as ofertas saem do motor do orçamento, com o PC da pessoa
     expect(gpu.action?.filters.vram).toEqual([8, 10, 12, 16, 20, 24, 32]);
     expect(gpu.text).toContain('Só versões com 8 GB de memória de vídeo ou mais');
     expect(gpu.action?.slot).toBe('gpu');
@@ -100,10 +100,9 @@ describe('análise do PC importado', () => {
     );
     expect(a.balance.verdict).toBe('cpu');
     expect(a.tips[0]).toMatchObject({ id: 'cpu-upgrade', action: { slot: 'cpu', filters: { sockets: ['AM4'] } } });
-    // Só o encaixe: quem decide o que sobe é a nota de cada processador (pela ficha). Vai a meta de equilíbrio.
+    // Só o encaixe: quem decide o que sobe é o motor do orçamento, com o PC da pessoa (picks.ts).
     expect(a.tips[0]!.action!.filters.cpuLines).toBeUndefined();
-    expect(a.tips[0]!.action!.context).toMatchObject({ current: 68, chipset: 'B450' });
-    expect(a.tips[0]!.action!.context!.target).toBeGreaterThan(100);
+    expect(a.tips[0]!.action!.context).toBeUndefined();
     expect(a.tips[0]!.text).toContain('5800X3D');
   });
 

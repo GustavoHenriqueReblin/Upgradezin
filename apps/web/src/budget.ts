@@ -9,7 +9,9 @@ import { applyPc } from './pc.ts';
  */
 
 export type BudgetMode = 'full' | 'upgrade';
-export type BudgetWorkload = NonNullable<BudgetRequest['workload']>;
+/** Tipo de trabalho: os do motor ou "both" (uso geral / não sei: vai sem tipo, e o motor não assume uma carga). */
+export type BudgetWorkload = NonNullable<BudgetRequest['workload']> | 'both';
+const WORKLOADS = ['both', 'cpu', 'gpu', 'dev', 'video', 'ai'] as const satisfies readonly BudgetWorkload[];
 
 /** Exibe os atalhos na tela inicial e no Identificar gargalo. */
 export const BUDGET_VISIBLE = true;
@@ -55,7 +57,7 @@ export function sanitizeBudgetUi(raw: unknown): SavedBudget {
   if (MODES.includes(src.mode as BudgetMode)) out.mode = src.mode as BudgetMode;
   if (src.priceMode === 'buyable' || src.priceMode === 'ideal') out.priceMode = src.priceMode;
   if (src.profile === 'games' || src.profile === 'mixed' || src.profile === 'productivity') out.profile = src.profile;
-  if (src.workload === 'cpu' || src.workload === 'gpu') out.workload = src.workload;
+  if (typeof src.workload === 'string' && (WORKLOADS as readonly string[]).includes(src.workload)) out.workload = src.workload as BudgetWorkload;
   const text = (src.text && typeof src.text === 'object' ? src.text : {}) as Record<string, unknown>;
   for (const m of MODES) {
     const saved = text[m];
@@ -111,9 +113,9 @@ export function ownedBuild(pc: PcProfile, build: SavedBuild): SavedBuild {
 }
 
 /** Pedido ao servidor. No upgrade, as peças atuais vão como specs (nunca o relatório). */
-export function budgetRequest(budget: number, screen: Pick<BudgetRequest, 'res' | 'hz' | 'mode' | 'profile' | 'workload'>, owned?: SavedBuild, current?: BudgetRequest['current']): BudgetRequest {
-  // O tipo de trabalho só vale fora de Jogos.
-  const workload = screen.profile && screen.profile !== 'games' ? screen.workload : undefined;
+export function budgetRequest(budget: number, screen: Pick<BudgetRequest, 'res' | 'hz' | 'mode' | 'profile'> & { workload?: BudgetWorkload }, owned?: SavedBuild, current?: BudgetRequest['current']): BudgetRequest {
+  // O tipo de trabalho só vale fora de Jogos; "os dois" vai sem tipo (o motor mistura as duas cargas).
+  const workload = screen.profile && screen.profile !== 'games' && screen.workload !== 'both' ? screen.workload : undefined;
   return { budget, res: screen.res, ...(screen.hz && { hz: screen.hz }), ...(screen.mode && { mode: screen.mode }), ...(screen.profile && { profile: screen.profile }),
     ...(workload && { workload }),
     ...(owned && { owned: toBuild(owned) }), ...(current && { current }) };
@@ -175,6 +177,7 @@ export const NOTE_TEXT: Record<BudgetNote, string> = {
   'capacity-value': 'Esta opção tem mais memória ou espaço para jogos. Compare o preço com as outras opções.',
   'case-clearance': 'Confira a folga no gabinete. Um radiador frontal com ventoinhas pode reduzir o espaço para a placa de vídeo.',
   'cooling-estimate': 'O cooler foi dimensionado pela potência estimada do processador. A temperatura depende da ventilação e da carga.',
+  'more-ram': 'Mais memória na placa-mãe atual: a que você tem fica abaixo do que o processador e o seu tipo de uso pedem.',
 };
 
 /** Erro do pedido: 'invalid' quando o servidor recusou os dados (tentar de novo não adianta), 'failed' no resto. */

@@ -181,13 +181,7 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
           label: 'Ver placas de vídeo',
           // Memória de vídeo: a da placa atual ou mais (menos seria downgrade, mesmo com chip melhor).
           filters: { gpuMakers: makers, gpuModels: models, ...(gpu?.vram && { vram: VRAM_SIZES.filter((v) => v >= gpu.vram!) }) },
-          // Com a fonte atual servindo (e não sendo simples), só as placas que cabem nela.
-          context: {
-            current: gpuP,
-            target,
-            ...(gpu?.vram && { minVram: gpu.vram }),
-            ...(ok.length && !basicPsu && psuWatts && cpuW && { maxGpuPower: psuWatts - cpuW - BASE_SYSTEM_POWER }),
-          },
+          // As ofertas saem do motor do orçamento com o PC da pessoa (memória de vídeo, fonte, ganho): picks.ts.
         },
       }),
     });
@@ -207,7 +201,6 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
           label: 'Ver processadores',
           // Só o encaixe: quem decide o que sobe é a nota de cada processador pela ficha, não a linha.
           filters: { sockets: [cpu.socket] },
-          context: { current: cpuP, target: cpuNeeded(gpuP, res, hz), ...(mb?.chipset && { chipset: mb.chipset }) },
         },
       });
     } else {
@@ -221,7 +214,6 @@ export function analyzePc(pc: PcProfile, opts: { psu?: Specs; cpuSheet?: Record<
           slot: 'cpu',
           label: 'Ver processadores novos',
           filters: { sockets: next, ...(cpu.cpuBrand !== 'amd' && { cpuLines: ['Core i5', 'Core i7', 'Core Ultra 5', 'Core Ultra 7'] }) },
-          context: { current: cpuP, target: cpuNeeded(gpuP, res, hz) },
         },
       });
     }

@@ -35,7 +35,52 @@ export function resolveBudgetScenario({ budgetTier, ...inputs }: ReturnType<type
   return { request: atMinimum, plan: evaluate(atMinimum), minimumBrl };
 }
 
-export function reportOption(option: BudgetOption, request: BudgetRequest) {
+/**
+ * Por que cada opção está na lista (a 1ª é a recomendada): maior desempenho no valor, melhor custo-benefício, mais barata,
+ * outra placa de vídeo ou processador, mais memória ou SSD, acima do valor. Calculado só dos números das opções.
+ */
+export function classifyOptions(options: BudgetOption[]): string[][] {
+  const [first] = options;
+  if (!first) return [];
+  const inBudget = options.filter((o) => !o.stretch && o.total > 0);
+  const index = (o: BudgetOption) => o.objective ?? o.fps;
+  const top = Math.max(...inBudget.map(index));
+  const bestValue = Math.max(...inBudget.map((o) => index(o) / o.total));
+  const ram = (o: BudgetOption) => (o.parts.ram?.offer.specs.ramCapacity ?? 0) * (o.parts.ram?.qty ?? 1);
+  const ssd = (o: BudgetOption) => o.parts.ssd?.offer.specs.ssdCapacity ?? 0;
+  return options.map((o, i) => {
+    const tags: string[] = i === 0 ? ['recomendada'] : [];
+    if (o.stretch) tags.push('acima-do-valor');
+    else {
+      if (index(o) === top) tags.push('maior-desempenho');
+      if (index(o) / o.total === bestValue) tags.push('custo-beneficio');
+    }
+    if (i > 0) {
+      if (o.total <= first.total * 0.95) tags.push('mais-barata');
+      if (o.parts.gpu?.offer.specs.gpuModel !== first.parts.gpu?.offer.specs.gpuModel) tags.push('outra-placa-de-video');
+      if (o.parts.cpu?.offer.specs.cpuModel !== first.parts.cpu?.offer.specs.cpuModel) tags.push('outro-processador');
+      if (ram(o) > ram(first)) tags.push('mais-memoria');
+      if (ssd(o) > ssd(first)) tags.push('mais-ssd');
+    }
+    return tags;
+  });
+}
+
+/** Upgrade: custo (só o que compra), peças reaproveitadas, configuração final e índice antes e depois. */
+function upgradeReport(option: BudgetOption, request: BudgetRequest) {
+  const owned = request.owned;
+  if (!owned) return null;
+  const name = (specs: Record<string, unknown> | undefined) => specs ? [specs.cpuLine, specs.cpuModel, specs.gpuModel, specs.chipset, specs.ramCapacity && `${specs.ramCapacity} GB`, specs.watts && `${specs.watts} W`].filter(Boolean).join(' ') || null : null;
+  return {
+    costBrl: option.total,
+    reused: BUILD_SLOTS.filter((slot) => owned[slot] && !option.parts[slot]),
+    final: Object.fromEntries(BUILD_SLOTS.map((slot) => [slot, option.parts[slot] ? option.parts[slot]!.offer.title : name(owned[slot]?.specs as Record<string, unknown> | undefined)])),
+    indexBefore: option.gain !== undefined && option.objective !== undefined ? Math.round((option.objective / (1 + option.gain)) * 100) / 100 : null,
+    indexAfter: option.objective ?? null,
+  };
+}
+
+export function reportOption(option: BudgetOption, request: BudgetRequest, classification: string[] = []) {
   const violations: string[] = [];
   if (option.total > request.budget && !option.stretch) violations.push('over-budget');
   if (option.issues.some((issue) => issue.level === 'error')) violations.push('incompatible');
@@ -66,6 +111,8 @@ export function reportOption(option: BudgetOption, request: BudgetRequest) {
     notes: option.notes,
     issues: option.issues,
     violations,
+    classification,
+    upgrade: upgradeReport(option, request),
   };
 }
 
@@ -133,8 +180,14 @@ function auditResult(request: BudgetRequest, plan: BudgetPlan) {
     status: plan.status,
     minimumBrl: plan.minTotal ?? null,
     bestObjective: plan.bestObjective ?? null,
-    recommendation: plan.status === 'ok' ? reportOption(plan, request) : null,
-    alternatives: plan.alternatives.map((option) => reportOption(option, request)),
+    ...(() => {
+      const options = plan.status === 'ok' ? [plan, ...plan.alternatives] : [];
+      const tags = classifyOptions(options);
+      return {
+        recommendation: plan.status === 'ok' ? reportOption(plan, request, tags[0]) : null,
+        alternatives: plan.alternatives.map((option, i) => reportOption(option, request, tags[i + 1])),
+      };
+    })(),
   };
 }
 
@@ -151,10 +204,17 @@ function runExpanded(db: Db, now: number, stores: StoreId[]) {
   const scenarios: ReturnType<typeof auditResult>[] = [];
   const boundaries: { below: ReturnType<typeof auditResult>; above: ReturnType<typeof auditResult> }[] = [];
   const discarded: { id: string; reason: string; option: ReturnType<typeof reportOption> | null; checks?: NonNullable<BudgetPlan['audit']>['rejectedBuilds'] }[] = [];
-  const progression: { request: BudgetRequest; before: number; after: number }[] = [];
+  /** A sequência de cada grupo (modo, perfil, tela) pelos orçamentos: recomendada, melhor índice e onde o melhor caiu. */
+  const progression: {
+    group: { mode: BudgetMode; profile: BudgetProfile; res: BudgetRequest['res']; hz: number };
+    points: { budget: number; status: string; totalBrl: number | null; objectiveIndex: number | null; bestObjective: number | null; gamingIndex: number | null; workIndex: number | null }[];
+    bestDecreases: { budget: number; before: number; after: number }[];
+  }[] = [];
   for (const mode of MODES) for (const profile of AUDIT_PROFILES) for (const res of RESOLUTIONS) for (const hz of AUDIT_RATES) {
     const inputs = { mode, profile, res, hz };
     const evaluate = prepareBudget(inputs, catalogOf(mode), now);
+    const series: (typeof progression)[number] = { group: inputs, points: [], bestDecreases: [] };
+    progression.push(series);
     let previous: number | undefined;
     let previousPlan: BudgetPlan | undefined;
     let previousBudget: number | undefined;
@@ -165,8 +225,10 @@ function runExpanded(db: Db, now: number, stores: StoreId[]) {
       const plan = evaluate(budget);
       const score = plan.bestObjective;
       if (previous !== undefined && (score === undefined || score + 0.000001 < previous)) {
-        progression.push({ request, before: previous, after: score ?? 0 });
+        series.bestDecreases.push({ budget, before: previous, after: score ?? 0 });
       }
+      series.points.push({ budget, status: plan.status, totalBrl: plan.status === 'ok' ? plan.total : null, objectiveIndex: plan.status === 'ok' ? plan.objective ?? null : null,
+        bestObjective: score ?? null, gamingIndex: plan.status === 'ok' ? plan.fps : null, workIndex: plan.status === 'ok' ? plan.work ?? null : null });
       const row = auditResult(request, plan);
       if (previousPlan && previousBudget !== undefined && mainParts(previousPlan) !== mainParts(plan) &&
         (previousPlan.status !== 'ok' || !probedChange)) {

@@ -24,8 +24,8 @@ Fora do escopo: marketplaces abertos, usado/recondicionado, checkout, afiliados,
 
 - **Em produção** num servidor Ubuntu doméstico, com acesso público por túnel. A rotina de coleta, a varredura completa da madrugada e a rotina de fichas rodam lá. O servidor pode estar alguns commits atrás do `main`: o deploy é manual (seção 12).
 - **Catálogo** (snapshot local de 25/11/2026) com 19.067 anúncios catalogados e 14.456 páginas de produto lidas.
-- **Versão 0.3.0.** O `[Não lançado]` do CHANGELOG lista o que já está no código e ainda não virou versão.
-- **Próximo marco:** motor único de recomendação e ajuste fino com um dump atualizado, a última entrega da 1ª versão (seção 11). Login e alertas de preço já estão no código.
+- **Versão 1.0.0** (26/11/2026), a 1ª versão: busca, montagem com compatibilidade, Identificar gargalo, Montar pelo orçamento com o motor único (as dicas do Gargalo saem dele), comparador, login com a conta sincronizada e alertas de preço. O `[Não lançado]` do CHANGELOG lista o que já está no código e ainda não virou versão.
+- **Próximo passo:** ajuste fino do motor (V5) com a matriz sobre um snapshot congelado (seção 11).
 
 ---
 
@@ -164,7 +164,7 @@ Tabelas antigas (`search_terms`, `term_runs`, `listing_terms`, `parts`, `part_co
 A partir do PC importado, da ficha do processador (GET `/api/sheets/cpu`) e dos campos do chip da placa de vídeo (GET `/api/sheets/gpu`, valor mais comum entre as placas do mesmo modelo): veredito, placas de vídeo na faixa do que o processador aguenta (cabendo na fonte, com aviso de banda PCIe quando aplicável), processador do mesmo encaixe ou troca de plataforma, memória (XMP, single channel, 32 GB), disco do sistema, monitor, fonte, erros WHEA.
 
 ### 7.3 Melhores ofertas de cada dica (`packages/shared/src/picks.ts`)
-Do banco (cache de 1 min): processador e placa de vídeo, uma por modelo, só as compatíveis (chipset, fonte, memória de vídeo mínima); primeiro as que resolvem o gargalo (≥ 90% do equilíbrio), da mais barata, depois mais desempenho por real; ganho mínimo de 15%. Memória, fonte e SSD: as mais baratas que servem. 3 por dica.
+Pelo motor do orçamento (§7.4), com as mesmas ofertas. Processador e placa de vídeo: as opções de upgrade que o motor monta para o PC da pessoa, trocando só a peça da dica e o que ela arrasta junto (fonte, cooler, placa-mãe e memória), uma por modelo; primeiro as que resolvem o gargalo, da mais barata, depois mais ganho em jogos por real (o mesmo ganho do orçamento, mínimo de 10%). Memória, fonte e SSD: os produtos que o motor escolheria (só da própria loja, preferência de marca) entre os que servem. 3 por dica.
 
 ### 7.4 Montar pelo orçamento (`packages/shared/src/budget.ts`, §17.4)
 
@@ -225,7 +225,6 @@ ADRs completos em ARCHITECTURE §15. As principais:
 
 | Problema | Efeito | Situação |
 |---|---|---|
-| As ofertas das dicas (`picks.ts`) têm ranking próprio | Duas lógicas de escolha (dicas e orçamento) | Unificar com o motor do orçamento |
 | Texto da dica de placa de vídeo cita chips sem saber a memória de vídeo de cada um | A frase pode citar um chip sem versão com memória suficiente (as ofertas e a busca já filtram) | Falta uma tabela de memória de vídeo por chip |
 | Orçamento ainda em refino | Disponível na tela inicial e no Identificar gargalo | Refinar: preço acima do normal, qualidade por modelo, mais avaliações |
 | Memória e SSD caros nas lojas (nov/2026) | Montagens baratas saem sem placa de vídeo | Preço de mercado; nada a corrigir no motor |
@@ -244,7 +243,7 @@ ADRs completos em ARCHITECTURE §15. As principais:
 3. ~~Mais de um disco na montagem~~ (NVMe, SATA e discos importados do CPU-Z).
 4. ~~Login com Google e sincronização da conta~~ (validado em produção, com CEP de entrega).
 5. **Alertas de preço:** acompanhar um produto (preço-alvo, qualquer queda ou volta ao estoque). Os alertas ficam na conta; uma rotina do servidor confere depois das coletas e grava as notificações, que o site só lê (sino ao lado da conta e notificação do navegador). E-mail fica para depois.
-6. **Motor único de recomendação:** unificar as ofertas das dicas do Gargalo (`picks.ts`) com o motor do orçamento e fazer o ajuste fino com um dump atualizado. É a última entrega da 1ª versão.
+6. **Motor único de recomendação:** as ofertas das dicas do Gargalo (`picks.ts`) já saem do motor do orçamento. Falta o ajuste fino das respostas com a matriz (`pnpm budget-test`, e `--expanded` para a auditoria ampliada) sobre um dump atualizado. É a última entrega da 1ª versão.
 
 A conta guarda, entre dispositivos: Meu PC (com as peças marcadas Já tenho e os dados tratados do CPU-Z), a montagem atual, os filtros e a categoria de cada busca, o último resultado de cada aba do orçamento (com a data e os preços do dia; Refazer cálculo roda de novo) e as peças do comparador. As buscas não guardam o resultado: abrem sempre com o preço mais atual do banco, e o histórico de cada produto mostra a evolução. Guardar várias montagens ficou de fora (pouco uso esperado).
 

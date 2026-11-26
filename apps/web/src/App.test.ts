@@ -125,6 +125,16 @@ it('exibe os dois tipos de recomendação com PC comprável agora como padrão',
   expect(profiles[1]).not.toContain('checked=""');
 });
 
+it('mostra o aviso de direitos no rodapé da tela inicial', () => {
+  vi.stubGlobal('location', { pathname: '/', search: '' });
+  vi.stubGlobal('__APP_VERSION__', '0.0.0');
+  try {
+    expect(renderToStaticMarkup(createElement(App))).toMatch(/<footer\b[^>]*>© 2026 Upgradezin/);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it('usa o mesmo estilo nos três atalhos da tela inicial', () => {
   vi.stubGlobal('location', { pathname: '/' });
   vi.stubGlobal('__APP_VERSION__', '0.0.0');

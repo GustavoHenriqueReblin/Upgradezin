@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { pickUpgrades } from './picks.ts';
+import { prepareBudget } from './budget.ts';
+import type { Build } from './compat.ts';
+import { pickSlots, pickUpgrades } from './picks.ts';
 import type { Offer, Specs } from './types.ts';
 
 let n = 0;
@@ -15,85 +17,97 @@ const offer = (specs: Specs, priceCash: number, extra: Partial<Offer> = {}): Off
   openbox: false,
   specs,
   modelKey: `m${n}`,
-  collectedAt: '2026-11-21T10:00:00.000Z',
+  productKey: `p${n}`,
+  collectedAt: '2026-11-24T10:00:00.000Z',
   ...extra,
 });
-const gpu = (gpuModel: string, price: number, extra: Partial<Offer> = {}) => offer({ gpuMaker: gpuModel.startsWith('RX') ? 'amd' : 'nvidia', gpuModel }, price, extra);
+const gpu = (gpuModel: string, price: number, extra: Partial<Offer> = {}, more: Specs = {}) => offer({ gpuMaker: gpuModel.startsWith('RX') ? 'amd' : 'nvidia', gpuModel, vram: 8, ...more }, price, extra);
+const amd = (cpuLine: string, cpuModel: string, socket: 'AM4' | 'AM5', more: Specs, price: number) => offer({ cpuBrand: 'amd', cpuLine, cpuModel, socket, ...more }, price);
+const NOW = Date.parse('2026-11-24T12:00:00.000Z');
 
-describe('ranking de upgrade: placa de vídeo', () => {
-  // Atual: RTX 3060 (100). RTX 4060 = 110 (só +10%: fica de fora), RTX 5060 = 128, RX 9060 XT = 145, RTX 5070 = 195.
-  const offers = [
-    gpu('RTX 4060', 1500),
-    gpu('RTX 5060', 1900),
-    gpu('RTX 5060', 1750, { store: 's2' }), // mesma placa mais barata em outra loja
-    gpu('RX 9060 XT', 2100),
-    gpu('RTX 5070', 3900),
-    gpu('RTX 5070', 3000, { inStock: false }), // sem estoque não conta
-    gpu('RX 9060 XT', 1200, { marketplace: true }), // marketplace não conta
-  ];
-  const req = { slot: 'gpu' as const, filters: { gpuModels: ['RTX 4060', 'RTX 5060', 'RX 9060 XT', 'RTX 5070'] }, context: { current: 100 } };
+/** PC com processador de sobra para a placa: 5800X3D numa B550, RX 6600 de 8 GB e fonte de 650 W gold. */
+const gpuBound: Build = {
+  cpu: { specs: { cpuBrand: 'amd', cpuLine: 'Ryzen 7', cpuModel: '5800X3D', socket: 'AM4', tdp: 105 } },
+  motherboard: { specs: { chipset: 'B550', socket: 'AM4', formFactor: 'matx', memory: 'ddr4' } },
+  ram: { specs: { memory: 'ddr4', ramCapacity: 32, ramModules: 2, ramSpeed: 3200 } },
+  gpu: { specs: { gpuMaker: 'amd', gpuModel: 'RX 6600', vram: 8 } },
+  psu: { specs: { watts: 650, efficiency: 'gold' } },
+};
+const psus = [offer({ watts: 650, efficiency: 'bronze' }, 300), offer({ watts: 850, efficiency: 'gold' }, 600), offer({ watts: 1000, efficiency: 'gold' }, 800)];
 
-  it('uma por modelo, a mais barata que dá para comprar, ordenadas por desempenho ganho por real', () => {
-    const picks = pickUpgrades(req, offers);
-    expect(picks.map((p) => [p.offer.specs.gpuModel, p.price])).toEqual([
-      ['RTX 5070', 3900], // 95 pontos / 3900 = 0,0244
-      ['RX 9060 XT', 2100], // 45 / 2100 = 0,0214
-      ['RTX 5060', 1750], // 28 / 1750 = 0,0160
-    ]);
-    expect(picks[1]!.gain).toBeCloseTo(0.45);
+describe('dicas do Identificar gargalo pelo motor do orçamento', () => {
+  it('placa de vídeo: as mesmas opções do orçamento no upgrade, uma por modelo; o ganho é o do orçamento', () => {
+    const gpus = [
+      gpu('RTX 5060', 1900),
+      gpu('RTX 5060', 1750, { store: 's2' }), // a mesma placa, mais barata em outra loja
+      gpu('RX 9060 XT', 2100, {}, { vram: 16 }),
+      gpu('RTX 5070', 3900, {}, { vram: 12 }),
+      gpu('RTX 5070', 3000, { inStock: false }, { vram: 12 }), // sem estoque não conta
+      gpu('RX 9060 XT', 1200, { marketplace: true }, { vram: 16 }), // marketplace não conta
+      gpu('RTX 3050', 1100, {}, { vram: 6 }), // menos memória de vídeo que a atual: downgrade
+    ];
+    const req = { slot: 'gpu' as const, filters: {}, owned: gpuBound, res: '1080p' as const, hz: 144 };
+    const picks = pickUpgrades(req, { gpu: gpus, psu: psus }, NOW);
+    const models = picks.map((p) => p.offer.specs.gpuModel);
+    expect(new Set(models).size).toBe(models.length);
+    expect(models).not.toContain('RTX 3050');
+    expect(picks.find((p) => p.offer.specs.gpuModel === 'RTX 5060')?.price).toBe(1750);
+    // O mesmo número do Montar pelo orçamento para a mesma troca.
+    const options = prepareBudget({ res: '1080p', hz: 144, mode: 'buyable', profile: 'games', owned: gpuBound }, { gpu: gpus, psu: psus }, NOW).options();
+    for (const p of picks) {
+      const same = options.filter((o) => o.parts.gpu?.offer.specs.gpuModel === p.offer.specs.gpuModel).sort((a, b) => a.total - b.total)[0]!;
+      expect(p.gain).toBe(same.gain);
+      expect(p.gain!).toBeGreaterThanOrEqual(0.1);
+    }
+    // As que resolvem o gargalo vêm antes, da mais barata.
+    const resolving = picks.filter((p) => p.resolves);
+    expect(picks.slice(0, resolving.length)).toEqual(resolving);
+    expect(resolving.map((p) => p.total ?? p.price)).toEqual([...resolving.map((p) => p.total ?? p.price)].sort((a, b) => a - b));
   });
 
-  it('fonte atual: só as placas que cabem nela', () => {
-    const picks = pickUpgrades({ ...req, context: { current: 100, maxGpuPower: 200 } }, offers);
-    expect(picks.map((p) => p.offer.specs.gpuModel)).toEqual(['RX 9060 XT', 'RTX 5060']); // RTX 5070 pede 250 W
+  it('placa de vídeo que a fonte atual não aguenta: a troca leva a fonte junto, no total', () => {
+    const weak: Build = { ...gpuBound, psu: { specs: { watts: 450, efficiency: 'bronze' } } };
+    const [pick] = pickUpgrades({ slot: 'gpu', filters: {}, owned: weak, res: '1440p' }, { gpu: [gpu('RTX 5080', 7000, {}, { vram: 16 })], psu: psus }, NOW);
+    expect(pick?.extras?.map((x) => x.slot)).toEqual(['psu']);
+    expect(pick!.total).toBe(pick!.price + pick!.extras![0]!.price);
   });
 
-  it('nunca menos memória de vídeo que a placa atual (seria downgrade): a variante de 16 GB entra, a de 8 GB e a sem informação não', () => {
-    const list = [gpu('RTX 5060 Ti', 2500, { specs: { gpuMaker: 'nvidia', gpuModel: 'RTX 5060 Ti', vram: 8 } }), gpu('RTX 5060 Ti', 3000, { specs: { gpuMaker: 'nvidia', gpuModel: 'RTX 5060 Ti', vram: 16 } }), gpu('RTX 5070', 3900)];
-    const picks = pickUpgrades({ slot: 'gpu', filters: {}, context: { current: 100, minVram: 12 } }, list);
-    expect(picks.map((p) => [p.offer.specs.gpuModel, p.offer.specs.vram])).toEqual([['RTX 5060 Ti', 16]]);
+  it('processador do mesmo encaixe: fica a placa-mãe; a que pede BIOS nova vem marcada', () => {
+    const cpuBound: Build = {
+      cpu: { specs: { cpuBrand: 'amd', cpuLine: 'Ryzen 5', cpuModel: '2600', socket: 'AM4', tdp: 65 } },
+      motherboard: { specs: { chipset: 'X470', socket: 'AM4', formFactor: 'atx', memory: 'ddr4' } },
+      ram: { specs: { memory: 'ddr4', ramCapacity: 16, ramModules: 2, ramSpeed: 3200 } },
+      gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'RTX 4070', vram: 12 } },
+      psu: { specs: { watts: 650, efficiency: 'gold' } },
+    };
+    const cpus = [
+      amd('Ryzen 5', '5600', 'AM4', { tdp: 65, cooler: true }, 700),
+      amd('Ryzen 7', '5800X3D', 'AM4', { tdp: 105, cooler: false }, 1500),
+      amd('Ryzen 7', '7800X3D', 'AM5', { tdp: 120, cooler: false }, 2200), // outro encaixe: fora desta dica
+    ];
+    const coolers = [offer({ coolerType: 'air', coolerSockets: ['AM4', 'AM5'], coolerTdp: 180 }, 100)];
+    const req = { slot: 'cpu' as const, filters: { sockets: ['AM4' as const] }, owned: cpuBound, res: '1080p' as const };
+    expect(pickSlots(req)).toEqual(['cpu', 'cooler', 'psu']);
+    const picks = pickUpgrades(req, { cpu: cpus, cooler: coolers, psu: psus }, NOW);
+    expect(picks.map((p) => p.offer.specs.cpuModel).sort()).toEqual(['5600', '5800X3D']);
+    expect(picks.every((p) => !p.extras?.some((x) => x.slot === 'motherboard'))).toBe(true);
+    const x3d = picks.find((p) => p.offer.specs.cpuModel === '5800X3D')!;
+    expect(x3d.extras?.map((x) => x.slot)).toContain('cooler'); // sem cooler na caixa
+    expect(x3d.needsBios).toBe(true); // X470 aceita Zen 3 depois de atualizar a BIOS
+    // Numa placa de entrada (B450), o motor não põe processador de 105 W: a dica também não.
+    const entry: Build = { ...cpuBound, motherboard: { specs: { chipset: 'B450', socket: 'AM4', formFactor: 'matx', memory: 'ddr4' } } };
+    expect(pickUpgrades({ ...req, owned: entry }, { cpu: cpus, cooler: coolers, psu: psus }, NOW).map((p) => p.offer.specs.cpuModel)).toEqual(['5600']);
+    // Plataforma nova: outro encaixe arrasta placa-mãe e memória.
+    expect(pickSlots({ slot: 'cpu', filters: { sockets: ['AM5'] }, owned: cpuBound })).toEqual(['cpu', 'cooler', 'psu', 'motherboard', 'ram']);
   });
 
-  it('no máximo 3', () => {
-    const many = ['RTX 5060', 'RTX 5060 Ti', 'RTX 5070', 'RTX 5070 Ti', 'RTX 5080', 'RX 9060 XT', 'RX 9070'].map((m, i) => gpu(m, 2000 + i * 500));
-    expect(pickUpgrades({ slot: 'gpu', filters: {}, context: { current: 100 } }, many)).toHaveLength(3);
-  });
-});
-
-describe('ranking de upgrade: processador', () => {
-  it('só os que o chipset aceita e que sobem pelo menos 15%', () => {
-    const am4 = (cpuModel: string, cpuLine: string, price: number) => offer({ cpuBrand: 'amd', cpuLine, cpuModel, socket: 'AM4' }, price);
-    const offers = [am4('5700X3D', 'Ryzen 7', 1100), am4('5600', 'Ryzen 5', 600), am4('3600', 'Ryzen 5', 400)];
-    // Atual: Ryzen 5 3600 (zen2, 83). Ryzen 5 5600 = 100 (+20%), 5700X3D = 125 (+51%).
-    const picks = pickUpgrades({ slot: 'cpu', filters: { sockets: ['AM4'] }, context: { current: 83, chipset: 'B450' } }, offers);
-    expect(picks.map((p) => p.offer.specs.cpuModel)).toEqual(['5700X3D', '5600']); // 42 pontos / 1100 = 0,038 > 17 / 600 = 0,028
-    // B450 aceita Ryzen 5000 depois de atualizar a BIOS: continua, com o aviso.
-    expect(picks.every((p) => p.needsBios)).toBe(true);
-    expect(pickUpgrades({ slot: 'cpu', filters: { sockets: ['AM4'] }, context: { current: 83, chipset: 'B550' } }, offers).some((p) => p.needsBios)).toBe(false);
-  });
-
-  it('chipset que não aceita a geração: fica de fora', () => {
-    // Atual: Core i5-10400 (80). Core i7-11700 = 94 (+17%), mas H410 não aceita a 11ª geração.
-    const offers = [offer({ cpuBrand: 'intel', cpuLine: 'Core i7', cpuModel: '11700', cpuGen: '11ª', socket: 'LGA1200' }, 1500)];
-    const req = (chipset: string) => ({ slot: 'cpu' as const, filters: { sockets: ['LGA1200' as const] }, context: { current: 80, chipset } });
-    expect(pickUpgrades(req('H410'), offers)).toEqual([]);
-    expect(pickUpgrades(req('B560'), offers)).toHaveLength(1);
-  });
-});
-
-describe('melhores preços: memória e fonte', () => {
-  it('memória: as mais baratas que batem com o filtro, uma por produto', () => {
-    const ram = (ramCapacity: number, ramModules: number, price: number, modelKey?: string) => offer({ memory: 'ddr4', ramCapacity, ramModules }, price, modelKey ? { modelKey } : {});
-    const offers = [ram(16, 2, 350, 'kit-a'), ram(16, 2, 320, 'kit-a'), ram(16, 1, 250), ram(32, 2, 600), ram(16, 2, 400)];
-    const picks = pickUpgrades({ slot: 'ram', filters: { memory: ['ddr4'], ramModules: [2], ramCapacity: [16, 32] } }, offers);
-    expect(picks.map((p) => p.price)).toEqual([320, 400, 600]);
-    expect(picks[0]!.gain).toBeUndefined();
-  });
-
-  it('fonte: potência mínima e só certificada', () => {
-    const psu = (watts: number, efficiency: Specs['efficiency'], price: number) => offer({ watts, efficiency }, price);
-    const offers = [psu(500, 'white', 180), psu(650, 'bronze', 330), psu(750, 'gold', 520), psu(550, 'bronze', 260)];
-    const picks = pickUpgrades({ slot: 'psu', filters: {}, context: { minWatts: 600, certified: true } }, offers);
-    expect(picks.map((p) => p.offer.specs.watts)).toEqual([650, 750]);
+  it('memória, fonte e SSD: os produtos do motor (só da própria loja, preferência de marca), entre os que servem', () => {
+    const named = offer({ watts: 650, efficiency: 'bronze' }, 330, { brand: 'Corsair' });
+    const unnamed = offer({ watts: 650, efficiency: 'bronze' }, 300, { brand: 'Genérica' }); // mais barata, mas de fora da lista
+    const white = offer({ watts: 700, efficiency: 'white' }, 150);
+    const picks = pickUpgrades({ slot: 'psu', filters: {}, context: { certified: true, minWatts: 600 } }, { psu: [unnamed, named, white] }, NOW);
+    expect(picks.map((p) => p.offer.brand)).toEqual(['Corsair', 'Genérica']);
+    // Sem o PC da pessoa, processador e placa de vídeo não têm como comparar: nada.
+    expect(pickUpgrades({ slot: 'gpu', filters: {} }, { gpu: [gpu('RTX 5060', 1900)] }, NOW)).toEqual([]);
   });
 });

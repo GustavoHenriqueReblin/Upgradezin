@@ -1,22 +1,41 @@
 import { trackActivity } from '../activity.ts';
 import { useEffect, useState } from 'react';
 import { ArrowRight, ChartColumn } from 'lucide-react';
-import { productPath, type UpgradeAction, type UpgradePick } from '@upgradezin/shared';
+import { productPath, type Build, type BuildSlot, type BudgetRequest, type Resolution, type UpgradeAction, type UpgradePick } from '@upgradezin/shared';
 import { brl } from '../format.ts';
 import { storeName } from '../stores.ts';
 import { StoreDot } from './StoreDot.tsx';
 import { CompareButton } from './CompareControls.tsx';
 import { compareUrl } from '../compare.ts';
 
+/** O que a troca leva junto, no meio da frase ("com fonte, cooler"). */
+const EXTRA: Partial<Record<BuildSlot, string>> = {
+  psu: 'fonte', cooler: 'cooler', motherboard: 'placa-mãe', ram: 'memória',
+};
+
+/** O PC da pessoa para o motor do orçamento comparar (processador e placa de vídeo). */
+export interface PickPc { owned: Build; res: Resolution; hz?: number; current?: BudgetRequest['current'] }
+
+/** Corpo do pedido: a dica e, para processador e placa de vídeo, o PC da pessoa. */
+export function picksBody(action: UpgradeAction, pc?: PickPc) {
+  const engine = action.slot === 'cpu' || action.slot === 'gpu';
+  return {
+    slot: action.slot, filters: action.filters, ...(action.context && { context: action.context }),
+    ...(engine && pc && { owned: pc.owned, res: pc.res, ...(pc.hz && { hz: pc.hz }), ...(pc.current && { current: pc.current }) }),
+  };
+}
+
 /**
  * As 3 peças que mais acertam a dica de upgrade (1ª, 2ª e 3ª opção), com o preço de agora (POST /api/upgrade/picks, só do
- * banco). Processador e placa de vídeo: primeiro as que resolvem o gargalo, da mais barata; depois as
- * que mais sobem por real, com o ganho de cada uma. Memória, fonte e SSD: as mais baratas que servem.
+ * banco, pelo motor do Montar pelo orçamento). Processador e placa de vídeo: primeiro as que resolvem o gargalo, da mais
+ * barata; depois as que mais rendem por real, com o ganho em jogos e o que a troca leva junto (fonte, cooler, placa-mãe
+ * e memória). Memória, fonte e SSD: as que o motor escolheria, entre as que servem.
  * Cada uma abre a página do produto, com os preços de todas as lojas.
  */
-export function UpgradePicks({ action }: { action: UpgradeAction }) {
+export function UpgradePicks({ action, pc }: { action: UpgradeAction; pc?: PickPc }) {
   const [picks, setPicks] = useState<UpgradePick[] | null>(null);
-  const key = JSON.stringify([action.slot, action.filters, action.context]);
+  const body = picksBody(action, pc);
+  const key = JSON.stringify(body);
 
   useEffect(() => {
     let alive = true;
@@ -24,7 +43,7 @@ export function UpgradePicks({ action }: { action: UpgradeAction }) {
     fetch('/api/upgrade/picks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slot: action.slot, filters: action.filters, ...(action.context && { context: action.context }) }),
+      body: key,
     })
       .then((r) => (r.ok ? (r.json() as Promise<UpgradePick[]>) : []))
       .then((p) => alive && setPicks(p))
@@ -87,7 +106,12 @@ export function UpgradePicks({ action }: { action: UpgradeAction }) {
                     </span>
                   </span>
                 </span>
-                <span className="shrink-0 text-right font-semibold tabular-nums">{brl(p.price)}</span>
+                <span className="shrink-0 text-right tabular-nums">
+                  <span className="block font-semibold">{brl(p.total ?? p.price)}</span>
+                  {p.extras?.length ? (
+                    <span className="block text-xs text-zinc-500">com {p.extras.map((x) => EXTRA[x.slot] ?? x.slot).join(', ')}</span>
+                  ) : null}
+                </span>
                 <ArrowRight className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
               </a>
               {p.offer.productKey && (
@@ -99,9 +123,9 @@ export function UpgradePicks({ action }: { action: UpgradeAction }) {
       </ol>
       {ranked && (
         <p className="mt-1.5 text-xs text-zinc-500">
-          Ganho estimado em jogos sobre a sua peça atual: processador pela ficha técnica (arquitetura, clock máximo, cache e núcleos), placa de vídeo pela média de
-          análises do chip. &quot;Resolve o gargalo&quot;: chega ao equilíbrio com a outra peça na sua tela. Preço à vista com cupom, da loja mais barata; clique para ver
-          todas.
+          Ganho estimado em jogos no seu PC, na sua tela, pelo mesmo cálculo do Montar pelo orçamento. &quot;Resolve o gargalo&quot;: o equilíbrio com a outra peça
+          sai da faixa do gargalo. Quando a troca pede outra peça (fonte, cooler, placa-mãe e memória), o preço é o total. Preço à vista com cupom, da loja mais
+          barata; clique para ver todas.
         </p>
       )}
     </div>

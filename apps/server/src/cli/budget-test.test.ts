@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { BudgetPlan, BudgetRequest } from '@upgradezin/shared';
-import { budgetScenarios, reportOption, resolveBudgetScenario, simulatedPrice } from './budget-test.ts';
+import type { BudgetOption, BudgetPlan, BudgetRequest, Build, Offer } from '@upgradezin/shared';
+import { budgetScenarios, classifyOptions, reportOption, resolveBudgetScenario, simulatedPrice } from './budget-test.ts';
 
 describe('matriz de PC completo', () => {
   it('aplica variação no preço histórico preservando a identidade e a data', () => {
@@ -40,5 +40,23 @@ describe('matriz de PC completo', () => {
       performance: { combinedIndex: 42, cpuIndex: null, gpuIndex: null, cpuGpuRatio: null },
       parts: { motherboard: null, cpu: null, ram: null, gpu: null, psu: null, ssd: null, cooler: null, case: null },
     });
+  });
+
+  it('classifica cada opção pela vantagem real e exporta o upgrade (custo, reaproveitadas, final, índice antes e depois)', () => {
+    const part = (specs: Record<string, unknown>, price: number, title = 'Peça') => ({ price, offer: { title, specs } as unknown as Offer, offers: [] });
+    const base = { notes: [], issues: [] };
+    const first: BudgetOption = { ...base, total: 5000, fps: 100, objective: 100, parts: { gpu: part({ gpuModel: 'RTX 4070' }, 3000), cpu: part({ cpuModel: '5600' }, 700) } };
+    const faster: BudgetOption = { ...base, total: 5600, fps: 110, objective: 110, parts: { gpu: part({ gpuModel: 'RTX 5070' }, 3600), cpu: part({ cpuModel: '5600' }, 700) } };
+    const cheaper: BudgetOption = { ...base, total: 4000, fps: 90, objective: 90, parts: { gpu: part({ gpuModel: 'RTX 3060' }, 2000), cpu: part({ cpuModel: '5600' }, 700) } };
+    expect(classifyOptions([first, faster, cheaper])).toEqual([
+      ['recomendada'],
+      ['maior-desempenho', 'outra-placa-de-video'],
+      ['custo-beneficio', 'mais-barata', 'outra-placa-de-video'],
+    ]);
+    const owned: Build = { cpu: { specs: { cpuModel: '5600' } }, gpu: { specs: { gpuModel: 'RX 6600' } }, psu: { specs: { watts: 650 } } };
+    const upgrade = reportOption({ ...base, total: 3000, fps: 140, objective: 140, gain: 0.4, parts: { gpu: part({ gpuModel: 'RTX 4070' }, 3000, 'Placa RTX 4070') } },
+      { budget: 3500, res: '1080p', mode: 'buyable', owned }).upgrade;
+    expect(upgrade).toEqual({ costBrl: 3000, reused: ['cpu', 'psu'], indexBefore: 100, indexAfter: 140,
+      final: { motherboard: null, cpu: '5600', ram: null, gpu: 'Placa RTX 4070', psu: '650 W', ssd: null, cooler: null, case: null } });
   });
 });

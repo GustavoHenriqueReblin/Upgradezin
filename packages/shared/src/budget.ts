@@ -17,10 +17,10 @@ import { effectiveCash, FORM_FACTORS, type FormFactor, type MemoryType, type Off
  *   aguenta. Só sugere se render pelo menos 10% a mais.
  *
  * O índice de jogos combina o teto estimado da CPU e a nota da GPU na resolução pedida.
- * Entre as opções que cabem no orçamento, a mais barata dentro
- * de 3% da melhor: gastar mais por quase nada não vale. Até OPTIONS opções, cada uma com outra placa de
- * vídeo (ou outro processador), para a pessoa comparar; a última pode passar até 25% do orçamento se
- * render bem mais (STRETCH). Cada opção passa pela compatibilidade antes de entrar na resposta.
+ * Entre as opções que cabem no orçamento, a de maior utilidade (índice do perfil contra o custo, com os benefícios de
+ * capacidade e qualidade; ver `utility`): gastar mais só quando o ganho paga. Até OPTIONS opções, cada uma com um motivo
+ * (mais desempenho no valor, mais barata, outra placa de vídeo ou outro processador); a última pode passar até 25% do
+ * orçamento se render bem mais (STRETCH). Cada opção passa pela compatibilidade antes de entrar na resposta.
  */
 
 export interface BudgetRequest {
@@ -34,13 +34,20 @@ export interface BudgetRequest {
   graphics?: 'integrated' | 'dedicated';
   preferences?: { cpu?: 'amd' | 'intel'; gpu?: 'amd' | 'intel' | 'nvidia' };
   requiredBrands?: BudgetRequest['preferences'];
-  workload?: 'cpu' | 'gpu';
+  /**
+   * Carga de trabalho (Produtividade e Jogos e trabalho). Sem ela: uso geral (processador, com a placa de vídeo ajudando
+   * até uma placa de entrada). cpu: multicore. gpu: renderização e modelagem 3D (acelerada pela placa). dev:
+   * desenvolvimento e máquinas virtuais (processador e bastante memória). video: edição de vídeo (processador, placa e
+   * armazenamento). ai: IA local (placa de vídeo e memória de vídeo; CUDA como preferência).
+   */
+  workload?: BudgetWorkloadKind;
   /** Peças que a pessoa já tem (upgrade). Sem processador nem placa de vídeo aqui: PC inteiro. */
   owned?: Build;
   /** Desempenho das peças atuais, calculado na tela (o processador pela ficha do modelo). */
   current?: { cpu?: number; gpu?: number };
 }
 
+export type BudgetWorkloadKind = 'cpu' | 'gpu' | 'dev' | 'video' | 'ai';
 export type BudgetMode = 'buyable' | 'ideal';
 export type BudgetProfile = 'games' | 'mixed' | 'productivity';
 export interface BudgetReference { price: number; at: string }
@@ -72,7 +79,7 @@ export type BudgetStatus = 'ok' | 'too-low' | 'no-gain' | 'no-data';
  * (mais barata que o kit).
  */
 export type BudgetNote = 'igpu' | 'ram-16' | 'ssd-500' | 'psu-unknown' | 'keeps-ram' | 'bios' | 'ram-pair' | 'box-cooler' | 'vrm-unverified' | 'psu-connector' |
-  'capacity-value' | 'case-clearance' | 'cooling-estimate';
+  'capacity-value' | 'case-clearance' | 'cooling-estimate' | 'more-ram';
 
 /** Uma opção de compra: as peças que fecham no orçamento, com o desempenho que elas dão. */
 export interface BudgetOption {
@@ -127,8 +134,37 @@ const STRETCH_GAIN = 0.1;
 
 /** Ganho mínimo de um upgrade para valer a sugestão. */
 const MIN_GAIN = 0.1;
-/** Entre as opções que cabem, a mais barata que rende pelo menos isto da melhor. */
+/** Duas opções com índices a menos disto de distância contam como empatadas (alternativas e qualidade). */
 const NEAR_BEST = 0.97;
+/** Peso do preço na utilidade: pagar x% a mais vale quando o índice sobe pelo menos isto vezes x% (10% a mais por 2,4%). */
+const PRICE_WEIGHT = 0.25;
+/**
+ * Fração do custo que vale pagar a mais por ponto de qualidade da plataforma e por marca preferida (a preferência vale
+ * até 10% a mais no preço, ou ~2,5% de desempenho; acima disso, ganha a outra marca; a exigência obriga).
+ */
+const QUALITY_VALUE = 0.006;
+const PREFERENCE_VALUE = 0.1;
+/**
+ * Memória que o trabalho pede (GB por thread do processador): abaixo disso, a memória vale negativo; acima, com retorno
+ * decrescente. Jogos: 16 GB de base. Multiplicadores por carga (máquinas virtuais pedem mais).
+ */
+const RAM_PER_THREAD: Record<BudgetProfile, number> = { games: 0, mixed: 0.75, productivity: 1 };
+const WORKLOAD_RAM: Partial<Record<BudgetWorkloadKind, number>> = { dev: 1.5 };
+/** Armazenamento: peso extra por carga (vídeo bruto e projetos ocupam muito). */
+const WORKLOAD_SSD: Partial<Record<BudgetWorkloadKind, number>> = { video: 1.5, dev: 1.2 };
+/** Uso geral: a placa de vídeo ajuda até este índice (uma placa de entrada); acima disso, não faz diferença. */
+const GENERAL_GPU_CAP = 100;
+/**
+ * Upgrade: pontos de índice ganhos por R$ 1.000 abaixo disto não compensam (melhor não trocar). Base: no catálogo de
+ * nov/2026, um PC novo entrega em média ~19 pontos por R$ 1.000; o upgrade tem de comprar desempenho a pelo menos 1/5
+ * desse ritmo.
+ */
+const MIN_UPGRADE_POINTS = 4;
+/** Capacidade em montagem forte: vale até isto a mais (índice 150 ou mais) do que numa de índice 100. */
+const CAPACITY_LEVEL = 0.3;
+/** Alternativas: a de mais desempenho entra quando rende pelo menos isto a mais; a mais barata, quando economiza isto. */
+const STRONGER_GAIN = 0.01;
+const CHEAPER_SAVING = 0.1;
 // Limites de preferência por capacidade a cada primeira duplicação. O crédito depende da sobra real.
 const CAPACITY_WEIGHT = { games: { ram: 0.065, ssd: 0.045 }, mixed: { ram: 0.095, ssd: 0.055 }, productivity: { ram: 0.110, ssd: 0.065 } };
 const capacityBenefit = (capacity: number, base: number) => capacity > base ? 2 * (1 - base / capacity) : 0;
@@ -209,6 +245,15 @@ function productsOf(slot: BuildSlot, offers: BudgetOffer[] | undefined, now: num
   return [...by.values()].sort((a, b) => a.score - b.score || a.price - b.price);
 }
 
+/**
+ * Os produtos que o motor considera para uma peça, na ordem em que ele escolhe: só da própria loja, uma entrada por
+ * produto (a mais barata entre as lojas) e a preferência das marcas (BUDGET_BRANDS). As dicas de memória, fonte e
+ * SSD do Identificar gargalo usam a mesma lista.
+ */
+export function budgetProducts(slot: BuildSlot, offers: BudgetOffer[] | undefined, now = Date.now(), mode: BudgetMode = 'buyable'): { price: number; offer: BudgetOffer; offers: Offer[] }[] {
+  return productsOf(slot, offers, now, mode).map(({ price, offer, offers: all }) => ({ price, offer, offers: all }));
+}
+
 const rank = (f: FormFactor) => FORM_FACTORS.indexOf(f);
 const memo = <T>(fn: (k: string) => T) => {
   const m = new Map<string, T>();
@@ -231,9 +276,6 @@ const drawOf = (cpu: Specs, gpu: Specs | undefined, sheet?: Offer['sheet']) => c
 const psuNeed = (cpu: Specs, gpu: Specs | undefined, sheet: Offer['sheet'] | undefined, atx3: boolean) =>
   recommendedPsuWatts(drawOf(cpu, gpu, sheet), gpuWatts(gpu, sheet), gpu?.gpuPsu ?? 0, atx3);
 /** Fonte simples: sem PFC ativo e sem certificação. */
-const sustainedWorkFactor = (watts: number, verified = false) =>
-  verified ? 1 : Math.sqrt(Math.min(1, (watts >= 200 ? 200 : 145) / watts));
-
 const basicPsu = (s: Specs) => s.activePfc === false && (!s.efficiency || s.efficiency === 'white');
 
 interface CpuOption {
@@ -270,8 +312,15 @@ export function planBudget(req: BudgetRequest, offers: Partial<Record<BuildSlot,
   return prepareBudget(req, offers, now)(req.budget);
 }
 
+/**
+ * O motor preparado: dá o plano para um valor e, sem valor nenhum, todas as opções que ele considera válidas
+ * (compatíveis, com o ganho mínimo no upgrade), da mais barata à mais cara. As dicas do Identificar gargalo
+ * escolhem entre essas opções (picks.ts).
+ */
+export type BudgetPlanner = ((budget: number, audit?: boolean | 'primary') => BudgetPlan) & { options: () => BudgetOption[] };
+
 /** Reaproveita as mesmas candidatas e checagens quando só muda o valor disponível. */
-export function prepareBudget(req: Omit<BudgetRequest, 'budget'>, offers: Partial<Record<BuildSlot, BudgetOffer[]>>, now = Date.now()): (budget: number, audit?: boolean | 'primary') => BudgetPlan {
+export function prepareBudget(req: Omit<BudgetRequest, 'budget'>, offers: Partial<Record<BuildSlot, BudgetOffer[]>>, now = Date.now()): BudgetPlanner {
   const mode = req.mode ?? 'buyable';
   const profile = req.profile ?? 'games';
   const P = {
@@ -288,7 +337,7 @@ export function prepareBudget(req: Omit<BudgetRequest, 'budget'>, offers: Partia
   const upgrade = !!(owned.cpu || owned.gpu);
   const rejectedBuilds = { incompatibility: 0, noSuitableCooling: 0, noSuitableBoard: 0 };
   const empty = (budget: number, status: BudgetStatus, extra: Partial<BudgetPlan> = {}): BudgetPlan => ({ status, mode, profile, budget, parts: {}, total: 0, fps: 0, notes: [], issues: [], alternatives: [], ...extra });
-  if (!upgrade && (!P.cpu.length || !P.psu.length)) return (budget) => empty(budget, 'no-data');
+  if (!upgrade && (!P.cpu.length || !P.psu.length)) return Object.assign((budget: number) => empty(budget, 'no-data'), { options: () => [] });
 
   // ---------- Candidatas de cada peça (da mais barata) ----------
   const cases = memo((ff) => P.case.filter((c) => caseFits(c.specs.caseFormFactor, ff as FormFactor)));
@@ -428,19 +477,47 @@ export function prepareBudget(req: Omit<BudgetRequest, 'budget'>, offers: Partia
   const workOf = (s: Specs, games: number) => s.cores && s.cores > 0
     ? Math.min(games, 150) * Math.sqrt((s.cores + 0.25 * Math.max(0, (s.threads ?? s.cores) - s.cores)) / 7.5)
     : games;
-  const objectiveOf = (fps: number, work: number, gpu: number) => {
+  /** A carga de trabalho do pedido (quem pede só vídeo integrado já disse que não vai acelerar pela placa: processador). */
+  const workload = req.workload ?? (req.graphics === 'integrated' ? 'cpu' : undefined);
+  /**
+   * Índice de trabalho pela carga. O índice gráfico de 1080p aproxima as cargas aceleradas (não dependem do monitor; a
+   * resolução e a frequência só entram em jogos). Não é desempenho profissional medido: só a parte gráfica da conta.
+   */
+  const taskOf = (work: number, gpu: number, vram?: number) => {
+    switch (workload) {
+      case 'cpu': case 'dev': return work;
+      case 'gpu': return Math.sqrt(work * gpu);
+      case 'video': return Math.pow(work, 0.75) * Math.pow(gpu, 0.25);
+      // IA local: a placa e a memória de vídeo mandam (o modelo tem de caber nela); 8 GB de base, até o dobro do valor.
+      case 'ai': return Math.pow(work, 0.2) * Math.pow(gpu * Math.min(2, Math.max(0.25, (vram ?? 2) / 8)), 0.8);
+      // Uso geral: o processador manda; a placa ajuda até uma de entrada.
+      default: return Math.pow(work, 0.8) * Math.pow(Math.min(gpu, GENERAL_GPU_CAP), 0.2);
+    }
+  };
+  const objectiveOf = (fps: number, work: number, gpu: number, vram?: number) => {
     if (profile === 'games') return fps;
-    // Índice gráfico de 1080p como aproximação para cargas aceleradas, que não dependem do monitor.
-    const task = req.workload === 'gpu' ? Math.sqrt(work * gpu) : work;
+    const task = taskOf(work, gpu, vram);
     return profile === 'productivity' ? task : Math.sqrt(fps * task);
   };
+  /** Memória que a configuração pede (GB): 16 de base; no trabalho, proporcional às threads do processador. */
+  const ramNeed = (cpu: Specs) => Math.max(16, (cpu.threads ?? cpu.cores ?? 0) * RAM_PER_THREAD[profile] * (workload ? WORKLOAD_RAM[workload] ?? 1 : 1));
+  /** Valor da memória perto do que a configuração pede: negativo abaixo, com retorno decrescente acima. */
+  const memValue = (capacity: number, need: number) => Math.max(-2, 2 * (1 - need / Math.max(capacity, 1)));
   /** Upgrade: a placa-mãe nova tem de caber no gabinete atual (que não conhecemos): até o formato da placa atual. */
   const maxBoard = upgrade ? (oMb?.formFactor ?? 'atx') : 'eatx';
 
   // ---------- Opções de processador (com o que cada uma arrasta junto) ----------
   function cpuOptions(tier: Tier): CpuOption[] {
     const out: CpuOption[] = [];
-    if (upgrade && oCpu && curCpu) out.push({ specs: oCpu, perf: curCpu, work: workOf(oCpu, curCpu) * sustainedWorkFactor(cpuWatts(oCpu)), cost: 0, score: 0, notes: [] });
+    if (upgrade && oCpu && curCpu) {
+      out.push({ specs: oCpu, perf: curCpu, work: workOf(oCpu, curCpu), cost: 0, score: 0, notes: [] });
+      // Só mais memória, na mesma placa: quando a atual fica abaixo do que o processador e a carga pedem.
+      const ownedRam = (oRam?.ramCapacity ?? 0) * (owned.ram?.qty ?? 1);
+      // Memória atual desconhecida não é zero: sem ela informada, não sugere memória.
+      const ram = oMb?.memory && oRam?.ramCapacity && ownedRam < ramNeed(oCpu) && tier.ram > ownedRam && (!oMb.memoryMaxGb || tier.ram <= oMb.memoryMaxGb)
+        ? rams(`${oMb.memory}|${tier.ram}`)[0] : undefined;
+      if (ram) out.push({ specs: oCpu, perf: curCpu, work: workOf(oCpu, curCpu), ram, cost: ram.price, score: ram.score, notes: ['more-ram'] });
+    }
     /** Placa-mãe nova para o processador: a de menor preço de escolha com placa + memória. */
     const platform = memo((k) => {
       const [socket, family, high, power] = k.split('|');
@@ -492,14 +569,12 @@ export function prepareBudget(req: Omit<BudgetRequest, 'budget'>, offers: Partia
         const notes: BudgetNote[] = [...coolerNotes];
         if (support === 'bios') notes.push('bios');
         if (vrmDemand(p)) notes.push('vrm-unverified');
-        out.push({ cpu: p, specs: s, perf, work: work * sustainedWorkFactor(cpuWatts(s)), cost: p.price + (cooler?.price ?? 0), score: p.score + (cooler?.score ?? 0), cooler, notes });
+        out.push({ cpu: p, specs: s, perf, work, cost: p.price + (cooler?.price ?? 0), score: p.score + (cooler?.score ?? 0), cooler, notes });
         continue;
       }
       const plat = platform(`${s.socket}|${family}|${vrmDemand(p) ? 1 : 0}|${cpuWatts(s)}`);
       if (!plat) { rejectedBuilds.noSuitableBoard++; continue; }
-      // Sem ensaio no modelo, o pico da CPU não conta integralmente em carga longa.
-      const sustained = sustainedWorkFactor(cpuWatts(s), !!plat.board && vrmTested(plat.board, cpuWatts(s)));
-      out.push({ cpu: p, specs: s, perf, work: work * sustained, ...plat, cooler, cost: p.price + plat.cost + (cooler?.price ?? 0), score: p.score + plat.score + (cooler?.score ?? 0), notes: [...plat.notes, ...coolerNotes] });
+      out.push({ cpu: p, specs: s, perf, work, ...plat, cooler, cost: p.price + plat.cost + (cooler?.price ?? 0), score: p.score + plat.score + (cooler?.score ?? 0), notes: [...plat.notes, ...coolerNotes] });
     }
     return out;
   }
@@ -544,7 +619,7 @@ export function prepareBudget(req: Omit<BudgetRequest, 'budget'>, offers: Partia
       if (req.requiredBrands?.cpu && req.requiredBrands.cpu !== c.specs.cpuBrand) continue;
       for (const g of choices) {
         if (req.requiredBrands?.gpu && req.requiredBrands.gpu !== g.specs?.gpuMaker) continue;
-        if (upgrade && !c.cpu && !g.gpu) continue; // nada muda
+        if (upgrade && !c.cpu && !g.gpu && !c.ram) continue; // nada muda
         const gPerf = g.perf;
         // Fonte: no PC inteiro, sempre; no upgrade, quando a atual não aguenta (ou é simples e a placa muda).
         const need = psuNeed(c.specs, g.specs, g.gpu?.offer.sheet, !!oPsu?.atx);
@@ -553,8 +628,10 @@ export function prepareBudget(req: Omit<BudgetRequest, 'budget'>, offers: Partia
         if (mustBuy && !psu) continue;
         const psuUnknown = upgrade && !oPsu?.watts;
         const fps = g.igpu ? gPerf : budgetGamingScore(c.perf, gPerf, req.res, req.hz);
-        const objective = objectiveOf(fps, c.work ?? c.perf, g.igpu ? gPerf : budgetGpuScore(g.specs, '1080p') ?? gPerf);
-        if (objective <= 0 || (currentObjective !== undefined && objective < currentObjective * (1 + MIN_GAIN))) continue;
+        const objective = objectiveOf(fps, c.work ?? c.perf, g.igpu ? gPerf : budgetGpuScore(g.specs, '1080p') ?? gPerf, g.igpu ? undefined : g.specs?.vram);
+        // Upgrade: rende pelo menos MIN_GAIN a mais, ou é só mais memória para o que o processador e a carga pedem.
+        const memoryOnly = upgrade && !c.cpu && !g.gpu && !!c.ram;
+        if (objective <= 0 || (currentObjective !== undefined && !memoryOnly && objective < currentObjective * (1 + MIN_GAIN))) continue;
         // Gabinete (PC inteiro): ventilação conforme o consumo da placa de vídeo.
         // Já sem os que a placa de vídeo não cabe (pela ficha dos dois), para o custo ser o de verdade.
         const len = g.igpu ? undefined : g.specs?.gpuLength;
@@ -598,7 +675,7 @@ export function prepareBudget(req: Omit<BudgetRequest, 'budget'>, offers: Partia
 
   /** Rendimento do PC atual (upgrade): só entram opções que rendem pelo menos MIN_GAIN a mais. */
   const curFps = upgrade && curCpu && curGpu ? (curIgpu ?? budgetGamingScore(curCpu, curGpu, req.res, req.hz)) : undefined;
-  const currentObjective = oCpu && curCpu && curFps !== undefined ? objectiveOf(curFps, workOf(oCpu, curCpu) * sustainedWorkFactor(cpuWatts(oCpu)), budgetGpuScore(oGpu, '1080p') ?? curGpu!) : undefined;
+  const currentObjective = oCpu && curCpu && curFps !== undefined ? objectiveOf(curFps, workOf(oCpu, curCpu), budgetGpuScore(oGpu, '1080p') ?? curGpu!, oGpu?.vram) : undefined;
   const validated = new WeakMap<Combo, BudgetOption>();
   const invalid = new WeakSet<Combo>();
   const verify = (x: Combo) => {
@@ -625,8 +702,10 @@ export function prepareBudget(req: Omit<BudgetRequest, 'budget'>, offers: Partia
       + Number(x.cooler?.specs.coolerType === 'air' && Number(x.cooler.offer.sheet?.heatpipes) >= 4 && Number(x.cooler.offer.sheet?.fanMm) >= 120)
       + Number(typeof x.pcase?.offer.sheet?.front === 'string' && /mesh|perfurad/i.test(x.pcase.offer.sheet.front));
   };
-  const preference = (x: Combo) => Number(!!req.preferences?.cpu && req.preferences.cpu === x.c.specs.cpuBrand)
-    + Number(!!req.preferences?.gpu && req.preferences.gpu === x.g.specs?.gpuMaker);
+  // IA local: sem preferência informada, a placa NVIDIA (CUDA, o que a maior parte dos programas usa) conta como preferida.
+  const preferences = req.preferences ?? (workload === 'ai' ? { gpu: 'nvidia' as const } : undefined);
+  const preference = (x: Combo) => Number(!!preferences?.cpu && preferences.cpu === x.c.specs.cpuBrand)
+    + Number(!!preferences?.gpu && preferences.gpu === x.g.specs?.gpuMaker);
   const supports = new Map(combos.map((x) => [x, { quality: quality(x), preference: preference(x) }]));
   const sortedByCost = [...combos].sort((a, b) => a.cost - b.cost);
   const ramOf = (x: Combo) => x.c.ram ? x.tier.ram : (oRam?.ramCapacity ?? 0) * (owned.ram?.qty ?? 1);
@@ -648,56 +727,63 @@ export function prepareBudget(req: Omit<BudgetRequest, 'budget'>, offers: Partia
     return true;
   };
 
-  return (budget, audit) => {
-    const capacityCredit = (x: Combo, baselineCost: number) => {
-      if (upgrade || x.cost > budget || baselineCost >= budget) return 0;
-      const weights = CAPACITY_WEIGHT[profile];
-      // Com desempenho alto, parte da folga pode elevar a disposição a pagar por capacidade.
-      const surplus = budget - baselineCost;
-      const preference = profile === 'productivity' ? 0.40 : 0.22;
-      const allowance = Math.min(baselineCost * 0.60, surplus * preference) * Math.min(1, Math.max(0, (x.objective - 100) / 50));
-      const credit = (baselineCost + allowance) * (weights.ram * capacityBenefit(x.tier.ram, 16) + weights.ssd * capacityBenefit(x.tier.ssd ?? 0, 500));
+  let rankedFull: Combo[] | undefined;
+  let byObjective: Combo[] | undefined;
+  const planner = (budget: number, audit?: boolean | 'primary'): BudgetPlan => {
+    /**
+     * Utilidade de uma opção: ln(índice do perfil) − PRICE_WEIGHT·ln(custo) + PRICE_WEIGHT·benefícios. Vale pagar x% a mais
+     * quando o índice sobe pelo menos PRICE_WEIGHT·x%. Os benefícios estão em fração do custo que
+     * vale pagar por eles: capacidade (memória e SSD, pelo perfil e pelo nível da montagem), qualidade da plataforma e
+     * preferência de marca. Não depende da sobra do orçamento: com mais dinheiro, as opções que já cabiam continuam com
+     * a mesma nota, então a escolha só muda para uma melhor. No upgrade, o custo conta sobre o valor disponível (escala).
+     */
+    const utility = (x: Combo) => {
+      const support = supports.get(x)!;
       const level = Math.min(1, x.objective / 100) + 0.30 * Math.min(1, Math.max(0, (x.objective - 150) / 75));
-      return Math.min(budget - baselineCost, credit * level);
+      const weights = CAPACITY_WEIGHT[profile];
+      // Capacidade vale mais em montagem de nível mais alto (level e até CAPACITY_LEVEL a mais acima do índice 100), na
+      // proporção do perfil e do que o processador e a carga pedem de memória; nunca pela sobra do orçamento. No upgrade,
+      // vale a memória nova contra a atual.
+      const need = ramNeed(x.c.specs);
+      const ssdWeight = weights.ssd * (workload ? WORKLOAD_SSD[workload] ?? 1 : 1);
+      const ownedRam = (oRam?.ramCapacity ?? 0) * (owned.ram?.qty ?? 1);
+      const capacity = upgrade
+        ? (x.c.ram ? weights.ram * (memValue(x.tier.ram, need) - memValue(ownedRam, need)) : 0)
+        : (weights.ram * memValue(x.tier.ram, need) + ssdWeight * capacityBenefit(x.tier.ssd ?? 0, 500))
+          * level * (1 + CAPACITY_LEVEL * Math.min(1, Math.max(0, (x.objective - 100) / 50)));
+      const benefits = capacity + support.quality * Math.min(1, x.objective / 100) * QUALITY_VALUE + support.preference * PREFERENCE_VALUE;
+      return Math.log(x.objective) - PRICE_WEIGHT * Math.log(x.cost + (upgrade ? budget : 0)) + PRICE_WEIGHT * benefits;
+    };
+    const utilities = new Map<Combo, number>();
+    const u = (x: Combo) => {
+      let v = utilities.get(x);
+      if (v === undefined) utilities.set(x, (v = utility(x)));
+      return v;
     };
     let bestObjective: number | undefined;
-    const bestOf = (list: Combo[], eligible: (x: Combo) => boolean = () => true): Combo | undefined => {
-      if (!list.length) return undefined;
-      const strongest = list.reduce((a, b) => b.objective > a.objective ? b : a);
-      const top = verify(strongest) ? strongest : [...list].sort((a, b) => b.objective - a.objective).find(verify);
-      if (!top) return undefined;
-      bestObjective ??= top.objective;
-      const near = list.filter((x) => {
-        if (x.objective >= top.objective * NEAR_BEST) return true;
-        // Se só muda uma das peças principais, preço precisa compensar a perda estimada.
-        const loss = 1 - x.objective / top.objective;
-        return !x.igpu && !top.igpu && (gpuKey(x) === gpuKey(top) || cpuKey(x) === cpuKey(top)) &&
-          loss <= 0.05 && (top.cost - x.cost) / top.cost >= loss * 2;
-      });
-      const baseline = near.find((x) => verify(x) && eligible(x));
-      if (!baseline) return undefined;
-      const adjusted = (x: Combo) => {
-        const support = supports.get(x)!;
-        const qualityCredit = support.quality * Math.min(1, x.objective / 100) * Math.min(baseline.cost * 0.006, Math.max(0, budget - baseline.cost));
-        return x.cost - capacityCredit(x, baseline.cost) - qualityCredit - support.preference * baseline.cost * 0.02;
-      };
-      let winner = baseline;
-      let winnerCost = adjusted(baseline);
-      for (const x of near) {
-        const cost = adjusted(x);
-        const order = cost - winnerCost || x.cost - winner.cost || winner.objective - x.objective || x.score - winner.score;
-        if (order < 0 && verify(x) && eligible(x)) {
-          winner = x;
-          winnerCost = cost;
-        }
-      }
-      return winner;
-    };
+    // PC inteiro: a utilidade não depende do orçamento, então a ordem é calculada uma vez (e serve a todos os valores).
+    // Upgrade: o custo conta sobre o valor disponível, e a ordem é a deste valor.
+    const byUtility = (list: Combo[]) => list.sort((a, b) => u(b) - u(a) || a.cost - b.cost || b.objective - a.objective || a.score - b.score);
+    const ranked = upgrade ? byUtility([...sortedByCost]) : (rankedFull ??= byUtility([...sortedByCost]));
+    /** A opção de maior utilidade entre as que passam no filtro (compatível e não dominada); empate: a mais barata. */
+    const bestWhere = (keep: (x: Combo) => boolean): Combo | undefined => ranked.find((x) => keep(x) && verify(x) && undominated(x));
+    /** A de maior índice entre as que passam no filtro (compatível e não dominada): "maior desempenho no valor". */
+    const strongestWhere = (keep: (x: Combo) => boolean) => (byObjective ??= [...sortedByCost].sort((a, b) => b.objective - a.objective || a.cost - b.cost))
+      .find((x) => keep(x) && verify(x) && undominated(x));
     if (!combos.length) return empty(budget, emptyStatus, audit === true ? { audit: { rejectedBuilds: { ...rejectedBuilds } } } : {});
-    const fit = sortedByCost.filter((x) => x.cost <= budget);
-    const first = bestOf(fit, undominated);
+    /**
+     * Upgrade que compensa: pelo menos MIN_UPGRADE_POINTS de índice por R$ 1.000 (ou só mais memória para o que o
+     * processador pede). Abaixo disso, trocar é gastar muito por pouco: melhor não trocar.
+     */
+    const worthBuying = (x: Combo) => !upgrade || currentObjective === undefined || (!x.c.cpu && !x.g.gpu && !!x.c.ram)
+      || (x.objective - currentObjective) / (x.cost / 1000) >= MIN_UPGRADE_POINTS;
+    const fits = (x: Combo) => x.cost <= budget && worthBuying(x);
+    bestObjective = strongestWhere(fits)?.objective;
+    const first = bestWhere(fits);
     if (!first) {
-      const minimum = sortedByCost.find(verify);
+      // Cabe alguma troca, mas nenhuma compensa: não trocar. Senão, falta valor para a primeira que compensa.
+      if (upgrade && currentObjective !== undefined && sortedByCost.some((x) => x.cost <= budget && verify(x))) return empty(budget, 'no-gain');
+      const minimum = sortedByCost.find((x) => worthBuying(x) && verify(x));
       return minimum ? empty(budget, 'too-low', { minTotal: Math.ceil(minimum.cost) }) : empty(budget, emptyStatus);
     }
 
@@ -708,15 +794,25 @@ export function prepareBudget(req: Omit<BudgetRequest, 'budget'>, offers: Partia
       (x.tier.ssd ?? 0) > (p.tier.ssd ?? 0) || (x.g.specs?.vram ?? 0) > (p.g.specs?.vram ?? 0) ||
       (x.cost <= p.cost * 1.05 && x.objective >= p.objective * NEAR_BEST &&
         (supports.get(x)!.quality >= supports.get(p)!.quality + 2 || supports.get(x)!.preference > supports.get(p)!.preference))));
-    const stretch = bestOf(sortedByCost.filter((x) => x.cost > budget && x.cost <= budget * (1 + STRETCH) &&
+    const stretch = bestWhere((x) => x.cost > budget && x.cost <= budget * (1 + STRETCH) && worthBuying(x) &&
       x.objective >= bestObjective! * (1 + STRETCH_GAIN) &&
-      x.objective / first.objective - 1 >= (x.cost - first.cost) / first.cost), undominated);
+      x.objective / first.objective - 1 >= (x.cost - first.cost) / first.cost);
+    // Cada alternativa tem um motivo: mais desempenho no valor (o máximo que cabe, se render bem mais) e a mais barata
+    // de boa utilidade (custo-benefício); depois outra placa de vídeo ou outro processador, para comparar.
+    const stronger = strongestWhere((x) => fits(x) && x.objective >= first.objective * (1 + STRONGER_GAIN) && worthIt(x));
+    if (stronger) picks.push(stronger);
+    if (picks.length < OPTIONS - (stretch ? 1 : 0)) {
+      // A mais barata: de preferência com outra placa de vídeo ou outro processador (a mesma com menos memória é a última opção).
+      const cheap = (x: Combo) => x.cost <= first.cost * (1 - CHEAPER_SAVING) && worthIt(x);
+      const cheaper = bestWhere((x) => cheap(x) && (gpuKey(x) !== gpuKey(first) || cpuKey(x) !== cpuKey(first))) ?? bestWhere(cheap);
+      if (cheaper) picks.push(cheaper);
+    }
     while (picks.length < OPTIONS - (stretch ? 1 : 0)) {
-      const pool = fit.filter(worthIt);
-      const next = bestOf(pool.filter((x) => !picks.some((p) => gpuKey(p) === gpuKey(x))), undominated) ??
-        bestOf(pool.filter((x) => !picks.some((p) => cpuKey(p) === cpuKey(x))), undominated) ??
-        bestOf(pool.filter((x) => picks.some((p) => cpuKey(p) === cpuKey(x) && gpuKey(p) === gpuKey(x) &&
-          (ramOf(x) > ramOf(p) || (x.tier.ssd ?? 0) > (p.tier.ssd ?? 0) || supports.get(x)!.quality > supports.get(p)!.quality))), undominated);
+      const pool = (x: Combo) => fits(x) && worthIt(x);
+      const next = bestWhere((x) => pool(x) && !picks.some((p) => gpuKey(p) === gpuKey(x))) ??
+        bestWhere((x) => pool(x) && !picks.some((p) => cpuKey(p) === cpuKey(x))) ??
+        bestWhere((x) => pool(x) && picks.some((p) => cpuKey(p) === cpuKey(x) && gpuKey(p) === gpuKey(x) &&
+          (ramOf(x) > ramOf(p) || (x.tier.ssd ?? 0) > (p.tier.ssd ?? 0) || supports.get(x)!.quality > supports.get(p)!.quality)));
       if (!next) break;
       picks.push(next);
     }
@@ -737,6 +833,7 @@ export function prepareBudget(req: Omit<BudgetRequest, 'budget'>, offers: Partia
       },
     }) };
   };
+  return Object.assign(planner, { options: () => sortedByCost.filter(verify).map((x) => validated.get(x)!) });
 
   /** A opção montada com as mesmas peças e preços usados na busca. */
   function finalize(combo: Combo, stretch: boolean): BudgetOption {

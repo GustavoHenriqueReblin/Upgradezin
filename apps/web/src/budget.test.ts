@@ -120,6 +120,9 @@ describe('montar pelo orçamento: ajustes da tela', () => {
     expect(sanitizeBudgetUi({ workload: 'outro' }).workload).toBeUndefined();
     expect(budgetRequest(5000, { res: '1080p', profile: 'productivity', workload: 'gpu' })).toMatchObject({ workload: 'gpu' });
     expect(budgetRequest(5000, { res: '1080p', profile: 'games', workload: 'gpu' })).not.toHaveProperty('workload');
+    // "Os dois / não sei": vai sem tipo, e o motor mistura as duas cargas em vez de assumir uma.
+    expect(sanitizeBudgetUi({ workload: 'both' }).workload).toBe('both');
+    expect(budgetRequest(5000, { res: '1080p', profile: 'productivity', workload: 'both' })).not.toHaveProperty('workload');
   });
 
   it('dá nome à opção pelo que ela compra, mesmo sem processador nem placa de vídeo', () => {

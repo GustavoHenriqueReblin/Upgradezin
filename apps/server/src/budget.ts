@@ -26,7 +26,7 @@ export const BudgetBody = z
     mode: z.enum(['buyable', 'ideal']).optional(),
     profile: z.enum(['games', 'mixed', 'productivity']).optional(),
     graphics: z.enum(['integrated', 'dedicated']).optional(),
-    workload: z.enum(['cpu', 'gpu']).optional(),
+    workload: z.enum(['cpu', 'gpu', 'dev', 'video', 'ai']).optional(),
     requiredBrands: z.object({ cpu: z.enum(['amd', 'intel']).optional(), gpu: z.enum(['amd', 'intel', 'nvidia']).optional() }).strict().optional(),
     preferences: z.object({ cpu: z.enum(['amd', 'intel']).optional(), gpu: z.enum(['amd', 'intel', 'nvidia']).optional() }).strict().optional(),
     owned: z.object(Object.fromEntries(BUILD_SLOTS.map((slot) => [slot, Part.optional()])) as Record<BuildSlot, z.ZodOptional<typeof Part>>)

@@ -4,6 +4,18 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+## [1.0.0] - 2026-11-26
+
+- A página inicial e as páginas de produto abrem diretamente na interface do app. A versão em HTML simples aparece apenas com JavaScript desativado.
+
+- Montar pelo orçamento (V4): memória proporcional ao processador e à carga (1 GB por thread no trabalho, sem faixa por orçamento); tipos de trabalho em Produtividade (uso geral, multicore, programação e máquinas virtuais, edição de vídeo, renderização 3D, IA local), com o uso geral sem pagar placa topo; upgrade que não compensa vira "não vale trocar" (pelo menos 4 pontos de índice por R$ 1.000), mais memória na mesma placa entra como upgrade e memória atual desconhecida não conta como zero; preferência de marca vale até 10% a mais (exigência obriga); a opção de maior desempenho no valor sempre aparece entre as alternativas. Matriz (`pnpm budget-test --expanded`): progressão por grupo preenchida, motivo de cada opção (`classification`) e, no upgrade, custo, peças reaproveitadas, configuração final e índice antes e depois.
+
+- A página inicial exibe © 2026 Upgradezin no rodapé, ao lado da versão.
+
+- Montar pelo orçamento: a escolha passa a ser por utilidade (índice do perfil, custo e benefícios de capacidade, qualidade e marca), sem depender da sobra do orçamento; mais orçamento não dá mais montagem pior. Alternativas com motivo (maior desempenho no valor, a mais barata de boa utilidade, outra peça principal, acima do valor) e sem opção dominada. Produtividade sem o tipo de trabalho informado mistura as duas cargas (nova opção "Os dois / não sei") em vez de assumir só o processador. O índice de trabalho não recebe mais corte percentual por placa-mãe sem ensaio de VRM (o aviso e a triagem da placa continuam). Critério que mudou: CPU mais cara com a mesma GPU entra quando o ganho paga o preço (10% a mais por 2,4%); antes, ficava a mais barata sempre que a economia fosse o dobro da perda.
+
+- Motor único: as ofertas das dicas do Identificar gargalo saem do motor do Montar pelo orçamento, no modo upgrade, com o PC da pessoa. Processador e placa de vídeo usam as mesmas candidatas, notas, compatibilidade e ganho mínimo do orçamento; o "+X%" passa a ser o ganho em jogos na tela da pessoa (o mesmo número do orçamento), e o preço é o total quando a troca leva outra peça junto (fonte, cooler, placa-mãe e memória). Memória, fonte e SSD usam a seleção de produtos do motor (só da própria loja, preferência de marca). Placa de vídeo que a fonte atual não aguenta não some mais da dica: a troca leva uma fonte junto, no total.
+
 - Páginas públicas de produto, catálogo e guias agora entregam HTML legível na primeira resposta, com URLs canônicas. A edição inicial traz quatro comparativos de processadores e placas de vídeo e um guia de upgrade do Ryzen 5 5600. O servidor publica `robots.txt`, sitemaps e dados estruturados de ofertas recentes.
 
 - Histórico de atividade usa a mesma paginação de Produtos, Consultas e Fichas. Mudar os filtros volta à primeira página.

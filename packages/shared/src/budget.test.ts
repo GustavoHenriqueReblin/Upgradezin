@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planBudget, prepareBudget, preferredBrand } from './budget.ts';
+import { planBudget, prepareBudget, preferredBrand, type BudgetOption } from './budget.ts';
 import type { Build, BuildSlot } from './compat.ts';
 import { budgetGamingScore, budgetGpuScore, budgetIgpuScore } from './perf.ts';
 import type { Offer, Specs } from './types.ts';
@@ -245,7 +245,9 @@ describe('montar pelo orçamento: PC inteiro', () => {
 
   it('considera 32 GB e SSD de 500 GB juntos quando essa combinação cabe no valor', () => {
     const base = catalog();
-    const p = planBudget({ budget: 4100, res: '1080p' }, { ...base, ram: base.ram.filter((ram) => ram.specs.ramCapacity === 32) });
+    // Com R$ 4.100 cabe 32 GB com 1 TB (R$ 4.100 exatos), que o motor prefere; R$ 1 a menos, fica 32 GB com 500 GB.
+    const p = planBudget({ budget: 4099, res: '1080p' }, { ...base, ram: base.ram.filter((ram) => ram.specs.ramCapacity === 32) });
+    expect(planBudget({ budget: 4100, res: '1080p' }, { ...base, ram: base.ram.filter((ram) => ram.specs.ramCapacity === 32) }).parts.ssd?.offer.specs.ssdCapacity).toBe(1000);
     expect(p.parts.ram?.offer.specs.ramCapacity).toBe(32);
     expect(p.parts.ssd?.offer.specs.ssdCapacity).toBe(500);
     expect(models(p).gpu).toBe('RTX 3060');
@@ -268,18 +270,23 @@ describe('montar pelo orçamento: PC inteiro', () => {
     expect(tight.total).toBeLessThanOrEqual(games.total);
   });
 
-  it('mantém a CPU mais barata se a economia compensa uma perda pequena com a mesma GPU', () => {
+  it('CPU mais cara entra quando o ganho paga o preço (peso do preço 0,25); a mais barata fica quando a economia é grande', () => {
+    // Critério (mudou com a escolha por utilidade): pagar x% a mais vale quando o índice sobe pelo menos 0,25·x%. Antes, a
+    // CPU mais barata com a mesma GPU ficava sempre que a economia fosse o dobro da perda.
     const base = catalog();
-    const faster = amd('Ryzen 5', '5600XT', 'AM4', { tdp: 65, cooler: true }, 1200);
-    faster.sheet = { architecture: 'Zen 3', boostGhz: 4.49 };
-    base.cpu = [base.cpu[0]!, faster];
-    base.gpu = [base.gpu[1]!];
+    const at = (price: number) => {
+      const faster = amd('Ryzen 5', '5600XT', 'AM4', { tdp: 65, cooler: true }, price);
+      faster.sheet = { architecture: 'Zen 3', boostGhz: 4.49 };
+      return { ...base, cpu: [base.cpu[0]!, faster], gpu: [base.gpu[1]!] };
+    };
     const req = { budget: 10000, res: '1080p' } as const;
-    const fast = planBudget(req, { ...base, cpu: [faster] });
-    const picked = planBudget(req, base);
-    expect(picked.parts.cpu?.offer.specs.cpuModel).toBe('5600');
-    expect(picked.fps / fast.fps).toBeLessThan(0.97);
-    expect(picked.fps / fast.fps).toBeGreaterThanOrEqual(0.95);
+    // +R$ 500 (8,5%) por 3,6% a mais: vale.
+    const close = planBudget(req, at(1200));
+    expect(close.parts.cpu?.offer.specs.cpuModel).toBe('5600XT');
+    // +R$ 1.600 (24%) pelos mesmos 3,6%: não vale; fica a mais barata, e a mais rápida vira a alternativa de mais desempenho.
+    const far = planBudget(req, at(2300));
+    expect(far.parts.cpu?.offer.specs.cpuModel).toBe('5600');
+    expect(far.alternatives.some((alt) => alt.parts.cpu?.offer.specs.cpuModel === '5600XT' && alt.fps > far.fps)).toBe(true);
   });
 
   it('reaproveita as candidatas sem reduzir o melhor índice quando o orçamento aumenta', () => {
@@ -298,11 +305,13 @@ describe('montar pelo orçamento: PC inteiro', () => {
   });
 
   it('permite vídeo integrado em produtividade e separa a estimativa de trabalho da de jogos', () => {
-    const p = planBudget({ budget: 6000, res: '1440p', profile: 'productivity', graphics: 'integrated' }, catalog());
+    const p = planBudget({ budget: 6000, res: '1440p', profile: 'productivity', workload: 'cpu', graphics: 'integrated' }, catalog());
     expect(p.status).toBe('ok');
     expect(p.parts.gpu).toBeUndefined();
     expect(p.objective).toBe(p.work);
     expect(p.objective).toBeGreaterThan(p.fps);
+    // Só vídeo integrado, sem dizer o tipo de trabalho: conta o processador (a pessoa já disse que não terá placa).
+    expect(planBudget({ budget: 6000, res: '1440p', profile: 'productivity', graphics: 'integrated' }, catalog()).objective).toBe(p.objective);
   });
 
   it('usa a sobra para armazenamento em uma estação forte com vídeo integrado', () => {
@@ -496,5 +505,239 @@ describe('montar pelo orçamento: upgrade', () => {
       gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'RTX 5080' }, current: true },
     };
     expect(planBudget({ budget: 50000, res: '1080p', owned: top }, catalog()).status).toBe('no-gain');
+  });
+});
+
+describe('motor: escolha por utilidade (cenários direcionados)', () => {
+  const capacityOf = (p: BudgetOption) => (p.parts.ram ? (p.parts.ram.offer.specs.ramCapacity ?? 0) * (p.parts.ram.qty ?? 1) : 0) + (p.parts.ssd?.offer.specs.ssdCapacity ?? 0) / 1000;
+
+  it('mais orçamento nunca dá montagem pior: o índice só cai se a capacidade (memória, SSD) subir', () => {
+    for (const profile of ['games', 'mixed', 'productivity'] as const) {
+      const evaluate = prepareBudget({ res: '1080p', hz: 144, profile }, catalog());
+      let prev: ReturnType<typeof planBudget> | undefined;
+      for (let budget = 2000; budget <= 16000; budget += 250) {
+        const p = evaluate(budget);
+        if (p.status !== 'ok') continue;
+        if (prev) expect(p.objective! >= prev.objective! - 1e-9 || capacityOf(p) > capacityOf(prev), `${profile} ${budget}`).toBe(true);
+        prev = p;
+      }
+    }
+  });
+
+  it('a escolha não depende da sobra: com o valor exato da montagem escolhida, sai a mesma montagem', () => {
+    const evaluate = prepareBudget({ res: '1440p', hz: 144 }, catalog());
+    for (const budget of [6000, 9000, 12000, 20000]) {
+      const big = evaluate(budget);
+      const exact = evaluate(big.total);
+      expect(Object.fromEntries(Object.entries(exact.parts).map(([s, x]) => [s, x.offer.storeSku]))).toEqual(Object.fromEntries(Object.entries(big.parts).map(([s, x]) => [s, x.offer.storeSku])));
+    }
+  });
+
+  it('cada alternativa tem motivo: mais desempenho, mais barata, outra peça principal ou mais capacidade; nenhuma é dominada', () => {
+    for (const budget of [5000, 8000, 12000]) {
+      const p = planBudget({ budget, res: '1440p' }, catalog());
+      const first = p;
+      for (const alt of p.alternatives) {
+        const reason = alt.stretch || alt.objective! >= first.objective! * 1.03 || alt.total <= first.total * 0.95 || capacityOf(alt) > capacityOf(first)
+          || models(alt as ReturnType<typeof planBudget>).gpu !== models(first).gpu || models(alt as ReturnType<typeof planBudget>).cpu !== models(first).cpu;
+        expect(reason, `${budget}`).toBe(true);
+        expect(alt.total >= first.total && alt.objective! <= first.objective! && capacityOf(alt) <= capacityOf(first) && !alt.stretch, `${budget} dominada`).toBe(false);
+      }
+    }
+  });
+
+  it('produtividade sem o tipo de trabalho informado não assume só o processador: com valor, leva placa de vídeo', () => {
+    const unknown = planBudget({ budget: 12000, res: '1440p', profile: 'productivity' }, catalog());
+    expect(unknown.parts.gpu).toBeDefined();
+    expect(unknown.notes).not.toContain('igpu');
+    // O índice mistura as duas cargas: fica entre a só de processador e a só acelerada.
+    const cpuOnly = planBudget({ budget: 12000, res: '1440p', profile: 'productivity', workload: 'cpu' }, catalog());
+    expect(cpuOnly.notes).toContain('igpu');
+  });
+
+  it('produtividade com aceleração por placa de vídeo leva placa dedicada; só no processador, o vídeo integrado basta', () => {
+    const base = catalog();
+    const cpuWork = planBudget({ budget: 12000, res: '1440p', profile: 'productivity', workload: 'cpu' }, base);
+    const gpuWork = planBudget({ budget: 12000, res: '1440p', profile: 'productivity', workload: 'gpu' }, base);
+    expect(gpuWork.parts.gpu).toBeDefined();
+    expect(gpuWork.objective).toBeGreaterThan(0);
+    expect(cpuWork.notes).toContain('igpu'); // o trabalho no processador não ganha nada com a placa
+    expect(gpuWork.objective).toBeGreaterThan(planBudget({ budget: 12000, res: '1440p', profile: 'productivity', workload: 'gpu', graphics: 'integrated' }, base).objective!);
+  });
+
+  it('processador de alto consumo não perde nota de trabalho por placa-mãe sem ensaio (sem penalidade fictícia)', () => {
+    const base = catalog();
+    const hot = amd('Ryzen 9', '9950X', 'AM5', { tdp: 170, cooler: false, cores: 16, threads: 32, igpu: true }, 3500);
+    const board = offer({ socket: 'AM5', chipset: 'X870', memory: 'ddr5', formFactor: 'atx', memorySlots: 4, m2Slots: 2 }, 1500, { sheet: { vrmHeatsink: true, vrmPhases: '16+2+1' } });
+    const water = offer({ coolerType: 'water', coolerSockets: ['AM4', 'AM5'], radiator: 360, coolerTdp: 300 }, 700);
+    const p = planBudget({ budget: 30000, res: '1080p', profile: 'productivity', graphics: 'integrated' }, { ...base, cpu: [hot], motherboard: [board], cooler: [water] });
+    expect(p.status).toBe('ok');
+    // A nota de trabalho é a do processador (núcleos e threads), sem corte por consumo acima de 200 W.
+    expect(p.work).toBe(Math.round(Math.min(p.cpu!, 150) * Math.sqrt((16 + 0.25 * 16) / 7.5) * 100) / 100);
+  });
+
+  it('upgrade: troca combinada (processador e placa juntos) entra quando rende mais pelo que custa; alternativas não dominadas', () => {
+    const old: Build = {
+      cpu: { specs: { cpuBrand: 'amd', cpuLine: 'Ryzen 5', cpuModel: '2600', socket: 'AM4', tdp: 65 } },
+      motherboard: { specs: { chipset: 'B550', socket: 'AM4', formFactor: 'matx', memory: 'ddr4' } },
+      ram: { specs: { memory: 'ddr4', ramCapacity: 16, ramModules: 2, ramSpeed: 3200 } },
+      gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'GTX 1660 Super' } },
+      psu: { specs: { watts: 750, efficiency: 'gold' } },
+    };
+    const evaluate = prepareBudget({ res: '1440p', owned: old }, catalog());
+    const options = evaluate.options();
+    expect(options.some((o) => o.parts.cpu && o.parts.gpu)).toBe(true); // as combinações existem
+    let prev: ReturnType<typeof planBudget> | undefined;
+    for (const budget of [2500, 4000, 6000, 9000]) {
+      const p = evaluate(budget);
+      if (p.status !== 'ok') continue;
+      expect(p.gain).toBeGreaterThanOrEqual(0.1);
+      if (prev) expect(p.objective!).toBeGreaterThanOrEqual(prev.objective! - 1e-9);
+      for (const alt of p.alternatives) expect(alt.total >= p.total && alt.objective! <= p.objective! && !alt.stretch).toBe(false);
+      prev = p;
+    }
+    expect(prev?.parts.cpu && prev.parts.gpu).toBeTruthy(); // com valor para as duas, troca as duas
+  });
+});
+
+describe('motor V4: cenários direcionados', () => {
+  const ram = (o: BudgetOption) => (o.parts.ram ? (o.parts.ram.offer.specs.ramCapacity ?? 0) * (o.parts.ram.qty ?? 1) : 0);
+  const ids = (o: BudgetOption) => Object.fromEntries(Object.entries(o.parts).map(([s, p]) => [s, p.offer.storeSku]));
+
+  it('o melhor desempenho disponível nunca cai com mais orçamento, e a opção de maior desempenho fica entre as alternativas', () => {
+    const evaluate = prepareBudget({ res: '1440p', hz: 144 }, catalog());
+    let best = 0;
+    for (let budget = 2500; budget <= 15000; budget += 500) {
+      const p = evaluate(budget);
+      if (p.status !== 'ok') continue;
+      expect(p.bestObjective!).toBeGreaterThanOrEqual(best);
+      best = p.bestObjective!;
+      const strongest = Math.max(...[p, ...p.alternatives].filter((o) => !o.stretch).map((o) => o.objective!));
+      if (p.bestObjective! > p.objective! * 1.01) expect(strongest).toBe(p.bestObjective);
+    }
+  });
+
+  it('dominância: nenhuma configuração completa no valor é mais barata, mais forte e com tanta memória e SSD quanto a recomendada', () => {
+    for (const profile of ['games', 'mixed', 'productivity'] as const) {
+      const evaluate = prepareBudget({ res: '1440p', profile }, catalog());
+      for (const budget of [5000, 9000, 14000]) {
+        const p = evaluate(budget);
+        if (p.status !== 'ok') continue;
+        const better = evaluate.options().find((o) => o.total < p.total && o.objective! > p.objective! && ram(o) >= ram(p)
+          && (o.parts.ssd?.offer.specs.ssdCapacity ?? 0) >= (p.parts.ssd?.offer.specs.ssdCapacity ?? 0));
+        expect(better, `${profile} ${budget}`).toBeUndefined();
+      }
+    }
+  });
+
+  it('catálogo sintético pequeno: a recomendada está na fronteira (custo × índice) entre todas as combinações válidas', () => {
+    const base = catalog();
+    const small = { ...base, cpu: base.cpu.slice(0, 3), gpu: base.gpu.slice(0, 2), ram: base.ram.slice(0, 2), ssd: base.ssd.slice(0, 1) };
+    const evaluate = prepareBudget({ res: '1080p' }, small);
+    const all = evaluate.options();
+    for (const budget of [3500, 5000, 8000]) {
+      const p = evaluate(budget);
+      if (p.status !== 'ok') continue;
+      const inBudget = all.filter((o) => o.total <= budget);
+      // Ninguém no valor é ao mesmo tempo mais barato e mais forte com a mesma memória (a escolha é ótima de Pareto)...
+      expect(inBudget.some((o) => o.total < p.total && o.objective! > p.objective! && ram(o) >= ram(p))).toBe(false);
+      // ...e o máximo do valor aparece (recomendada ou alternativa).
+      const max = Math.max(...inBudget.map((o) => o.objective!));
+      expect([p, ...p.alternatives].some((o) => !o.stretch && o.objective === max)).toBe(true);
+    }
+  });
+
+  it('promoção na peça escolhida não piora a escolha; sem estoque da escolhida, sai outra válida', () => {
+    const base = catalog();
+    const req = { budget: 8000, res: '1440p' } as const;
+    const before = planBudget(req, base);
+    const chosen = before.parts.gpu!.offer.storeSku;
+    const promo = planBudget(req, { ...base, gpu: base.gpu.map((o) => (o.storeSku === chosen ? { ...o, priceCash: o.priceCash * 0.8 } : o)) });
+    expect(promo.objective!).toBeGreaterThanOrEqual(before.objective!);
+    expect(promo.total).toBeLessThanOrEqual(before.total);
+    const gone = planBudget(req, { ...base, gpu: base.gpu.map((o) => (o.storeSku === chosen ? { ...o, inStock: false } : o)) });
+    expect(gone.status).toBe('ok');
+    expect(gone.parts.gpu?.offer.storeSku).not.toBe(chosen);
+  });
+
+  it('preferência de fabricante pesa quando as opções são próximas; exigência obriga', () => {
+    const base = catalog();
+    base.gpu = [gpu('RTX 4060', 2000), offer({ gpuMaker: 'amd', gpuModel: 'RX 7600', vram: 8 }, 1950)];
+    const req = { budget: 6000, res: '1080p' } as const;
+    const amdPref = planBudget({ ...req, preferences: { gpu: 'amd' } }, base);
+    const nvPref = planBudget({ ...req, preferences: { gpu: 'nvidia' } }, base);
+    expect(amdPref.parts.gpu?.offer.specs.gpuMaker).toBe('amd');
+    expect(nvPref.parts.gpu?.offer.specs.gpuMaker).toBe('nvidia');
+    // Exigência: só a marca pedida, mesmo bem mais cara; a preferência não paga 75% a mais.
+    const pricey = { ...base, gpu: [gpu('RTX 4060', 2000), offer({ gpuMaker: 'amd', gpuModel: 'RX 7600', vram: 8 }, 3500)] };
+    expect(planBudget({ ...req, requiredBrands: { gpu: 'amd' } }, pricey).parts.gpu?.offer.specs.gpuMaker).toBe('amd');
+    expect(planBudget({ ...req, preferences: { gpu: 'amd' } }, pricey).parts.gpu?.offer.specs.gpuMaker).toBe('nvidia');
+  });
+
+  it('memória proporcional: processador de muitas threads em produtividade pede 32 GB', () => {
+    const base = catalog();
+    const many = amd('Ryzen 9', '5950X', 'AM4', { tdp: 105, cooler: false, cores: 16, threads: 32, igpu: false }, 1500);
+    many.sheet = { architecture: 'Zen 3', boostGhz: 4.9, l3Mb: 64, cores: 16, threads: 32 };
+    const work = planBudget({ budget: 12000, res: '1080p', profile: 'productivity', workload: 'cpu' }, { ...base, cpu: [many] });
+    expect(work.status).toBe('ok');
+    expect(ram(work)).toBeGreaterThanOrEqual(32);
+  });
+
+  it('cargas de produtividade diferentes pedem peças diferentes: IA quer memória de vídeo; uso geral não paga placa topo', () => {
+    const base = catalog();
+    base.gpu = [gpu('RTX 3060', 1800, { vram: 12 }), gpu('RTX 4070', 3500, { vram: 12 }), gpu('RTX 5080', 7000, { vram: 16, gpuLength: 330 }), gpu('RTX 4060', 1700, { vram: 8 })];
+    const req = { budget: 16000, res: '1440p', profile: 'productivity' } as const;
+    const general = planBudget(req, base);
+    const ai = planBudget({ ...req, workload: 'ai' }, base);
+    const render = planBudget({ ...req, workload: 'gpu' }, base);
+    expect(general.parts.gpu?.offer.specs.gpuModel).not.toBe('RTX 5080');
+    expect(ai.parts.gpu?.offer.specs.vram ?? 0).toBeGreaterThanOrEqual(12);
+    expect(render.gpu!).toBeGreaterThanOrEqual(general.gpu ?? 0);
+  });
+
+  it('upgrade: PC topo de linha não troca nada (no-gain); mais memória vale mesmo sem fps', () => {
+    const top: Build = {
+      cpu: { specs: { cpuBrand: 'amd', cpuLine: 'Ryzen 7', cpuModel: '7800X3D', socket: 'AM5', tdp: 120 } },
+      motherboard: { specs: { chipset: 'B650', socket: 'AM5', formFactor: 'matx', memory: 'ddr5' } },
+      gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'RTX 5080', vram: 16 } },
+      psu: { specs: { watts: 1000, efficiency: 'gold' } },
+    };
+    expect(planBudget({ budget: 20000, res: '1440p', owned: top }, catalog()).status).toBe('no-gain');
+    // 8 GB num 5600 para trabalho: só mais memória entra como upgrade (sem mudar processador nem placa de vídeo).
+    const small: Build = {
+      cpu: { specs: { cpuBrand: 'amd', cpuLine: 'Ryzen 5', cpuModel: '5600', socket: 'AM4', tdp: 65, cores: 6, threads: 12 } },
+      motherboard: { specs: { chipset: 'B550', socket: 'AM4', formFactor: 'matx', memory: 'ddr4' } },
+      ram: { specs: { memory: 'ddr4', ramCapacity: 8, ramModules: 1, ramSpeed: 3200 } },
+      gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'RTX 4070', vram: 12 } },
+      psu: { specs: { watts: 750, efficiency: 'gold' } },
+    };
+    const memory = planBudget({ budget: 600, res: '1080p', owned: small, profile: 'productivity', workload: 'cpu' }, catalog());
+    expect(memory.status).toBe('ok');
+    expect(memory.parts.ram).toBeDefined();
+    expect(memory.parts.cpu).toBeUndefined();
+    expect(memory.notes).toContain('more-ram');
+  });
+
+  it('upgrade caro por pouco não compensa: o motor diz para não trocar em vez de gastar', () => {
+    const owned: Build = {
+      cpu: { specs: { cpuBrand: 'amd', cpuLine: 'Ryzen 7', cpuModel: '5800X3D', socket: 'AM4' } },
+      motherboard: { specs: { chipset: 'B550', socket: 'AM4', formFactor: 'matx', memory: 'ddr4' } },
+      gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'RTX 3060', vram: 12 } },
+      psu: { specs: { watts: 750, efficiency: 'gold' } },
+    };
+    // A única troca à venda rende ~11% por R$ 9.000: muito pouco por real.
+    const pricey = { ...catalog(), cpu: [], motherboard: [], gpu: [gpu('RTX 4060 Ti', 9000, { vram: 16 })] };
+    const p = planBudget({ budget: 10000, res: '1080p', owned }, pricey);
+    expect(['no-gain', 'no-data']).toContain(p.status);
+  });
+
+  it('determinismo e tempo: o mesmo pedido dá o mesmo resultado, rápido', () => {
+    const req = { budget: 9000, res: '1440p', hz: 144, profile: 'mixed' } as const;
+    const offers = catalog();
+    const start = performance.now();
+    const a = planBudget(req, offers);
+    const b = planBudget(req, offers);
+    expect(performance.now() - start).toBeLessThan(2000);
+    expect(JSON.stringify({ ...a, parts: ids(a) })).toBe(JSON.stringify({ ...b, parts: ids(b) }));
   });
 });

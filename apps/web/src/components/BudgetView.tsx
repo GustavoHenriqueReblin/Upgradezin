@@ -40,6 +40,14 @@ const PRICE_MODES = [
   { id: 'ideal', label: 'PC ideal', description: 'Também considera peças sem oferta recente pelo último preço em estoque.' },
 ] as const;
 const PROFILES = [{ id: 'games', label: 'Jogos' }, { id: 'mixed', label: 'Jogos e trabalho' }, { id: 'productivity', label: 'Produtividade' }] as const;
+const WORKLOAD_OPTIONS: { id: BudgetWorkload; label: string }[] = [
+  { id: 'both', label: 'Uso geral / não sei' },
+  { id: 'cpu', label: 'Processamento em vários núcleos' },
+  { id: 'dev', label: 'Programação e máquinas virtuais' },
+  { id: 'video', label: 'Edição de vídeo' },
+  { id: 'gpu', label: 'Renderização e modelagem 3D' },
+  { id: 'ai', label: 'IA local' },
+];
 
 type State = { kind: 'idle' } | { kind: 'loading' } | { kind: 'error'; invalid: boolean } | { kind: 'done'; plan: BudgetPlan; owned?: SavedBuild; at: number };
 
@@ -61,7 +69,7 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
   const [fast, setFast] = useState(saved.fast);
   const [priceMode, setPriceMode] = useState<PriceMode>(saved.priceMode ?? 'buyable');
   const [profile, setProfile] = useState<BudgetProfile>(saved.profile ?? 'games');
-  const [workload, setWorkload] = useState<BudgetWorkload>(saved.workload ?? 'cpu');
+  const [workload, setWorkload] = useState<BudgetWorkload>(saved.workload ?? 'both');
   const [state, setState] = useState<State>(() => restored(mode));
   // Trocar de aba mostra o último resultado daquela aba.
   const shownMode = useRef(mode);
@@ -203,10 +211,9 @@ export function BudgetView({ mode, onMode, pc, build, onImport, onManual, onToBu
             {profile !== 'games' && (
               <label className="block text-sm font-semibold">
                 Tipo de trabalho
-                <select value={workload} onChange={(e) => change(() => setWorkload(e.target.value === 'gpu' ? 'gpu' : 'cpu'))}
+                <select value={workload} onChange={(e) => change(() => setWorkload(WORKLOAD_OPTIONS.find((o) => o.id === e.target.value)?.id ?? 'both'))}
                   className="ml-2 min-h-10 rounded-lg border border-zinc-300 bg-white px-3 font-normal dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100">
-                  <option value="cpu">Principalmente no processador</option>
-                  <option value="gpu">Com aceleração por placa de vídeo</option>
+                  {WORKLOAD_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
                 </select>
               </label>
             )}

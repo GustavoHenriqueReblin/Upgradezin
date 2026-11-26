@@ -39,6 +39,7 @@ it('entrega produto, ficha e preço no HTML inicial e protege o texto vindo do c
     expect(response.statusCode).toBe(200);
     expect(response.body).toContain(`rel="canonical" href="${origin + productPath(key)}"`);
     expect(response.body).toContain('Ficha técnica');
+    expect(response.body).toMatch(/<div id="root"><\/div><noscript>[\s\S]*Ficha técnica[\s\S]*<\/noscript>/);
     expect(response.body).toContain('&lt;/script&gt;');
     expect(response.body).not.toContain('<script>alert(1)');
     expect(response.body).not.toContain('javascript:');
@@ -60,9 +61,11 @@ it('publica catálogo paginado, guias e sitemaps sem incluir URLs de sessão ou 
     add('gpu:old', 's1', 'old', 'Radeon RX 7600 8GB', 1400, 100);
     const home = await app.inject('/');
     expect(home.body).toContain('href="/catalogo/gpu"');
+    expect(home.body).toMatch(/<div id="root"><\/div><noscript>[\s\S]*Guias de compra e desempenho[\s\S]*<\/noscript>/);
     const category = await app.inject('/catalogo/gpu');
     expect(category.body).toContain('href="/catalogo/gpu?pagina=2"');
     expect(category.body).not.toContain('type="module"');
+    expect(category.body).toContain('<div id="root"><main');
     expect((await app.inject('/catalogo/gpu?pagina=2')).body).toContain('Modelo 49');
     expect((await app.inject('/catalogo/gpu?pagina=3')).statusCode).toBe(404);
     const guide = await app.inject('/guias/rtx-4060-vs-rx-7600');

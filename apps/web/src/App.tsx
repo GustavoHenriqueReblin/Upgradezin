@@ -11,7 +11,7 @@ import {
   type Offer,
   type UpgradeAction,
 } from '@upgradezin/shared';
-import { buildDrives, buildPartCount, checkCandidate, editDrive, itemFromGroup, itemFromPc, loadBuild, MAX_QTY, sanitizeBuild, saveBuild, slotFilters, type SavedBuild } from './build.ts';
+import { buildDrives, buildPartCount, checkCandidate, editDrive, itemFromGroup, itemFromPc, loadBuild, MAX_QTY, sanitizeBuild, saveBuild, slotFilters, toBuild, type SavedBuild } from './build.ts';
 import { discountOf, SORT_LABEL } from './format.ts';
 import { applyFilters, CATEGORY_SORTS, commonWords, DEFAULT_FILTERS, resetResultFilters, type Filters } from './filters.ts';
 import { MAX_TERMS, planSearch } from './searchPlan.ts';
@@ -29,7 +29,7 @@ import { MyPcButton } from './components/MyPc.tsx';
 import { BuildAction } from './components/HeaderActions.tsx';
 import { AlertsShortcut } from './components/PriceAlerts.tsx';
 import { BudgetView } from './components/BudgetView.tsx';
-import { BUDGET_VISIBLE, lastBudgetMode, type BudgetMode } from './budget.ts';
+import { BUDGET_VISIBLE, lastBudgetMode, ownedBuild, type BudgetMode } from './budget.ts';
 import { CategoryPicker } from './components/CategoryPicker.tsx';
 import { FilterPanel } from './components/FilterPanel.tsx';
 import { LocalSearch } from './components/LocalSearch.tsx';
@@ -564,7 +564,9 @@ export function App() {
             <a className="hover:underline" href="/catalogo">Catálogo de hardware</a>
             <a className="hover:underline" href="/guias">Guias e comparativos</a>
           </nav>
-          <p className="mt-4 text-center text-xs text-zinc-400 dark:text-zinc-600">v{__APP_VERSION__}</p>
+          <footer className="mt-4 text-center text-xs text-zinc-500">
+            © 2026 Upgradezin <span aria-hidden="true">·</span> v{__APP_VERSION__}
+          </footer>
           <details className="mt-2 text-center text-xs text-zinc-500">
             <summary className="cursor-pointer">Dados de uso</summary>
             <p className="mx-auto mt-1 max-w-lg">
@@ -624,6 +626,7 @@ export function App() {
         <main className="px-4 py-8">
           <PcAnalysis
             pc={pc}
+            owned={pc ? toBuild(ownedBuild(pc, build)) : undefined}
             psu={!pc?.psu && build.psu?.current ? build.psu.specs : undefined}
             psuTitle={!pc?.psu && build.psu?.current ? build.psu.title : undefined}
             onImport={importPc}

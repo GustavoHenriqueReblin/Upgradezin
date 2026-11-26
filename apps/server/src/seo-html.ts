@@ -23,8 +23,11 @@ export function pageHtml(template: string, page: { title: string; description: s
     page.data && `<script type="application/ld+json">${JSON.stringify(page.data).replaceAll('<', '\\u003c')}</script>`,
   ].filter(Boolean).join('\n    ');
   const shell = page.client ? template : template.replace(/<script\b[^>]*\btype="module"[^>]*>\s*<\/script>/g, '');
-  return shell.replace(/<title>[^<]*<\/title>/, () => head).replace('<div id="root"></div>', () =>
-    `<div id="root">${page.body}</div>`);
+  // A versão HTML continua disponível com JavaScript desativado, sem aparecer antes da montagem do React.
+  const content = page.client
+    ? `<div id="root"></div><noscript>${page.body}</noscript>`
+    : `<div id="root">${page.body}</div>`;
+  return shell.replace(/<title>[^<]*<\/title>/, () => head).replace('<div id="root"></div>', () => content);
 }
 
 export const publicNav = '<nav aria-label="Navegação"><a href="/">Upgradezin</a><a href="/catalogo">Catálogo</a><a href="/guias">Guias e comparativos</a></nav>';

@@ -3,8 +3,7 @@ import { normalizeListing } from './categorize.ts';
 import { cpuSheetFor, cpuSheetScore } from './cpuScore.ts';
 import type { PcProfile } from './cpuz.ts';
 import { budgetCpuScore, cpuScore } from './perf.ts';
-import { pickUpgrades } from './picks.ts';
-import type { Offer, Specs } from './types.ts';
+import type { Offer } from './types.ts';
 import { analyzePc } from './upgrade.ts';
 
 describe('nota do processador pela ficha técnica', () => {
@@ -56,38 +55,5 @@ describe('gargalo e sugestões pela ficha', () => {
     const withSheet = analyzePc(p, { cpuSheet: { architecture: 'Zen+', boostGhz: 3.9, l3Mb: 16, cores: 6, threads: 12 } });
     expect(withSheet.balance).toMatchObject({ verdict: 'cpu', cpuFrom: 'sheet' });
     expect(withSheet.balance.cpu).toBe(62); // 0,78 × 3,9/4,4 × 0,9 (cache de 16 MB)
-  });
-
-  let n = 0;
-  const offer = (specs: Specs, price: number, extra: Partial<Offer> = {}): Offer =>
-    ({ store: 's1', storeSku: String(++n), title: `Peça ${n}`, url: '', priceCash: price, inStock: true, specs, modelKey: `m${n}`, collectedAt: '', ...extra }) as Offer;
-
-  it('processador: as que resolvem o gargalo primeiro, da mais barata; a nota vem da ficha de cada oferta', () => {
-    const cpu = (cpuModel: string, price: number, sheet: Offer['sheet']) => offer({ socket: 'AM4', cpuBrand: 'amd', cpuLine: 'Ryzen 5', cpuModel, cpuGen: 'Ryzen 5000' }, price, { sheet });
-    const offers = [
-      cpu('5600', 600, { architecture: 'Zen 3', boostGhz: 4.4, l3Mb: 32, cores: 6 }), // 100: não resolve (meta 120)
-      cpu('5700X3D', 1300, { architecture: 'Zen 3', boostGhz: 4.1, l3Mb: 96, cores: 8 }), // 124: resolve
-      cpu('5800X3D', 1700, { architecture: 'Zen 3', boostGhz: 4.5, l3Mb: 96, cores: 8 }), // 136: resolve
-      cpu('5500X3D', 1100, { architecture: 'Zen 3', boostGhz: 4.0, l3Mb: 96, cores: 6 }), // 116: resolve (90% da meta)
-    ];
-    const picks = pickUpgrades({ slot: 'cpu', filters: { sockets: ['AM4'] }, context: { current: 68, target: 120, chipset: 'B550' } }, offers);
-    expect(picks.map((p) => [p.offer.specs.cpuModel, p.resolves ?? false])).toEqual([
-      ['5500X3D', true],
-      ['5700X3D', true],
-      ['5800X3D', true],
-      // O 5600 (não resolve) seria o 4º: as dicas mostram 3.
-    ]);
-    expect(picks[0]!.perf).toBe(116);
-  });
-
-  it('placa de vídeo: ofertas x8 concorrem com x16 e o limite elétrico continua valendo', () => {
-    const gpu = (gpuModel: string, price: number, sheet?: Offer['sheet']) => offer({ gpuMaker: 'nvidia', gpuModel }, price, { ...(sheet && { sheet }) });
-    const offers = [gpu('RTX 5060', 1800, { pcie: '5.0 x8' }), gpu('RTX 4070', 3500, { pcie: '4.0 x16' }), gpu('RTX 5060 Ti', 2400, { pcie: '5.0 x8' })];
-    const picks = pickUpgrades({ slot: 'gpu', filters: {}, context: { current: 100, target: 150 } }, offers);
-    expect(picks).toHaveLength(3);
-    expect(picks[0]?.offer.specs.gpuModel).toMatch(/^RTX 5060/);
-    // Fonte aguenta até 200 W: a 4070 (200 W) entra, a 5060 Ti (180) também; uma placa fora da tabela de consumo usa a ficha.
-    const odd = [gpu('RTX 4070', 3500, { tdpW: 250 })];
-    expect(pickUpgrades({ slot: 'gpu', filters: {}, context: { current: 100, maxGpuPower: 220 } }, odd)).toHaveLength(1); // a tabela (200 W) vale primeiro
   });
 });
