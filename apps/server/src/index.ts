@@ -27,6 +27,7 @@ import { configureGoogleLogin, registerAccountRoutes, sessionAccount } from './a
 import { registerAlertRoutes, startAlertChecks } from './alerts.ts';
 import { emitChange } from './changes.ts';
 import { closeServer } from './shutdown.ts';
+import { registerPublicPages } from './seo.ts';
 import { deleteMeta, getMeta, metaByPrefix, setMeta } from './db/db.ts';
 import { clearBackoff, pauseStore, setStoreInterval, storeInterval, useBackoffStorage, type Backoff } from './pace.ts';
 import { closeDb, getDb } from './db/instance.ts';
@@ -481,10 +482,7 @@ app.get('/api/search/stream', async (req, reply) => {
 const webDist = resolve(import.meta.dirname, '../../web/dist');
 if (existsSync(webDist)) {
   await app.register(fastifyStatic, { root: webDist });
-  // Rota da API que não existe (ex. uma removida) responde 404 em JSON, não a página do app.
-  app.setNotFoundHandler((req, reply) =>
-    req.url.startsWith('/api/') ? reply.code(404).send({ error: 'not-found' }) : reply.sendFile('index.html'),
-  );
+  registerPublicPages(app, { getDb, stores: () => ACTIVE_STORES, origin: config.PUBLIC_ORIGIN, template: readFileSync(join(webDist, 'index.html'), 'utf8') });
 }
 
 /** Para o recálculo das chaves de produto (ligado depois de subir). */

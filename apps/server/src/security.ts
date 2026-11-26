@@ -110,7 +110,8 @@ export function registerSecurity(app: FastifyInstance): void {
     if (!limiter.take(clientIp(req))) return reply.code(429).header('Retry-After', '60').send({ error: 'too-many-requests' });
   });
 
-  app.addHook('onSend', async (_req, reply, payload) => {
+  app.addHook('onSend', async (req, reply, payload) => {
+    if (req.url.startsWith('/api/')) reply.header('X-Robots-Tag', 'noindex');
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'no-referrer');
     reply.header('X-Frame-Options', 'DENY');

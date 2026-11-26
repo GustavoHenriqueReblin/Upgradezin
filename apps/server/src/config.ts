@@ -17,6 +17,16 @@ const bool = z
 const Env = z.object({
   PORT: z.coerce.number().default(8787),
   HOST: z.string().default('127.0.0.1'),
+  PUBLIC_ORIGIN: z.string().default('https://upgradezin.com.br').transform((value, ctx) => {
+    try {
+      const url = new URL(value);
+      if (url.protocol === 'https:' && (value === url.origin || value === `${url.origin}/`)) return url.origin;
+    } catch {
+      // A origem é usada em URLs públicas e deve conter só o endereço HTTPS.
+    }
+    ctx.addIssue({ code: 'custom', message: 'Informe uma origem HTTPS sem caminho.' });
+    return z.NEVER;
+  }),
   /**
    * Chrome das lojas (um por loja, sem porta de depuração; a extensão em apps/server/extension
    * abre as abas e lê o HTML). Padrão: o Google Chrome instalado. No Linux sem tela, rode com xvfb-run.

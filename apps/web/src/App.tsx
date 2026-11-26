@@ -560,7 +560,11 @@ export function App() {
             {cpuLabel && <span className="hidden max-w-[28%] shrink-0 truncate rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 sm:block"
               title={pc?.cpu?.title}>{cpuLabel}</span>}
           </button>
-          <p className="mt-8 text-center text-xs text-zinc-400 dark:text-zinc-600">v{__APP_VERSION__}</p>
+          <nav aria-label="Explorar o Upgradezin" className="mt-6 flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm text-accent-400">
+            <a className="hover:underline" href="/catalogo">Catálogo de hardware</a>
+            <a className="hover:underline" href="/guias">Guias e comparativos</a>
+          </nav>
+          <p className="mt-4 text-center text-xs text-zinc-400 dark:text-zinc-600">v{__APP_VERSION__}</p>
           <details className="mt-2 text-center text-xs text-zinc-500">
             <summary className="cursor-pointer">Dados de uso</summary>
             <p className="mx-auto mt-1 max-w-lg">

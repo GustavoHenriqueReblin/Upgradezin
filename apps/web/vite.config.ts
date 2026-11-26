@@ -11,6 +11,8 @@ export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version) },
   server: {
     port: 5173,
-    proxy: { '/api': { target: 'http://127.0.0.1:8787', changeOrigin: true } },
+    proxy: {
+      '^/(api/|catalogo(?:/|$)|guias(?:/|$)|robots\\.txt$|sitemap[^/]*\\.xml$|assets/)': { target: 'http://127.0.0.1:8787', changeOrigin: true },
+    },
   },
 });

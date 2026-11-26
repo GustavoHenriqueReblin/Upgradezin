@@ -4,6 +4,8 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+- Páginas públicas de produto, catálogo e guias agora entregam HTML legível na primeira resposta, com URLs canônicas. A edição inicial traz quatro comparativos de processadores e placas de vídeo e um guia de upgrade do Ryzen 5 5600. O servidor publica `robots.txt`, sitemaps e dados estruturados de ofertas recentes.
+
 - Histórico de atividade usa a mesma paginação de Produtos, Consultas e Fichas. Mudar os filtros volta à primeira página.
 
 - A aba Atividade abre também em bancos que receberam a primeira versão da tabela de eventos, anterior à coluna de produto. A migração preserva os eventos já gravados.

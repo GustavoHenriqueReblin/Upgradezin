@@ -26,7 +26,7 @@ export function ProductPage({ productKey }: { productKey: string }) {
     fetchProduct(productKey, controller.signal)
       .then((p) => {
         setPage(p);
-        document.title = `${p.title} · Upgradezin`;
+        document.title = `${p.title} | Preço e ficha técnica · Upgradezin`;
       })
       .catch((e: Error) => { if (!controller.signal.aborted) setError(e.message === 'not-found' ? 'not-found' : 'failed'); });
     return () => controller.abort();
@@ -149,6 +149,10 @@ function Content({ page }: { page: ProductPageData }) {
       <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
         <h2 className="mb-3 font-semibold">Histórico de preço</h2>
         <PriceHistoryBody offers={history} />
+        <nav aria-label="Explorar hardware" className="flex flex-wrap gap-4 text-sm text-accent-400">
+          <a className="hover:underline" href={`/catalogo/${page.category}`}>Mais peças desta categoria</a>
+          <a className="hover:underline" href="/guias">Guias e comparativos</a>
+        </nav>
       </section>
     </>
   );

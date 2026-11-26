@@ -483,6 +483,16 @@ O histórico usa o componente de paginação das outras tabelas do admin, abaixo
 
 O evento armazena o ID interno da conta. A resposta ao admin consulta o e-mail atual na tabela de contas. Sem sessão válida, o servidor usa o mesmo hash curto do IP com sal por execução. IDs de visitantes podem se repetir entre pessoas da mesma rede e mudam no reinício. O servidor exclui eventos fora dos 90 dias na inicialização e em uma limpeza diária. O histórico começa com a implantação da coleta.
 
+### 9.4 Páginas públicas e indexação
+
+O Fastify usa o HTML compilado do Vite como base e inclui título, descrição, URL canônica e conteúdo antes de enviar a resposta. A página inicial e `/produto/<chave>` mantêm a interação em React. `/catalogo`, `/catalogo/<categoria>` e `/guias` funcionam com links HTML, inclusive a paginação do catálogo. Os guias usam comparativos editoriais com índices do motor de desempenho, ficha, opções do catálogo e preços à vista recentes quando há ofertas. O comparador interativo continua aceitando seleções compartilhadas.
+
+O catálogo público usa produtos com chave e anúncios de lojas ativas vistos nos últimos 90 dias. O sitemap publica uma URL por chave e separa produtos em arquivos de até 5.000 URLs. O endereço canônico vem de `PUBLIC_ORIGIN` (padrão `https://upgradezin.com.br`). O `robots.txt` aponta para o índice de sitemaps e deixa o conteúdo público acessível aos buscadores.
+
+As respostas da API indicam `noindex`. A API pública fica acessível ao rastreador que renderiza o React e precisa carregar as fichas ou o catálogo.
+
+A página de produto mostra a ficha e publica `Product` com `AggregateOffer` quando há oferta à vista de produto novo, em estoque, vendido pela própria loja e conferido nas últimas 24 horas. Conta uma oferta por loja. Buscas com filtros, seleções do comparador, montagens compartilhadas e admin recebem `noindex`. Produtos e guias inexistentes respondem com HTTP 404.
+
 ## 10. Segurança e privacidade
 
 - Nada sensível no repositório: `.env` e `data/` (banco SQLite e dumps de debug) estão no `.gitignore`. O navegador não guarda perfil em disco.

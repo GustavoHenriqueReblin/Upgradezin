@@ -39,6 +39,8 @@ O PC atual pode ser informado marcando Já tenho nas peças da montagem ou impor
 
 ### Implementadas
 
+As páginas públicas de produto, catálogo e guias entregam conteúdo no HTML inicial para busca na web. O sitemap aponta para `https://upgradezin.com.br`, configurável por `PUBLIC_ORIGIN`. Os guias públicos de compra e desempenho complementam o comparador interativo.
+
 | Área | O que faz | Referência |
 |---|---|---|
 | Busca por categoria | Formulário por categoria (potência, soquete, chipset, memória, linha de processador, fabricante de placa de vídeo, capacidade etc.) com a contagem de produtos em estoque em cada opção; o resultado vem do banco, filtrado pelas specs da ficha | §7, §9 |
@@ -277,6 +279,7 @@ pnpm --filter web build
 
 - **Configuração:** `.env` (modelo em `.env.example`). Nunca commitar `.env` nem `data/`.
 - **Deploy:** no servidor, `bash deploy/update.sh` (`git pull --ff-only`, `pnpm install --frozen-lockfile`, `pnpm build`) e o mantenedor reinicia o serviço (`sudo systemctl restart upgradezin`). A pasta `deploy/` fica fora do git (só existe no servidor e na máquina do mantenedor).
+- **Domínio público:** depois da ativação no Registro.br, publique `upgradezin.com.br` no túnel nomeado. Atualize a URI de retorno no cliente Google e em `GOOGLE_REDIRECT_URI` para `https://upgradezin.com.br/api/account/google/callback`. Adicione a propriedade do domínio ao Search Console, confirme a propriedade via DNS e envie `https://upgradezin.com.br/sitemap.xml`. Confira a página inicial, um produto e um comparativo na inspeção de URLs.
 - **Lançar versão:** `pnpm release` (ver README, seção "Versões").
 - **Onde mexer:**
 

@@ -3,6 +3,30 @@
 /* Tema escuro fixo: a variante dark: vale sempre (<html class="dark">). */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* O catálogo e os guias chegam prontos no HTML, antes de qualquer JavaScript. */
+.public-page {
+  max-width: 70rem;
+  padding: 1.5rem clamp(1rem, 4vw, 3rem) 4rem;
+  margin-inline: auto;
+  line-height: 1.65;
+}
+.public-page nav { display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; }
+.public-page > nav:first-child { padding-bottom: 1rem; border-bottom: 1px solid #47382d; }
+.public-page a { color: #fdba74; text-decoration: underline; text-underline-offset: .2em; }
+.public-page a:hover { color: #fed7aa; }
+.public-page h1 { font-size: clamp(1.75rem, 4vw, 2.5rem); line-height: 1.2; font-weight: 700; margin-block: 1.75rem .7rem; }
+.public-page h2 { font-size: 1.35rem; font-weight: 700; margin-block: 1.4rem .5rem; }
+.public-page h3 { font-weight: 700; margin-block: .9rem .3rem; }
+.public-page p, .public-page ul, .public-page dl { margin-block: .65rem 1rem; }
+.public-page ul { list-style: disc; padding-inline-start: 1.3rem; }
+.public-page li { margin-block: .35rem; }
+.public-page dt { font-weight: 700; }
+.public-page dd { margin-block-end: .55rem; }
+.public-page img { object-fit: contain; background: white; border-radius: .75rem; }
+.public-table { overflow-x: auto; }
+.public-table table { width: 100%; min-width: 25rem; text-align: left; }
+.public-table :is(th, td) { padding: .6rem .8rem; border-bottom: 1px solid #47382d; }
+
 @theme {
   /* Quicksand (arredondada), servida pelo próprio app: nenhuma requisição a terceiros. */
   --font-sans: 'Quicksand Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
