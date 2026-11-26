@@ -4,6 +4,12 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+- Histórico de atividade usa a mesma paginação de Produtos, Consultas e Fichas. Mudar os filtros volta à primeira página.
+
+- A aba Atividade abre também em bancos que receberam a primeira versão da tabela de eventos, anterior à coluna de produto. A migração preserva os eventos já gravados.
+
+- Admin, Atividade: registra visitas às telas e ações como aplicar filtros, comparar peças, copiar uma montagem, gerar um orçamento e criar um alerta. O histórico fica no SQLite e pode ser consultado por até 90 dias, com rankings e filtros por período, tela, ação e pessoa. Contas aparecem com o e-mail do Google e visitantes continuam com o ID temporário.
+
 - Busca na web, a partir da revisão das fichas "precisam de você": o leitor da resposta aceita chaves com espaços em volta (a IA às vezes devolve `"ventoinhas   "`), 0 ou "Não" no turbo do processador e no boost da placa de vídeo (vale o clock base; a pergunta agora pede isso) e `[]` como "não tem" nos radiadores do gabinete (o modelo da pergunta passou a começar listas em null). O nome do produto na pergunta não fica mais só "Intel Core" quando o título separa o modelo com " - ", e "3,7ghz" não é cortado na vírgula. Página sem resposta nenhuma é perguntada de novo depois de 6 h (até 3 vezes), em vez de ir direto para a revisão. Ao subir, o servidor relê as respostas guardadas com o leitor novo (`WEB_PARSER_VERSION`) e devolve à fila as que vieram sem resposta.
 
 - Fichas: o produto com um opcional vazio que a web não pergunta (código do chip da placa de vídeo) ficava parado, fora da fila da web e fora do "precisa de você". Agora aparece no "precisa de você".

@@ -1,3 +1,4 @@
+import { trackActivity } from '../activity.ts';
 import { useSyncExternalStore } from 'react';
 import { ChartColumn } from 'lucide-react';
 import type { CategoryId } from '@upgradezin/shared';
@@ -15,7 +16,10 @@ export function CompareButton({ category, productKey, iconOnly = false }: { cate
   const full = !active && countIn(selection, category) >= COMPARE_LIMIT;
   const label = active ? 'Remover da comparação' : full ? `Limite de ${COMPARE_LIMIT} por categoria` : 'Comparar';
   return (
-    <button type="button" aria-pressed={active} disabled={full} onClick={() => toggleCompare(category, productKey)} aria-label={label} title={label}
+    <button type="button" aria-pressed={active} disabled={full} onClick={() => {
+      if (!toggleCompare(category, productKey)) return;
+      trackActivity({ screen: 'compare', action: active ? 'compareRemove' : 'compareAdd', category, product: productKey });
+    }} aria-label={label} title={label}
       className={`${control} shrink-0 disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:border-accent-500 aria-pressed:bg-accent-500/10 aria-pressed:text-accent-600`}>
       <ChartColumn aria-hidden="true" className="h-4 w-4" /> {!iconOnly && label}
     </button>

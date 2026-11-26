@@ -4,6 +4,7 @@ import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
 import { CATEGORIES } from '@upgradezin/shared';
 import { readCookie } from './admin/auth.ts';
+import { recordUsage } from './admin/usage.ts';
 import type { Db } from './db/db.ts';
 
 const CALLBACK = '/api/account/google/callback';
@@ -149,6 +150,7 @@ export function registerAccountRoutes(app: FastifyInstance, getDb: () => Db, goo
     if (old) db.prepare('DELETE FROM account_sessions WHERE token_hash = ?').run(digest(old));
     const token = random();
     db.prepare('INSERT INTO account_sessions VALUES (?, ?, ?)').run(digest(token), account.id, now + SESSION_SECONDS * 1000);
+    recordUsage(db, account.id, { screen: 'account', action: 'login' }, req.log);
     return reply.header('Set-Cookie', [clearLogin, cookie(SESSION, token, SESSION_SECONDS, 'Lax')]).redirect('/');
   });
 
@@ -176,6 +178,7 @@ export function registerAccountRoutes(app: FastifyInstance, getDb: () => Db, goo
       const user = accountFor(db, token);
       if (user && req.headers['x-account-id'] !== digest(user.google_sub)) return reply.code(409).send({ error: 'account-changed' });
       db.prepare('DELETE FROM account_sessions WHERE token_hash = ?').run(digest(token));
+      if (user) recordUsage(db, user.id, { screen: 'account', action: 'logout' }, req.log);
     }
     return reply.header('Set-Cookie', cookie(SESSION, '', 0, 'Lax')).code(204).send();
   });

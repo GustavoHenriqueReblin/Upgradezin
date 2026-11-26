@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
 import { ALERT_LIMIT, type Offer, type StoreId } from '@upgradezin/shared';
 import { checkPriceAlerts, NOTIFICATION_KEEP, registerAlertRoutes } from './alerts.ts';
+import { usageQuery, usageReport } from './admin/usage.ts';
 import { openDb, type Db } from './db/db.ts';
 import { saveCollection } from './prices/prices.ts';
 
@@ -78,6 +79,8 @@ describe('alertas de preço no servidor', () => {
       expect((await app.inject({ method: 'DELETE', url: `/api/account/alerts/${encodeURIComponent(KEY)}`, headers: me })).statusCode).toBe(204);
       expect((await read()).alerts).toEqual([]);
       expect((await read(other)).alerts).toHaveLength(1);
+      const usage = usageReport(db, usageQuery.parse({ person: 'p0@example.com' }));
+      expect(usage.recent).toMatchObject([{ action: 'alertRemove', category: 'gpu' }, { action: 'alertSave', product: KEY }]);
     } finally {
       await app.close();
       db.close();

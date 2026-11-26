@@ -1,3 +1,4 @@
+import { trackActivity } from '../activity.ts';
 import { useId, useRef, useState } from 'react';
 import { Computer, FileText, Gauge, Trash2, X } from 'lucide-react';
 import type { PcProfile } from '@upgradezin/shared';
@@ -42,7 +43,10 @@ export function MyPcButton({ pc, onAnalyze, onImport, onManual, onForget, wide =
   });
   return (
     <>
-      <button type="button" onClick={() => dialog.current?.showModal()} className={headerAction} aria-haspopup="dialog"
+      <button type="button" onClick={() => {
+        trackActivity({ screen: 'myPc', action: 'view' });
+        dialog.current?.showModal();
+      }} className={headerAction} aria-haspopup="dialog"
         title={pc ? 'Meu PC' : 'Meu PC (não informado)'} aria-label={pc ? 'Meu PC' : 'Meu PC (não informado)'}>
         <Computer aria-hidden="true" className="h-4 w-4" /> <span className={actionLabel(wide)}>Meu PC</span>
         {pc && <span aria-hidden="true" className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-zinc-950" />}

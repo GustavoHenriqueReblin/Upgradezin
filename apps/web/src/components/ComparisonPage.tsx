@@ -4,6 +4,7 @@ import { budgetIgpuScore, CATEGORY_DEFS, cpuNeeded, cpuScore, CPU_BOUND, GPU_BOU
   type CategoryId, type PcProfile, type ProductPage, type SheetValues } from '@upgradezin/shared';
 import { compareKeys, compareUrl, comparisonComputer, comparisonCpuCompatibility, comparisonName, fetchProduct, groupComparison, rankComparison, relativeGain, sameKeys,
   type ComparisonSort } from '../compare.ts';
+import { trackActivity, useActivityView } from '../activity.ts';
 import { addToCompare, clearCompare, COMPARE_LIMIT, compareSelection, removeCompare } from '../compareSelection.ts';
 import { useCompareSelection } from './CompareControls.tsx';
 import { countPill } from './HeaderActions.tsx';
@@ -32,6 +33,7 @@ const delta = (score?: number, reference?: number) => {
 };
 
 export function ComparisonPage() {
+  useActivityView({ screen: 'compare' });
   // Link com peças (?peca=...) diferente da seleção guardada: é uma comparação compartilhada, só para ver até a pessoa adicionar.
   // O link do cabeçalho traz a própria seleção na URL: esse não é compartilhado, e remover uma peça depois não o transforma em um.
   const [shared, setShared] = useState<string[] | null>(() => sharedFromUrl(location.search, compareSelection().map((entry) => entry.key)));
@@ -84,12 +86,19 @@ export function ComparisonPage() {
   const maxWidth = `max(64rem, ${12 * (activeCount + 1) + 2}rem + 2px)`;
   const addShared = () => {
     const skipped = addToCompare(available.map((page) => ({ key: requested.get(page) ?? page.key, category: page.category })));
+    trackActivity({ screen: 'compare', action: 'compareUse' });
     setShared(null);
     setNotice(skipped ? `${skipped} ${skipped === 1 ? 'peça ficou' : 'peças ficaram'} de fora: o limite é ${COMPARE_LIMIT} por categoria.` : undefined);
   };
   // Limpar vale só para a aba aberta: as outras categorias continuam na comparação.
   const clearActive = () => {
-    if (window.confirm(`Tirar ${tabLabel(activeCategory).toLowerCase()} da comparação?`)) clearCompare(activeCategory);
+    if (!window.confirm(`Tirar ${tabLabel(activeCategory).toLowerCase()} da comparação?`)) return;
+    clearCompare(activeCategory);
+    trackActivity({ screen: 'compare', action: 'compareClear', category: activeCategory });
+  };
+  const changeCategory = (category: CategoryId) => {
+    if (category !== activeCategory) trackActivity({ screen: 'compare', action: 'compareCategory', category });
+    setSelectedCategory(category);
   };
   return (
     <div className="min-h-screen">
@@ -120,14 +129,14 @@ export function ComparisonPage() {
             const active = activeCategory === category;
             return (
               <button key={category} id={`tab-${category}`} role="tab" type="button" tabIndex={active ? 0 : -1}
-                aria-selected={active} aria-controls={`panel-${category}`} onClick={() => setSelectedCategory(category)}
+                aria-selected={active} aria-controls={`panel-${category}`} onClick={() => changeCategory(category)}
                 onKeyDown={(event) => {
                   const direction = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
                   const next = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs.at(-1)
                     : direction ? tabs[(index + direction + tabs.length) % tabs.length] : undefined;
                   if (!next) return;
                   event.preventDefault();
-                  setSelectedCategory(next);
+                  changeCategory(next);
                   document.getElementById(`tab-${next}`)?.focus();
                 }}
                 className={`inline-flex items-center gap-2 border-b-2 px-4 text-sm font-semibold transition ${active
@@ -143,6 +152,7 @@ export function ComparisonPage() {
               Ordenar por
               <select value={sorts[activeCategory] ?? 'overall'} onChange={(event) => {
                 const sort = event.target.value as ComparisonSort;
+                trackActivity({ screen: 'compare', action: 'sort', category: activeCategory });
                 setSorts((current) => ({ ...current, [activeCategory]: sort }));
               }} className="min-h-10 rounded-lg border border-zinc-300 bg-white px-3 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
                 <option value="overall">Nota geral</option>
@@ -166,7 +176,10 @@ export function ComparisonPage() {
             <div key={category} id={`panel-${category}`} role="tabpanel" aria-labelledby={`tab-${category}`} tabIndex={0} hidden={category !== activeCategory}>
               {group ? (
                 <ComparisonGroup category={category} pages={group} pc={pc} sort={sorts[category] ?? 'overall'}
-                  onRemove={viewingShared ? undefined : (page) => removeCompare(requested.get(page) ?? page.key)} />
+                  onRemove={viewingShared ? undefined : (page) => {
+                    removeCompare(requested.get(page) ?? page.key);
+                    trackActivity({ screen: 'compare', action: 'compareRemove', category, product: page.key });
+                  }} />
               ) : (
                 <div className="rounded-xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
                   Nenhum{category === 'gpu' ? 'a placa de vídeo' : ' processador'} na comparação. Use o ícone de comparação na busca ou o botão Comparar na página do produto.
@@ -292,7 +305,8 @@ function ComparisonGroup({ category, pages, pc, sort, onRemove }: {
                       : <><span aria-label="Nota geral" className="text-2xl">{number.format(overall)}</span><span className="text-xs font-medium"> / 100</span></>}
                   </div>}
                   {best && price !== undefined
-                    ? <a href={best.url} target="_blank" rel="noreferrer" className="block font-semibold tabular-nums hover:underline">{brl(price)}</a>
+                    ? <a href={best.url} onClick={() => trackActivity({ screen: 'compare', action: 'offer', category, store: best.store, product: page.key })}
+                        target="_blank" rel="noreferrer" className="block font-semibold tabular-nums hover:underline">{brl(price)}</a>
                     : <span className="block text-xs font-normal text-zinc-500">Sem oferta em estoque da própria loja</span>}
                   {ranked.length > 1 && <div className="flex flex-wrap gap-1.5">
                     {overall !== undefined && overall === bestOverall && <Winner icon={Trophy} tone="orange">Melhor nota</Winner>}

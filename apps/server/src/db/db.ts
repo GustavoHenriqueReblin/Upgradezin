@@ -17,7 +17,7 @@ interface Rebuild {
 }
 
 /** Cada posição é uma versão (PRAGMA user_version). Só acrescentar no fim; nunca editar uma que já rodou. */
-const MIGRATIONS: (string | Rebuild)[] = [
+const MIGRATIONS: (string | Rebuild | ((db: Db) => void))[] = [
   // 1: tabela meta (e um catálogo de peças importado, removido na 5)
   `
   CREATE TABLE meta (
@@ -331,6 +331,29 @@ const MIGRATIONS: (string | Rebuild)[] = [
   );
   CREATE INDEX notifications_account ON notifications (account_id, id);
   `,
+  // 20: histórico de uso do site, separado das consultas e rotinas de coleta.
+  `
+  CREATE TABLE usage_events (
+    id INTEGER PRIMARY KEY,
+    at INTEGER NOT NULL,
+    account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
+    visitor TEXT,
+    screen TEXT NOT NULL,
+    action TEXT NOT NULL,
+    category TEXT,
+    mode TEXT,
+    store TEXT,
+    product TEXT,
+    CHECK ((account_id IS NULL) <> (visitor IS NULL))
+  );
+  CREATE INDEX usage_events_time ON usage_events (at, id);
+  CREATE INDEX usage_events_account ON usage_events (account_id, at);
+  `,
+  // 21: uma versão inicial do histórico já podia ter rodado sem a coluna de produto.
+  (db) => {
+    const product = db.prepare("SELECT 1 FROM pragma_table_info('usage_events') WHERE name = 'product'").get();
+    if (!product) db.exec('ALTER TABLE usage_events ADD COLUMN product TEXT');
+  },
 ];
 
 export type Db = DatabaseSync;
@@ -341,11 +364,12 @@ export function migrate(db: Db, to = MIGRATIONS.length): number[] {
   const ran: number[] = [];
   for (let v = current; v < to; v++) {
     const m = MIGRATIONS[v]!;
-    const rebuild = typeof m !== 'string';
+    const rebuild = typeof m === 'object';
     if (rebuild) db.exec('PRAGMA foreign_keys = OFF');
     db.exec('BEGIN');
     try {
-      db.exec(rebuild ? m.rebuild : m);
+      if (typeof m === 'function') m(db);
+      else db.exec(rebuild ? m.rebuild : m);
       if (rebuild && db.prepare('PRAGMA foreign_key_check').all().length) throw new Error(`Migração ${v + 1}: referência quebrada`);
       db.exec(`PRAGMA user_version = ${v + 1}`);
       db.exec('COMMIT');

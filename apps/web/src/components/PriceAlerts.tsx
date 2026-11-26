@@ -1,3 +1,4 @@
+import { trackActivity } from '../activity.ts';
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { Bell, BellRing, LogIn, X } from 'lucide-react';
 import { ALERT_LIMIT, alertText, notificationText, productPath, type AlertKind, type CategoryId, type PriceAlert } from '@upgradezin/shared';
@@ -54,7 +55,10 @@ export function AlertButton({ product, iconOnly = false }: { product: Product; i
   const label = alert ? 'Preço acompanhado' : 'Acompanhar preço';
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} aria-pressed={!!alert} aria-label={label} title={alert ? alertText(alert) : label} aria-haspopup="dialog"
+      <button type="button" onClick={() => {
+        trackActivity({ screen: 'alerts', action: 'view', category: product.category, product: product.productKey });
+        setOpen(true);
+      }} aria-pressed={!!alert} aria-label={label} title={alert ? alertText(alert) : label} aria-haspopup="dialog"
         className="button-link inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-zinc-300 px-3 text-sm font-medium hover:border-accent-500 aria-pressed:border-accent-500 aria-pressed:bg-accent-500/10 aria-pressed:text-accent-600 dark:border-zinc-700">
         <Icon aria-hidden="true" className="h-4 w-4" fill={alert ? 'currentColor' : 'none'} /> {!iconOnly && label}
       </button>
@@ -205,7 +209,10 @@ export function AlertsShortcut() {
   const Icon = unread ? BellRing : Bell;
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className={headerAction} aria-label={label} title={label} aria-haspopup="dialog">
+      <button type="button" onClick={() => {
+        trackActivity({ screen: 'alerts', action: 'view' });
+        setOpen(true);
+      }} className={headerAction} aria-label={label} title={label} aria-haspopup="dialog">
         <Icon aria-hidden="true" className="h-4 w-4" />
         <CountBadge count={unread} />
       </button>

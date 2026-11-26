@@ -1,3 +1,4 @@
+import { trackActivity, useActivityView } from '../activity.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { ListingHistory, Offer, StoreId } from '@upgradezin/shared';
@@ -50,6 +51,7 @@ const dayFull = (t: number) => new Date(t).toLocaleDateString('pt-BR', { day: '2
 
 /** Histórico em janela (botão do card da busca). */
 export function PriceHistory({ title, offers, onClose }: { title: string; offers: Offer[]; onClose: () => void }) {
+  useActivityView({ screen: 'prices', product: offers[0]?.productKey });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
@@ -132,7 +134,10 @@ export function PriceHistoryBody({ offers }: { offers: Offer[] }) {
             {RANGES.map((r) => (
               <button
                 key={r.id}
-                onClick={() => setRange(r.id)}
+                onClick={() => {
+                  if (range !== r.id) trackActivity({ screen: 'prices', action: 'priceRange', product: offers[0]?.productKey });
+                  setRange(r.id);
+                }}
                 className={`rounded-full px-3 py-1 text-xs font-medium ${
                   range === r.id ? 'accent-control' : 'border border-transparent bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
                 }`}
@@ -154,7 +159,10 @@ export function PriceHistoryBody({ offers }: { offers: Offer[] }) {
 
           <div className="mt-3 flex items-center justify-between text-xs text-zinc-500">
             <span>À vista com cupom. Tracejado: sem estoque. Acompanhado desde {dayFull(first)}.</span>
-            <button onClick={() => setTable((v) => !v)} className="font-medium text-accent-600 hover:underline dark:text-accent-400">
+            <button onClick={() => {
+              if (!table) trackActivity({ screen: 'prices', action: 'priceTable', product: offers[0]?.productKey });
+              setTable(!table);
+            }} className="font-medium text-accent-600 hover:underline dark:text-accent-400">
               {table ? 'Ver gráfico' : 'Ver tabela'}
             </button>
           </div>

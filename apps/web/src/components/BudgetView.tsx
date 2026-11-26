@@ -1,3 +1,4 @@
+import { trackActivity } from '../activity.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, ChevronDown, FileText, Loader2, Monitor, RefreshCw, Wallet } from 'lucide-react';
 import { analyzePc, BUILD_SLOTS, CATEGORY_DEFS, CPU_BOUND, GPU_BOUND, productPath, type BudgetMode as PriceMode, type BudgetOption, type BudgetPlan, type BudgetProfile, type PcProfile, type Resolution } from '@upgradezin/shared';
@@ -411,7 +412,10 @@ function Options({ plan, owned, screen, onToBuild, onBuyable }: { plan: BudgetPl
                 data-button-layout="card"
                 type="button"
                 aria-pressed={i === at}
-                onClick={() => setAt(i)}
+                onClick={() => {
+                  if (i !== at) trackActivity({ screen: 'budget', action: 'budgetOption' });
+                  setAt(i);
+                }}
                 className={`rounded-xl border p-3 text-left transition ${
                   i === at ? 'border-accent-500 bg-accent-500/10' : 'border-zinc-200 bg-white hover:border-accent-500 dark:border-zinc-800 dark:bg-zinc-900'
                 }`}
@@ -528,7 +532,10 @@ function OptionDetail({ opt, first, n, budget, owned, screen, profile, onToBuild
                   <span className="shrink-0 font-semibold tabular-nums">{brl(part.price)}</span>
                 </span>
               ) : part ? (
-                <a href={part.offer.productKey ? productPath(part.offer.productKey) : part.offer.url} className="flex min-w-0 flex-1 items-center gap-3 hover:underline">
+                <a href={part.offer.productKey ? productPath(part.offer.productKey) : part.offer.url}
+                  onClick={() => {
+                    if (!part.offer.productKey) trackActivity({ screen: 'budget', action: 'offer', category: slot, store: part.offer.store });
+                  }} className="flex min-w-0 flex-1 items-center gap-3 hover:underline">
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">
                       {part.qty && part.qty > 1 && <span className="font-semibold">{part.qty}x </span>}

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import Fastify from 'fastify';
 import { expect, it, vi } from 'vitest';
 import { configureGoogleLogin, registerAccountRoutes } from './account.ts';
+import { usageQuery, usageReport } from './admin/usage.ts';
 import { openDb } from './db/db.ts';
 
 it('aceita somente a URL configurada do callback em HTTPS ou localhost', () => {
@@ -65,6 +66,7 @@ it('usa state de uso único e PKCE, isola dados por conta e invalida a sessão a
     expect((await persist()).statusCode).toBe(401);
     expect((await saveCep('12345-678')).statusCode).toBe(401);
     expect((await account(await login('first'))).json().data).toEqual({ [body.key]: body.value });
+    expect(usageReport(db, usageQuery.parse({ person: 'first@example.com' })).recent.map((event) => event.action)).toEqual(['login', 'logout', 'login']);
   } finally {
     await app.close();
     db.close();

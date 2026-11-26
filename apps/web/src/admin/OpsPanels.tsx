@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { CATEGORY_DEFS, type ActivityInfo, type BackupFile, type MergeReport } from '@upgradezin/shared';
+import { ACTIVITY_ACTIONS, ACTIVITY_SCREENS, CATEGORY_DEFS, productPath, type ActivityInfo, type BackupFile, type MergeReport, type UsageReport } from '@upgradezin/shared';
 import { Database, Download, Trash2, Upload } from 'lucide-react';
 import { AdminError, adminApi, adminUpload } from './api.ts';
 import { formatWhen, mergeLines } from './format.ts';
-import { useLiveReload } from './live.ts';
+import { Pager } from './Pager.tsx';
+import { useLiveReload, watchLive } from './live.ts';
 
 type Props = { onUnauthorized: () => void };
 
@@ -23,7 +24,7 @@ const Stat = ({ label, value }: { label: string; value: ReactNode }) => (
   </div>
 );
 
-/** Atividade do site: buscas recentes (sem IP), conexões abertas e quem está no limite. */
+/** Uso do site e indicadores de busca em tempo real. */
 export function ActivityPanel({ onUnauthorized }: Props) {
   const [a, setA] = useState<ActivityInfo | null>(null);
   const load = useCallback(
@@ -37,45 +38,146 @@ export function ActivityPanel({ onUnauthorized }: Props) {
   const limits = a.atLimit.force + a.atLimit.text + a.atLimit.share;
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Buscas abertas agora" value={a.searchesOpen} />
         <Stat label="Telas de resultado abertas" value={a.watchesOpen} />
-        <Stat label="Pessoas desde o reinício" value={a.people} />
         <Stat
           label="No limite agora"
           value={limits ? `${limits} (atualizar ${a.atLimit.force}, texto ${a.atLimit.text}, links ${a.atLimit.share})` : 'ninguém'}
         />
       </div>
-      <Box title="Buscas recentes">
-        <p className="mb-2 text-xs text-zinc-500">Sem IP: cada pessoa aparece como um apelido que muda a cada reinício do servidor. Guardadas só em memória.</p>
-        {!a.recent.length ? (
-          <p className="text-sm text-zinc-500">Nenhuma busca desde o reinício.</p>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-zinc-500">
-              <tr>
-                {['Quando', 'Pessoa', 'Categoria', 'Termos', 'Lojas', ''].map((h) => (
-                  <th key={h} className="py-1.5 pr-3 font-medium">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {a.recent.map((r, i) => (
-                <tr key={i} className="border-t border-zinc-100 dark:border-zinc-800">
-                  <td className="py-1.5 pr-3">{formatWhen(r.at)}</td>
-                  <td className="py-1.5 pr-3 font-mono text-xs">{r.person}</td>
-                  <td className="py-1.5 pr-3">{CATEGORY_DEFS[r.category]?.name ?? r.category}</td>
-                  <td className="py-1.5 pr-3">{r.terms.join(', ')}</td>
-                  <td className="py-1.5 pr-3">{r.stores.join(', ')}</td>
-                  <td className="py-1.5 pr-3 text-xs text-zinc-500">{[r.text && 'texto livre', r.force && 'atualizar'].filter(Boolean).join(', ')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+      <UsagePanel onUnauthorized={onUnauthorized} />
+    </div>
+  );
+}
+
+const usageField = 'min-h-10 rounded-lg border border-zinc-300 bg-white px-3 dark:border-zinc-700 dark:bg-zinc-900';
+const activityCount = new Intl.NumberFormat('pt-BR');
+
+function UsagePanel({ onUnauthorized }: Props) {
+  const [filters, setFilters] = useState({ days: '7', person: '', screen: '', action: '' });
+  const [personInput, setPersonInput] = useState('');
+  const [page, setPage] = useState(1);
+  const [result, setResult] = useState<{ filters: string; page: number; report: UsageReport }>();
+  const [failed, setFailed] = useState('');
+  const params = new URLSearchParams(filters);
+  for (const key of ['person', 'screen', 'action']) if (!params.get(key)) params.delete(key);
+  const filterKey = params.toString();
+  params.set('page', String(page));
+  const query = params.toString();
+  const report = result?.filters === filterKey ? result.report : undefined;
+  const rows = result?.page === page ? report?.recent : undefined;
+
+  useEffect(() => {
+    let pending: AbortController | undefined;
+    const reload = () => {
+      pending?.abort();
+      const controller = new AbortController();
+      pending = controller;
+      void adminApi<UsageReport>(`/activity/usage?${query}`, { signal: controller.signal })
+        .then((data) => {
+          if (!controller.signal.aborted) {
+            setResult({ filters: filterKey, page, report: data });
+            setPage(Math.min(page, Math.max(1, Math.ceil(data.total / data.pageSize))));
+            setFailed('');
+          }
+        })
+        .catch((err) => {
+          if (controller.signal.aborted) return;
+          if (err instanceof AdminError && err.status === 401) onUnauthorized();
+          else setFailed(query);
+        });
+    };
+    reload();
+    const stop = watchLive([], reload, { fallbackMs: 15_000 });
+    return () => { stop(); pending?.abort(); };
+  }, [query, filterKey, page, onUnauthorized]);
+
+  const change = (key: keyof typeof filters, value: string) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+    setPage(1);
+  };
+  const ranking = (rows: { label: string; count: number }[]) => rows.length ? (
+    <ul className="max-h-72 space-y-1 overflow-y-auto text-sm">
+      {rows.map(({ label, count }) => <li key={label} className="flex justify-between gap-4 border-b border-zinc-100 py-1 dark:border-zinc-800">
+        <span>{label}</span><span className="tabular-nums">{activityCount.format(count)}</span>
+      </li>)}
+    </ul>
+  ) : <p className="text-sm text-zinc-500">Sem registros no período.</p>;
+
+  return (
+    <div className="space-y-4">
+      <Box title="Uso do site">
+        <form className="flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); change('person', personInput.trim()); }}>
+          <label className="grid gap-1 text-sm">Período
+            <select className={usageField} value={filters.days} onChange={(e) => change('days', e.target.value)}>
+              <option value="1">Últimas 24 horas</option>
+              {[7, 30, 90].map((days) => <option key={days} value={days}>Últimos {days} dias</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm">Tela
+            <select className={usageField} value={filters.screen} onChange={(e) => change('screen', e.target.value)}>
+              <option value="">Todas</option>
+              {Object.entries(ACTIVITY_SCREENS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm">Ação
+            <select className={`${usageField} max-w-full`} value={filters.action} onChange={(e) => change('action', e.target.value)}>
+              <option value="">Todas</option>
+              {Object.entries(ACTIVITY_ACTIONS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm">E-mail ou ID do visitante
+            <input className={usageField} value={personInput} onChange={(e) => setPersonInput(e.target.value)} maxLength={254} />
+          </label>
+          <button className={`${usageField} accent-control`} type="submit">Filtrar pessoa</button>
+          {filters.person && <button type="button" className={usageField} onClick={() => { setPersonInput(''); change('person', ''); }}>Limpar pessoa</button>}
+        </form>
+        {failed === query && <p role="status" className="mt-3 text-sm text-red-600 dark:text-red-400">Não foi possível carregar a atividade.</p>}
+        {!report && failed !== query && <p className="mt-3 text-sm text-zinc-500">Carregando…</p>}
+        {report && <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <Stat label="Eventos" value={activityCount.format(report.total)} />
+          <Stat label="Contas" value={activityCount.format(report.accounts)} />
+          <Stat label="IDs de visitantes" value={activityCount.format(report.visitors)} />
+        </div>}
       </Box>
+      {report && <>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Box title="Telas mais abertas">
+            {ranking(report.screens.map((r) => ({ label: ACTIVITY_SCREENS[r.screen], count: r.count })))}
+          </Box>
+          <Box title="Ações mais usadas">
+            {ranking(report.actions.map((r) => ({ label: `${ACTIVITY_ACTIONS[r.action]} · ${ACTIVITY_SCREENS[r.screen]}`, count: r.count })))}
+          </Box>
+        </div>
+        <Box title="Histórico de atividade">
+          <p className="mb-3 text-xs text-zinc-500">Histórico de até 90 dias. O ID dos visitantes muda quando o servidor reinicia.</p>
+          {rows?.length ? <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-zinc-500">
+                <tr>{['Quando', 'Pessoa', 'Tela', 'Ação', 'Detalhes'].map((label) => <th key={label} className="py-2 pr-3">{label}</th>)}</tr>
+              </thead>
+              <tbody>{rows.map((r) => <tr key={r.id} className="border-t border-zinc-100 dark:border-zinc-800">
+                <td className="whitespace-nowrap py-2 pr-3">{formatWhen(r.at)}</td>
+                <td className="py-2 pr-3">
+                  <button type="button" className="break-all text-left text-accent-700 hover:underline dark:text-accent-400" onClick={() => {
+                    setPersonInput(r.person);
+                    change('person', r.person);
+                  }}>{r.person}</button>
+                  {!r.signedIn && <span className="ml-2 text-xs text-zinc-500">Visitante</span>}
+                </td>
+                <td className="py-2 pr-3">{ACTIVITY_SCREENS[r.screen]}</td>
+                <td className="py-2 pr-3">{ACTIVITY_ACTIONS[r.action]}</td>
+                <td className="py-2 pr-3">
+                  {[r.category && CATEGORY_DEFS[r.category].name, r.mode && (r.mode === 'full' ? 'PC completo' : 'Upgrade'), r.store?.toUpperCase()].filter(Boolean).join(' · ')}
+                  {r.product && r.productTitle && <a className="block hover:underline" href={productPath(r.product)}>{r.productTitle}</a>}
+                </td>
+              </tr>)}</tbody>
+            </table>
+          </div> : <p className="text-sm text-zinc-500">{rows ? 'Nenhum evento nesta página.' : failed !== query ? 'Carregando página…' : 'Não foi possível carregar esta página.'}</p>}
+          {result && <Pager page={result.page} pageSize={report.pageSize} total={report.total} onPage={setPage} />}
+        </Box>
+      </>}
     </div>
   );
 }

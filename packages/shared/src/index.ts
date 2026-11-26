@@ -24,3 +24,4 @@ export * from './searchOptions.ts';
 export * from './cpuScore.ts';
 export * from './budget.ts';
 export * from './alerts.ts';
+export * from './activity.ts';

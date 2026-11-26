@@ -33,6 +33,8 @@ Fora do escopo: marketplaces abertos, usado/recondicionado, checkout, afiliados,
 
 No admin, fichas em revisão podem ser concluídas com campos pendentes e reabertas. O monitoramento do servidor continua ativo em qualquer aba do painel.
 
+A aba Atividade mostra as telas mais abertas, as ações mais usadas e um histórico filtrável dos últimos 90 dias. O painel identifica contas pelo e-mail e mantém o ID temporário para visitantes. A coleta começa quando a versão com esse recurso entra em uso.
+
 O PC atual pode ser informado marcando Já tenho nas peças da montagem ou importando um relatório do CPU-Z. Os dois caminhos alimentam o diagnóstico e as sugestões de upgrade. O relatório vira só o Meu PC e não mexe na montagem: ao importar, as peças marcadas como Já tenho saem da montagem (o espaço fica vazio).
 
 ### Implementadas
@@ -110,6 +112,7 @@ Migrações por `PRAGMA user_version` em `apps/server/src/db/db.ts`: só acresce
 | `shared_builds` | montagens compartilhadas por link |
 | `price_alerts` | alertas de preço de cada conta (um por produto; preço visto e se está armado) |
 | `notifications` | avisos que a rotina dos alertas grava para o site ler (as 50 últimas por conta, com a data de leitura) |
+| `usage_events` | visitas e ações do site com conta ou ID temporário de visitante, consultáveis no admin por até 90 dias |
 
 Tabelas antigas (`search_terms`, `term_runs`, `listing_terms`, `parts`, `part_codes`, `product_sheets`) foram removidas por migrações.
 

@@ -1,3 +1,4 @@
+import { trackActivity } from '../activity.ts';
 import { useState } from 'react';
 import { ChartLine, Check, Clock, Plus, Ticket, TrendingDown } from 'lucide-react';
 import { couponApplies, effectiveCash, ssdCapacityLabel, type Offer, type ProductGroup } from '@upgradezin/shared';
@@ -167,6 +168,7 @@ export function ProductCard({ group, compareCategory, compat, onPick, picked, re
           <li key={`${o.store}-${o.storeSku}`}>
             <a
               href={o.url}
+              onClick={() => trackActivity({ screen: 'results', action: 'offer', category: compareCategory, store: o.store, product: o.productKey })}
               target="_blank"
               rel="noreferrer"
               className={`flex items-center gap-2 px-4 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 ${i === 0 ? 'font-semibold' : ''}`}

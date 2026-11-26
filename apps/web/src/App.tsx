@@ -19,6 +19,7 @@ import { storeIds, storeName } from './stores.ts';
 import { settleStatus, useSearch, type Fresh, type SearchSnapshot } from './useSearch.ts';
 import { BuildView } from './components/BuildView.tsx';
 import { loadSharedBuild, sharedIdFromUrl, type SharedBuild } from './share.ts';
+import { trackActivity, useActivityView } from './activity.ts';
 import { loadUi, saveUi, screenFromUrl, screenUrl, type Screen } from './uiState.ts';
 import { clearPc, currentPc, fillPc, forgetPcBuild, loadPc, savePc, withoutOwned, withoutPcItems } from './pc.ts';
 import { PcAnalysis } from './components/PcAnalysis.tsx';
@@ -105,6 +106,7 @@ export function App() {
   const pc = useMemo(() => currentPc(report, build), [report, build]);
   const cpuLabel = pc?.cpu && ([pc.cpu.specs.cpuLine, pc.cpu.specs.cpuModel].filter(Boolean).join(' ') || pc.cpu.title);
   const importPc = (next: NonNullable<typeof report>) => {
+    trackActivity({ screen: 'pc', action: 'pcImport' });
     setReport(savePc(next));
     // O relatório vira o Meu PC e não monta nada; as marcações Já tenho (o PC informado à mão) saem da montagem.
     setBuild(withoutOwned);
@@ -126,6 +128,7 @@ export function App() {
     return id ? { id, state: 'loading' } : null;
   });
   const sharedId = shared?.id;
+  const [restoringSearch, setRestoringSearch] = useState(!!resumeAtStart && !sharedId);
   useEffect(() => {
     if (!sharedId) return;
     loadSharedBuild(sharedId)
@@ -136,6 +139,7 @@ export function App() {
     if (use && shared?.data) {
       const hasOwn = BUILD_SLOTS.some((s) => build[s]);
       if (hasOwn && !window.confirm('Trocar a sua montagem atual por esta?')) return;
+      trackActivity({ screen: 'shared', action: 'buildUse' });
       setBuild(sanitizeBuild(shared.data.build));
     }
     history.replaceState(null, '', '/');
@@ -168,7 +172,10 @@ export function App() {
   useEffect(() => {
     // A limpeza de useSearch também fecha a conexão quando o StrictMode repete a montagem.
     if (shared) return;
-    if (resumeAtStart) resumeSearch(resumeAtStart.c, resumeAtStart.filters);
+    if (resumeAtStart) {
+      resumeSearch(resumeAtStart.c, resumeAtStart.filters);
+      setRestoringSearch(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -242,6 +249,7 @@ export function App() {
   const budgetToBuild = (next: SavedBuild) => {
     const hasOwn = BUILD_SLOTS.some((s) => build[s] && !build[s]!.current) || build.extraDrives?.some((disk) => !disk.current);
     if (hasOwn && !window.confirm('Trocar a sua montagem atual por esta?')) return;
+    trackActivity({ screen: 'budget', action: 'budgetUse', mode: budgetOpen ?? undefined });
     setBuild(next);
     openBuild();
   };
@@ -252,6 +260,7 @@ export function App() {
    * compatibilidade conferir contra o que a pessoa tem.
    */
   const openUpgrade = (action: UpgradeAction) => {
+    trackActivity({ screen: 'pc', action: 'upgrade', category: action.slot });
     // As peças do PC só entram na conta da compatibilidade e dos filtros; a montagem não muda.
     const next = report ? fillPc(build, report) : build;
     setFromUpgrade(true);
@@ -283,6 +292,11 @@ export function App() {
   // trocar só a aba do orçamento substitui a entrada. Montagem aberta por link (/m/<id>) fica fora até sair dela.
   const screen: Screen = buildOpen ? { kind: 'build' } : pcOpen ? { kind: 'pc' } : budgetOpen ? { kind: 'budget', mode: budgetOpen }
     : category ? { kind: 'category', category } : { kind: 'home' };
+  useActivityView({
+    screen: shared ? 'shared' : screen.kind === 'category' ? (view === 'results' ? 'results' : 'search') : screen.kind,
+    category: !shared && screen.kind === 'category' ? screen.category : undefined,
+    mode: !shared && screen.kind === 'budget' ? screen.mode : undefined,
+  }, !restoringSearch);
   const url = screenUrl(screen);
   const historyRef = useRef({ first: true, fromHistory: false });
   useEffect(() => {
@@ -318,6 +332,7 @@ export function App() {
     if (!category) return;
     const plan = planSearch(category, filters);
     if (!plan.ready) return;
+    trackActivity({ screen: 'search', action: 'search', category });
     search(category, plan.terms, storeIds());
     // Loja volta a "todas"; a marca fica, porque o formulário pode tê-la escolhido.
     setFilters((f) => ({ ...f, stores: [] }));
@@ -338,6 +353,7 @@ export function App() {
    */
   const searchText = (text: string) => {
     if (!category) return;
+    trackActivity({ screen: 'results', action: 'search', category });
     const base = (lastTerms ?? []).filter((t) => t.toLowerCase() !== text.toLowerCase());
     search(category, [...base.slice(-(MAX_TERMS - 1)), text], storeIds(), true);
   };
@@ -405,6 +421,7 @@ export function App() {
 
   const pickPart = (g: Group) => {
     if (!pickSlot) return;
+    trackActivity({ screen: 'build', action: 'buildAdd', category: pickSlot, product: g.key });
     // Trocar a memória mantém a quantidade escolhida.
     setBuild((b) => pickSlot === 'ssd' ? editDrive(b, activeDrive, itemFromGroup(g)) : ({ ...b, [pickSlot]: { ...itemFromGroup(g), qty: b[pickSlot]?.qty } }));
     // Vindo da montagem, volta para ela; na busca comum, fica no resultado (o card mostra "Na montagem").
@@ -419,11 +436,21 @@ export function App() {
 
   /** Esquece o PC: apaga o relatório do CPU-Z e tira as marcações Já tenho da montagem (Gargalo e modal Meu PC). */
   const forgetPc = () => {
+    trackActivity({ screen: 'pc', action: 'pcForget' });
     clearPc();
     setReport(null);
     setBuild(forgetPcBuild);
   };
   const myPcButton = (wide = false) => <MyPcButton pc={pc} wide={wide} onAnalyze={openAnalysis} onImport={importPc} onManual={openBuild} onForget={forgetPc} />;
+
+  const lastFilterActivity = useRef(0);
+  const changeFilters = (next: Filters) => {
+    if (Date.now() - lastFilterActivity.current >= 2_000) {
+      lastFilterActivity.current = Date.now();
+      trackActivity({ screen: view === 'results' ? 'results' : 'search', action: 'filter', category: category ?? undefined });
+    }
+    setFilters(next);
+  };
 
   if (shared) {
     const data = shared.data;
@@ -534,6 +561,13 @@ export function App() {
               title={pc?.cpu?.title}>{cpuLabel}</span>}
           </button>
           <p className="mt-8 text-center text-xs text-zinc-400 dark:text-zinc-600">v{__APP_VERSION__}</p>
+          <details className="mt-2 text-center text-xs text-zinc-500">
+            <summary className="cursor-pointer">Dados de uso</summary>
+            <p className="mx-auto mt-1 max-w-lg">
+              Registramos telas e ações por até 90 dias para entender o uso do Upgradezin. O painel administrativo mostra
+              a atividade associada ao e-mail de quem entrou com Google ou a um identificador temporário de visitante.
+            </p>
+          </details>
         </div>
       </div>
     );
@@ -590,6 +624,7 @@ export function App() {
             psuTitle={!pc?.psu && build.psu?.current ? build.psu.title : undefined}
             onImport={importPc}
             onPsu={(psu) => {
+              trackActivity({ screen: 'pc', action: 'pcPsu', category: 'psu' });
               if (report) {
                 setReport(savePc({ ...report, psu }));
               }
@@ -612,23 +647,33 @@ export function App() {
             build={build}
             edit={{
               onOpen: openSlot,
-              onRemove: (s, index = 0) =>
+              onRemove: (s, index = 0) => {
+                trackActivity({ screen: 'build', action: 'buildRemove', category: s });
                 setBuild((b) => {
                   if (s === 'ssd') return editDrive(b, index);
                   const next = { ...b };
                   delete next[s];
                   return next;
-                }),
-              onQty: (s, qty) => setBuild((b) => (b[s] ? { ...b, [s]: { ...b[s]!, qty: Math.min(MAX_QTY, Math.max(1, qty)) } } : b)),
-              onClear: () => setBuild({}),
-              onOwned: (s, owned, index = 0) =>
+                });
+              },
+              onQty: (s, qty) => {
+                trackActivity({ screen: 'build', action: 'buildQuantity', category: s });
+                setBuild((b) => (b[s] ? { ...b, [s]: { ...b[s]!, qty: Math.min(MAX_QTY, Math.max(1, qty)) } } : b));
+              },
+              onClear: () => {
+                trackActivity({ screen: 'build', action: 'buildClear' });
+                setBuild({});
+              },
+              onOwned: (s, owned, index = 0) => {
+                trackActivity({ screen: 'build', action: 'buildOwned', category: s });
                 setBuild((b) => {
                   const selected = s === 'ssd' ? buildDrives(b)[index] : b[s];
                   if (!selected) return b;
                   const { current: _, ...item } = selected;
                   const next = owned ? { ...item, current: true as const } : item;
                   return s === 'ssd' ? editDrive(b, index, next) : { ...b, [s]: next };
-                }),
+                });
+              },
             }}
           />
         </main>
@@ -637,7 +682,7 @@ export function App() {
           <SearchSetup
             category={category}
             filters={filters}
-            onChange={setFilters}
+            onChange={changeFilters}
             onSearch={startSearch}
             onBack={hasResults ? () => setView('results') : undefined}
           />
@@ -658,7 +703,7 @@ export function App() {
               category={category}
               offers={offers}
               filters={filters}
-              onChange={setFilters}
+              onChange={changeFilters}
               onEditSearch={() => {
                 setShowFilters(false);
                 setView('setup');
@@ -682,7 +727,10 @@ export function App() {
               )}
               <select
                 value={sort}
-                onChange={(e) => setFilters({ ...filters, sort: e.target.value as Filters['sort'] })}
+                onChange={(e) => {
+                  trackActivity({ screen: 'results', action: 'sort', category });
+                  setFilters({ ...filters, sort: e.target.value as Filters['sort'] });
+                }}
                 className="ml-auto rounded-lg border border-zinc-300 bg-white px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
               >
                 <option value="price">Menor preço à vista</option>
@@ -699,7 +747,10 @@ export function App() {
             {compat && (
               <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={onlyCompatible} onChange={(e) => setOnlyCompatible(e.target.checked)} className="accent-accent-600" />
+                  <input type="checkbox" checked={onlyCompatible} onChange={(e) => {
+                    trackActivity({ screen: 'results', action: 'filter', category });
+                    setOnlyCompatible(e.target.checked);
+                  }} className="accent-accent-600" />
                   Só compatíveis com a montagem
                 </label>
                 {onlyCompatible && hiddenIncompatible > 0 && (
@@ -713,7 +764,7 @@ export function App() {
             {offers.length > 0 && (
               <LocalSearch
                 value={filters.text}
-                onChange={(text) => setFilters({ ...filters, text })}
+                onChange={(text) => changeFilters({ ...filters, text })}
                 suggestions={suggestions}
                 onSearchStores={!STORE_TEXT_SEARCH || running || lastTerms?.some((t) => t.toLowerCase() === filters.text.trim().replace(/s+/g, ' ').toLowerCase()) ? undefined : searchText}
               />
@@ -722,7 +773,7 @@ export function App() {
             {groups.length === 0 && hiddenByFilters > 0 && (
               <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
                 Os filtros estão escondendo {hiddenByFilters} ofertas.
-                <button className="font-medium underline" onClick={() => setFilters(resetResultFilters(filters, category))}>
+                <button className="font-medium underline" onClick={() => changeFilters(resetResultFilters(filters, category))}>
                   Limpar filtros
                 </button>
               </div>

@@ -102,10 +102,12 @@ const CSP = [
 
 export function registerSecurity(app: FastifyInstance): void {
   const general = new Limiter(config.RATE_LIMIT_PER_MIN, 60_000);
+  const usage = new Limiter(120, 60_000);
 
   app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/api/')) return;
-    if (!general.take(clientIp(req))) return reply.code(429).header('Retry-After', '60').send({ error: 'too-many-requests' });
+    const limiter = req.method === 'POST' && req.url === '/api/activity' ? usage : general;
+    if (!limiter.take(clientIp(req))) return reply.code(429).header('Retry-After', '60').send({ error: 'too-many-requests' });
   });
 
   app.addHook('onSend', async (_req, reply, payload) => {

@@ -1,3 +1,4 @@
+import { trackActivity } from '../activity.ts';
 import { useState, type ReactNode } from 'react';
 import { Check, Link2, Minus, Plus, RefreshCw, Trash2, Zap } from 'lucide-react';
 import { BUILD_SLOTS, CATEGORY_DEFS, checkBuild, effectiveCash, MAX_BUILD_DRIVES, type BuildIssue, type BuildSlot } from '@upgradezin/shared';
@@ -163,7 +164,9 @@ export function BuildView({ build, edit, header }: Props) {
                     {item.current && <div className="text-sm text-zinc-500 sm:text-right">Você já tem</div>}
                     {edit && item.offers.length > 0 && <OwnedSwitch on={!!item.current} onChange={(v) => edit.onOwned(slot, v, driveIndex)} />}
                     {offer && !item.current && (
-                      <a href={offer.url} target="_blank" rel="noreferrer" className="hover:underline sm:text-right">
+                      <a href={offer.url} onClick={() => trackActivity({
+                        screen: edit ? 'build' : 'shared', action: 'offer', category: slot, store: offer.store, product: offer.productKey,
+                      })} target="_blank" rel="noreferrer" className="hover:underline sm:text-right">
                         <div className="text-lg font-bold tabular-nums">{brl(effectiveCash(offer) * qty)}</div>
                         {qty > 1 && (
                           <div className="text-xs tabular-nums text-zinc-500">
@@ -289,6 +292,7 @@ function ShareButton({ build }: { build: SavedBuild }) {
       const url = saved?.json === json ? saved.url : shareUrl(await shareBuild(build));
       setSaved({ json, url });
       await navigator.clipboard.writeText(url);
+      trackActivity({ screen: 'build', action: 'buildShare' });
       setState('copied');
       setTimeout(() => setState((s) => (s === 'copied' ? 'idle' : s)), 2500);
     } catch {

@@ -11,7 +11,9 @@ import { nightlySchedule, startNightlySweep, stopNightlySweep } from './admin/ni
 import { listProducts } from './admin/products.ts';
 import { listSheetProducts, sheetPageText, sheetStoreStatus } from './admin/sheets.ts';
 import { AdminAuth, MIN_PASSWORD } from './admin/auth.ts';
-import { ActivityLog } from './admin/activity.ts';
+import { ActivityLog, personOf } from './admin/activity.ts';
+import { recordUsage } from './admin/usage.ts';
+import { registerBrowserActivity } from './activity.ts';
 import { Backups, MergeUploads } from './admin/backup.ts';
 import { attemptTimeline, coverage, perfGaps } from './admin/data.ts';
 import { listAttempts, onAttempt, pageAttempts } from './prices/attempts.ts';
@@ -21,7 +23,7 @@ import { SystemMonitor } from './admin/system.ts';
 import { browserOpen, closeBrowser } from './browser.ts';
 import { BUILD_ID, findSharedBuild, getSharedBuild, saveSharedBuild, SharedBuildSchema } from './builds/builds.ts';
 import { config } from './config.ts';
-import { configureGoogleLogin, registerAccountRoutes } from './account.ts';
+import { configureGoogleLogin, registerAccountRoutes, sessionAccount } from './account.ts';
 import { registerAlertRoutes, startAlertChecks } from './alerts.ts';
 import { emitChange } from './changes.ts';
 import { closeServer } from './shutdown.ts';
@@ -47,7 +49,7 @@ const VERSION: string = JSON.parse(readFileSync(new URL('../../../package.json',
 const app = Fastify({ logger: { level: 'info', serializers: {
   req: (req) => ({
     method: req.method,
-    url: req.url?.startsWith('/api/account/google/callback') ? '/api/account/google/callback' : req.url,
+    url: req.url?.startsWith('/api/account/google/callback') || req.url?.startsWith('/api/admin/activity/usage') ? req.url.split('?')[0] : req.url,
     hostname: req.hostname, remoteAddress: req.ip, remotePort: req.socket?.remotePort,
   }),
 } } });
@@ -137,6 +139,7 @@ if (!googleLogin && (config.GOOGLE_CLIENT_ID || config.GOOGLE_CLIENT_SECRET || c
 }
 registerAccountRoutes(app, getDb, googleLogin);
 registerAlertRoutes(app, getDb, ACTIVE_STORES, !!googleLogin);
+registerBrowserActivity(app, getDb, !!googleLogin);
 
 /** Últimas buscas do site, para a atividade do admin (sem IP). */
 const activity = new ActivityLog();
@@ -278,6 +281,12 @@ app.post('/api/upgrade/picks', { bodyLimit: 16 * 1024 }, async (req, reply) => {
 app.post('/api/budget/plan', { bodyLimit: 32 * 1024 }, async (req, reply) => {
   const r = budgetPlan(req.body, (slot, mode, now) => (ENABLED_CATEGORIES.includes(slot) ? budgetOffers(getDb(), slot, mode, ACTIVE_STORES, now) : []));
   if (!r.ok) return reply.code(400).send({ error: r.error });
+  const db = getDb();
+  const account = googleLogin && sessionAccount(db, req.headers.cookie);
+  recordUsage(db, account ? account.id : personOf(clientIp(req)), {
+    screen: 'budget', action: r.plan.status === 'ok' ? 'budgetRun' : 'budgetEmpty',
+    mode: (req.body as { owned?: unknown }).owned ? 'upgrade' : 'full',
+  }, req.log);
   return r.plan;
 });
 
@@ -433,7 +442,12 @@ app.get('/api/search/stream', async (req, reply) => {
   }
   // Passou do limite de "Atualizar": a busca responde com o que está no banco.
   const force = wantsForce && forceLimiter.take(ip);
-  activity.record({ at: new Date().toISOString(), ip, category: params.category, terms: params.terms, stores: params.stores, text: !!params.text, force });
+  const account = googleLogin && sessionAccount(getDb(), req.headers.cookie);
+  activity.record({
+    at: new Date().toISOString(), ip, category: params.category,
+    terms: params.terms.filter((term) => isFormTerm(params.category, term)),
+    stores: params.stores, text: !!params.text, force,
+  }, account?.email);
   emitChange('activity');
 
   reply.hijack();

@@ -10,6 +10,7 @@ import type { CollectNowResult } from './actions.ts';
 import { applyMerge, previewMerge, type Backups, type MergeUploads } from './backup.ts';
 import type { Db } from '../db/db.ts';
 import type { ServerStatus } from './status.ts';
+import { usageQuery, usageReport } from './usage.ts';
 
 /** O que as rotas do admin usam do servidor (injetado, para os testes montarem só o admin). */
 export interface AdminDeps {
@@ -382,6 +383,11 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
 
       // Atividade do site agora.
       admin.get('/activity', async () => deps.activity());
+      admin.get('/activity/usage', async (req, reply) => {
+        const query = usageQuery.safeParse(req.query);
+        if (!query.success) return reply.code(400).send({ error: 'invalid' });
+        return usageReport(deps.db(), query.data);
+      });
 
       // Ao vivo (SSE): as últimas consultas e cada nova, conforme acontecem.
       admin.get('/live', async (_req, reply) => {

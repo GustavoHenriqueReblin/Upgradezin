@@ -12,9 +12,9 @@ export class ActivityLog {
   private items: SearchActivity[] = [];
   constructor(private max = 500) {}
 
-  record(e: Omit<SearchActivity, 'person'> & { ip: string }): void {
+  record(e: Omit<SearchActivity, 'person'> & { ip: string }, email?: string): void {
     const { ip, ...rest } = e;
-    this.items.push({ ...rest, person: personOf(ip) });
+    this.items.push({ ...rest, person: email ?? personOf(ip) });
     if (this.items.length > this.max) this.items.splice(0, this.items.length - this.max);
   }
 

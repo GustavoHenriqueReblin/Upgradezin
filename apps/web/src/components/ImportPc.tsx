@@ -1,3 +1,4 @@
+import { useActivityView } from '../activity.ts';
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Cpu, ExternalLink, FileText, Upload, Wrench, X } from 'lucide-react';
@@ -46,6 +47,7 @@ const ERRORS: Record<Exclude<ReadResult, { ok: true }>['reason'], string> = {
 
 /** Importar o PC atual pelo relatório do CPU-Z: passo a passo, arquivo e o que foi lido. */
 export function ImportPc({ onClose, onApply, replacing = [], applyLabel = 'Usar na montagem', initial = null }: Props) {
+  useActivityView({ screen: 'importPc' });
   const [pc, setPc] = useState<PcProfile | null>(initial);
   // A fonte não está no relatório: vem do que a pessoa já informou antes (importar de novo não apaga).
   const [psu, setPsu] = useState<PsuForm>(() => formOf((initial ?? loadPc())?.psu));

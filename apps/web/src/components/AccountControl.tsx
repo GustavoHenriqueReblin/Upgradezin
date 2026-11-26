@@ -1,3 +1,4 @@
+import { trackActivity } from '../activity.ts';
 import { useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { LogIn, LogOut, MapPin, UserRound, X } from 'lucide-react';
 import { actionLabel, headerAction } from './HeaderActions.tsx';
@@ -46,6 +47,7 @@ export function AccountControl({ showLabel = false, separated = false, children 
       {user ? (
         <>
           <button type="button" onClick={() => {
+            trackActivity({ screen: 'account', action: 'view' });
             setCep(formatCep(user.cep ?? ''));
             setFeedback(undefined);
             setFailed(false);
@@ -82,6 +84,9 @@ export function AccountControl({ showLabel = false, separated = false, children 
               {feedback && <p role="status" className={`text-sm ${feedback.error ? 'text-red-600 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'}`}>{feedback.text}</p>}
             </form>
             <div className="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+              <p className="mb-3 text-xs text-zinc-500">
+                O Upgradezin registra telas e ações por até 90 dias para entender o uso do site. A atividade da conta aparece com seu e-mail no painel administrativo.
+              </p>
               <button type="button" onClick={() => void leave()} disabled={busy} className={button}>
                 <LogOut aria-hidden="true" className="h-4 w-4" /> Sair da conta
               </button>

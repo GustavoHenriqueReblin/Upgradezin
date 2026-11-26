@@ -194,7 +194,7 @@ describe('rotas /api/admin', () => {
     const app = makeApp();
     const cookie = cookieOf(await login(app));
     const s = (await app.inject({ url: '/api/admin/status', headers: { cookie } })).json();
-    expect(s).toMatchObject({ version: '9.9.9', browserOpen: false, activeSessions: 0, db: { file: ':memory:', migration: 19 } });
+    expect(s).toMatchObject({ version: '9.9.9', browserOpen: false, activeSessions: 0, db: { file: ':memory:', migration: 21 } });
     expect(s.uptimeS).toBeGreaterThanOrEqual(0);
     expect(s.memory.rssMb).toBeGreaterThan(0);
     // Monitor da máquina: só logado.
@@ -504,8 +504,14 @@ describe('rotas de backup, merge e atividade', () => {
 
   it('atividade responde com sessão', async () => {
     const app = makeApp();
+    expect((await app.inject({ url: '/api/admin/activity/usage' })).statusCode).toBe(401);
     const cookie = cookieOf(await login(app));
     expect((await app.inject({ url: '/api/admin/activity', headers: { cookie } })).json()).toMatchObject({ searchesOpen: 0, atLimit: { force: 0 } });
+    const usage = await app.inject({ url: '/api/admin/activity/usage', headers: { cookie } });
+    expect(usage.statusCode).toBe(200);
+    expect(usage.headers['cache-control']).toBe('no-store');
+    expect(usage.json()).toMatchObject({ screens: [], actions: [], recent: [] });
+    expect((await app.inject({ url: '/api/admin/activity/usage?days=91', headers: { cookie } })).statusCode).toBe(400);
   });
 
   it('canal ao vivo: avisa as telas quando algo muda pelo admin (não em leitura, recusa ou login) e manda os avisos como `change`', async () => {

@@ -1,3 +1,4 @@
+import { trackActivity, useActivityView } from '../activity.ts';
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ExternalLink, Ticket, TrendingDown } from 'lucide-react';
 import { CATEGORY_DEFS, effectiveCash, sheetRows, type Offer, type ProductPage as ProductPageData } from '@upgradezin/shared';
@@ -50,6 +51,7 @@ export function ProductPage({ productKey }: { productKey: string }) {
 const offerKey = (o: Offer) => `${o.store}-${o.storeSku}`;
 
 function Content({ page }: { page: ProductPageData }) {
+  useActivityView({ screen: 'product', category: page.category, product: page.key });
   // Padrão da busca: só o novo vendido pela própria loja; produto aberto e outros vendedores atrás do botão.
   const { rest, others, best, othersInStock, history } = useMemo(() => splitOffers(page.offers), [page.offers]);
   const [showOthers, setShowOthers] = useState(false);
@@ -84,6 +86,7 @@ function Content({ page }: { page: ProductPageData }) {
               <div className="flex flex-wrap items-center gap-2">
                 <a
                   href={best.url}
+                  onClick={() => trackActivity({ screen: 'product', action: 'offer', category: page.category, store: best.store, product: page.key })}
                   target="_blank"
                   rel="noreferrer"
                   className="button-link flex items-center gap-1.5 rounded-lg accent-control px-4 font-medium"
@@ -159,6 +162,7 @@ function OfferList({ offers }: { offers: Offer[] }) {
         <li key={offerKey(o)}>
           <a
             href={o.url}
+            onClick={() => trackActivity({ screen: 'product', action: 'offer', store: o.store, product: o.productKey })}
             target="_blank"
             rel="noreferrer"
             className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 ${o.inStock ? '' : 'opacity-60'}`}

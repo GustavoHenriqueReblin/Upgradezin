@@ -10,11 +10,12 @@ export class AdminError extends Error {
   }
 }
 
-export async function adminApi<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+export async function adminApi<T>(path: string, init: { method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
   const method = init.method ?? 'GET';
   const res = await fetch(`/api/admin${path}`, {
     method,
     credentials: 'same-origin',
+    signal: init.signal,
     headers: {
       ...(method !== 'GET' ? { 'X-Admin': '1' } : {}),
       ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),

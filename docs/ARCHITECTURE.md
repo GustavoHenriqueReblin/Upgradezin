@@ -381,6 +381,7 @@ Cada categoria tem uma lista fixa de campos, só o indispensável para quem mont
 | Método | Rota | Descrição |
 |---|---|---|
 | `GET` | `/api/version` | Versão do app (`{ version }`, do `package.json` da raiz; também no log ao subir e no rodapé da tela inicial). |
+| `POST` | `/api/activity` | Eventos do navegador com cabeçalho `X-Usage: 1`, corpo de até 1 KB e limite separado de 120 pedidos por minuto por IP. A identidade vem da sessão ou do ID temporário calculado pelo servidor. |
 | `GET` | `/api/stores` | Lojas configuradas: `id`, `name`, `search` (URL de busca com marcador), `color` e, com degradê, `colors`. |
 | `GET` | `/api/search/stream?category=psu&terms=750w,850w&stores=s1,s2` | SSE: eventos `status` (estado e motivo em código, nunca texto técnico; `cached` = resultado do banco, com a data da última volta da rotina), `offers` (`partial` = lote de uma página), `end`. Termos do formulário: só o banco, pelas specs ([§8.2](#82-preços-e-rotina-de-coleta)). `text=1` aceita um texto livre entre eles, que também vai às lojas com busca ao vivo ([§10](#10-segurança-e-privacidade)); `force=1` busca o texto de novo depois de `FORCE_MIN_AGE_MIN`. `terms` obrigatório (até 8): nunca a categoria inteira. Só aceita categorias habilitadas. Fechar a conexão para o envio para a tela; a consulta que já saiu termina e grava. |
 | `GET` | `/api/watch?category=cpu&terms=Core%20i5&stores=s1,s2,s3` | SSE de novidades para a tela de resultado aberta, desde o começo da busca. Toda coleta que grava no banco (rotina, varredura, loja que saiu da pausa, busca de outra pessoa) avisa por um evento interno (`prices/events.ts`); se for da categoria e de uma loja da busca, a rota manda a lista nova daquela loja (`offers`, a mesma conta da busca: termos + anúncios que batem pelas specs) e `fresh` (loja e quantas ofertas). Várias páginas seguidas viram uma lista só (1,5 s depois da última). Não consulta loja nenhuma. Ping a cada 25 s (o túnel fecha conexão parada); até `WATCHES_PER_IP` (4) por pessoa. |
@@ -459,7 +460,8 @@ Tela de quem opera o servidor, em pacote separado do app (carregado só em `/adm
 | `PUT` | `/api/admin/sheets/completion` | Marca ou reabre a conclusão manual por categoria e produto. Os campos da ficha são preservados. |
 | `GET` | `/api/admin/sheets/page?store=s1&sku=123` | Texto guardado da ficha de uma página, para conferir o que o leitor leu. |
 | `POST` | `/api/admin/products/:loja/:código/sheet` | "Ler ficha": abre a página do produto e lê a ficha de novo, mesmo já guardada, na fila da loja (na frente da rotina, com o intervalo e o limite por hora de sempre). Loja em pausa ou produto fora do catálogo: 409. Responde na hora. |
-| `GET` | `/api/admin/activity` | Buscas recentes do site (em memória, até 500; sem IP: `person` é um hash do IP com um valor aleatório que muda a cada subida), pessoas desde o reinício, buscas e telas abertas agora e quantas pessoas estão em cada limite. |
+| `GET` | `/api/admin/activity` | Buscas e telas abertas e quantas pessoas estão em cada limite. Inclui os dados anteriores de buscas em memória para compatibilidade, com os termos reconhecidos do formulário e a identidade da sessão ou o ID temporário. |
+| `GET` | `/api/admin/activity/usage` | Rankings de telas e ações, contagem de contas e IDs de visitantes, e histórico de 50 eventos por página. Filtros por 1, 7, 30 ou 90 dias, tela, ação e e-mail ou ID exato. Exige sessão de admin e responde sem cache. |
 | `GET` | `/api/admin/live` | SSE: as últimas 50 consultas e cada nova conforme acontece (evento `attempt`) e avisos de mudança (evento `change`, `{ kind }`: `store` quando uma loja começa ou termina uma página ou entra/sai de pausa, `admin` depois de cada mudança pelo admin que deu certo, `activity` a cada busca no site; `changes.ts`). As telas do admin usam uma conexão só (`web/src/admin/live.ts`, `useLiveReload`) e recarregam o que mostram ao receber o aviso que as interessa; também ao voltar para a aba e, por garantia, de tempos em tempos. |
 | `GET`/`POST` | `/api/admin/backups` | Lista `data/backups` / cria backup (`VACUUM INTO` comprimido, `manual-AAAA-MM-DD-HHMMSS.db.gz`). |
 | `GET`/`DELETE` | `/api/admin/backups/:name` | Baixa / apaga um backup (nome sem caminho; outro: 404). |
@@ -472,6 +474,14 @@ Tela de quem opera o servidor, em pacote separado do app (carregado só em `/adm
 - **Abas:** Servidor (status e "Máquina agora": CPU, memória, rede, disco e processos lidos do /proc a cada 2 s enquanto o admin estiver aberto, em qualquer aba do painel, admin/system.ts), Coleta (rotina com um switch e o intervalo de listagens por loja, painel de cada loja com a fila (consultando agora e quantas consultas prioritárias e da rotina esperam), a contagem até a próxima consulta, pausas e "varredura completa" (com a categoria em leitura); atualiza a cada 5 s), Consultas (linha do tempo de 48 h e registro com filtros, paginado), Cobertura, Produtos (catálogo paginado), Fichas (rotina de fichas com o intervalo de fichas de cada loja, cobertura por categoria e os produtos com os campos lidos, de onde veio cada um, o texto guardado e "Ler ficha". Fichas "Precisa de Você" podem ser concluídas manualmente e reabertas), Atividade, Lojas (configuração) e Backups (com o merge).
 - **Registro de consultas** (`store_attempts`, `prices/attempts.ts`): cada consulta que vai à loja (busca por texto, página de categoria, ficha técnica) grava loja, fim, tipo, origem (`search`, `routine`, `admin`), categoria, termo ou página, resultado (`ok`, `partial`, `blocked`, `limit`, `error`), ofertas, motivo e mensagem do bloqueio e duração; a que nem saiu (loja em pausa, cancelada) não entra. Guardado por 90 dias. Falha ao gravar o registro nunca derruba a coleta.
 - Respostas com `Cache-Control: no-store`. Código em `apps/server/src/admin/` (rotas montadas como plugin, testadas com `inject`) e `apps/web/src/admin/`.
+
+O histórico persistente da Atividade usa a tabela `usage_events` (migração 20). A navegação e ações locais são registradas pelo navegador. Login, saída, mudanças nos alertas e resultados de orçamento são registrados quando o servidor confirma a operação. A busca restaurada e o acompanhamento automático de preços não contam como novas buscas iniciadas. Mudanças em filtros da busca são agrupadas em intervalos de dois segundos.
+
+A migração 21 acrescenta a coluna de produto às bases que receberam a primeira versão da tabela de eventos, preservando o histórico.
+
+O histórico usa o componente de paginação das outras tabelas do admin, abaixo da listagem. Alterar o período ou outro filtro volta à primeira página.
+
+O evento armazena o ID interno da conta. A resposta ao admin consulta o e-mail atual na tabela de contas. Sem sessão válida, o servidor usa o mesmo hash curto do IP com sal por execução. IDs de visitantes podem se repetir entre pessoas da mesma rede e mudam no reinício. O servidor exclui eventos fora dos 90 dias na inicialização e em uma limpeza diária. O histórico começa com a implantação da coleta.
 
 ## 10. Segurança e privacidade
 
@@ -488,6 +498,7 @@ Tela de quem opera o servidor, em pacote separado do app (carregado só em `/adm
 - Servidor escuta em `127.0.0.1` por padrão, sem abrir portas. Acesso de fora pelo link temporário do `cloudflared` (serviço do túnel no servidor) ou por VPN mesh.
 - Admin: login fixo do `.env`, sessão em cookie protegido, limite de tentativas e cabeçalho obrigatório contra requisição forjada ([§9.3](#93-admin-admin)).
 - Contas de usuário: login opcional com Google e sessão separada do admin. A configuração OAuth e a validação com um cliente real ainda são necessárias.
+- Os eventos de uso ficam no próprio SQLite. As categorias, modos e lojas saem das opções previstas no código. Chaves de produto são aceitas quando existem no catálogo. O histórico persistente não registra IP bruto, texto digitado, CEP ou conteúdo de arquivos do CPU-Z. O e-mail exibido no admin fica na conta e o filtro de pessoa é omitido do log HTTP.
 
 ## 11. Stack e estrutura
 

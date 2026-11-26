@@ -1,3 +1,4 @@
+import { trackActivity } from '../activity.ts';
 import { useEffect, useState } from 'react';
 import { ArrowRight, ChartColumn } from 'lucide-react';
 import { productPath, type UpgradeAction, type UpgradePick } from '@upgradezin/shared';
@@ -59,6 +60,9 @@ export function UpgradePicks({ action }: { action: UpgradeAction }) {
             <li key={`${p.offer.store}:${p.offer.storeSku}`}>
               <a
                 href={p.offer.productKey ? productPath(p.offer.productKey) : p.offer.url}
+                onClick={() => {
+                  if (!p.offer.productKey) trackActivity({ screen: 'pc', action: 'offer', category: action.slot, store: p.offer.store });
+                }}
                 {...(!p.offer.productKey && { target: '_blank', rel: 'noopener noreferrer' })}
                 className="flex items-center gap-3 px-3 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
               >

@@ -4,6 +4,7 @@ import {
   ALERT_KINDS, ALERT_LIMIT, alertMet, alertPrice, evaluateAlert, type AlertKind, type AlertNotification, type CategoryId, type PriceAlert, type StoreId,
 } from '@upgradezin/shared';
 import { requestAccount } from './account.ts';
+import { recordUsage } from './admin/usage.ts';
 import type { Db } from './db/db.ts';
 import { onCollected } from './prices/events.ts';
 import { REBUILD_DELAY_MS } from './prices/identity.ts';
@@ -160,13 +161,18 @@ export function registerAlertRoutes(app: FastifyInstance, getDb: () => Db, store
       armed: kind === 'drop' || !alertMet(rule, price), createdAt: existing?.created_at ?? now,
     };
     saveRow(db, user.id, alert);
+    recordUsage(db, user.id, { screen: 'alerts', action: 'alertSave', category: page.category, product: page.key }, req.log);
     return { alert };
   });
 
   app.delete('/api/account/alerts/:key', async (req, reply) => {
     const user = await account(true)(req, reply);
     if (!user) return reply;
-    getDb().prepare('DELETE FROM price_alerts WHERE account_id = ? AND product_key = ?').run(user.id, (req.params as { key: string }).key);
+    const db = getDb();
+    const { key } = req.params as { key: string };
+    const removed = db.prepare('DELETE FROM price_alerts WHERE account_id = ? AND product_key = ? RETURNING category')
+      .get(user.id, key) as Pick<PriceAlert, 'category'> | undefined;
+    if (removed) recordUsage(db, user.id, { screen: 'alerts', action: 'alertRemove', category: removed.category, product: key }, req.log);
     return reply.code(204).send();
   });
 
