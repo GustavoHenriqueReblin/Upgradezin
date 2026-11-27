@@ -13,7 +13,7 @@ import { SHEET_FIELDS, type SheetField, type SheetValue, type SheetValues } from
 /** Versão do leitor da resposta: mudou, o servidor relê as respostas guardadas (recupera o que o leitor antigo perdia). */
 export const WEB_PARSER_VERSION = 4;
 /** Versão da pergunta: mudou, os produtos que ficaram para uma pessoa voltam à web uma vez (o servidor faz ao subir). */
-export const WEB_PROMPT_VERSION = 3;
+export const WEB_PROMPT_VERSION = 4;
 
 /** Uma chave do JSON de resposta. */
 export interface WebKey {

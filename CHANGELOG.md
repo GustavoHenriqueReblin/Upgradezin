@@ -12,7 +12,7 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 - Busca na web: gabinete, cooler, fonte, placa-mãe e memória buscam em fichas técnicas de lojas e análises o que o fabricante não divulga (o máximo de ventoinhas de um gabinete ficava para uma pessoa com a resposta na internet).
 
-- Busca na web: cooler sem TDP oficial (o fabricante usa métrica própria) busca nas análises do TechPowerUp quantos watts ele dissipa; numa faixa, fica o menor valor.
+- Busca na web: cooler sem TDP oficial (o fabricante usa métrica própria) busca nas análises do TechPowerUp quantos watts ele dissipa; numa faixa, fica o menor valor. Com a pergunta nova (versão 4), os campos que a web deixou sem valor voltam a ela mais uma vez.
 
 ## [1.0.0] - 2026-11-26
 
