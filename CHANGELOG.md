@@ -10,6 +10,10 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 - Busca na web: placa de vídeo, processador e SSD buscam no TechPowerUp o que o fabricante não divulga (o clock base de uma RX 9070 ficava para uma pessoa com a resposta na internet). Com a pergunta nova, todo campo que a web deixou sem valor volta a ela uma vez, não só os dos produtos que já estavam em "precisa de você" (o produto com um campo novo ainda a perguntar ficava de fora).
 
+- Busca na web: gabinete, cooler, fonte, placa-mãe e memória buscam em fichas técnicas de lojas e análises o que o fabricante não divulga (o máximo de ventoinhas de um gabinete ficava para uma pessoa com a resposta na internet).
+
+- Busca na web: cooler sem TDP oficial (o fabricante usa métrica própria) busca nas análises do TechPowerUp quantos watts ele dissipa; numa faixa, fica o menor valor.
+
 ## [1.0.0] - 2026-11-26
 
 - A página inicial e as páginas de produto abrem diretamente na interface do app. A versão em HTML simples aparece apenas com JavaScript desativado.

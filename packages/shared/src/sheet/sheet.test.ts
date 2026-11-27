@@ -788,10 +788,16 @@ it('web: código do chip das AMD antigas pelo nome (RX 580 "Ellesmere")', () => 
   expect(read('chip grande')).toEqual({});
 });
 
-it('web: placa de vídeo, processador e SSD buscam no TechPowerUp o que o fabricante não divulga; os demais, só no fabricante', () => {
+it('web: placa de vídeo, processador e SSD buscam no TechPowerUp o que o fabricante não divulga; os demais, em fichas de lojas e análises', () => {
   expect(webPrompt('gpu', 'Placa de Vídeo Asus Prime Radeon RX 9070 EVO OC, 16GB', ['baseMhz'])).toContain('pelo site do fabricante ou, no que ele não divulgar, pelo TechPowerUp.');
   expect(webPrompt('cpu', 'Processador AMD Ryzen 5 5600', ['l3Mb'])).toContain('TechPowerUp');
   expect(webPrompt('case', 'Gabinete X Mid Tower', ['fansMax'])).not.toContain('TechPowerUp');
+  // Cooler sem TDP oficial (Noctua): as análises do TechPowerUp dizem quanto ele dissipa.
+  const cooler = webPrompt('cooler', 'Water Cooler Noctua NL-LC1-36, 360mm, PWM', ['tdpW']);
+  expect(cooler).toContain('por análises (TechPowerUp) e fichas técnicas de lojas.');
+  expect(cooler).toContain('quantos watts as análises mostram que ele dissipa (o menor, se for faixa)');
+  expect(parseWebReply('cooler', JSON.stringify({ produto: 'X', tdp_w: '250 a 300', confianca: 'alta' }))?.values).toEqual({ tdpW: 250 });
+  expect(webPrompt('case', 'Gabinete ABKO G31 Omegaforce', ['fansMax'])).toContain('pelo site do fabricante ou, no que ele não divulgar, por fichas técnicas de lojas e análises.');
 });
 
 it('web: do código completo do chip fica o do chip ("GB206-250-A1", "Navi 44 XT")', () => {

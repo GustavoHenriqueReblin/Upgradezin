@@ -275,7 +275,13 @@ const NOUN: Record<CategoryId, string> = {
  * Onde buscar o que o fabricante não divulga: placa de vídeo, processador e SSD têm bases técnicas com a ficha completa (o clock base
  * da RX 9070 EVO não está no site do fabricante, mas está no TechPowerUp). Só "pelo site do fabricante", a IA respondia null.
  */
-const TECH_DB: Partial<Record<CategoryId, string>> = Object.fromEntries((['gpu', 'cpu', 'ssd'] as const).map((c) => [c, ' ou, no que ele não divulgar, pelo TechPowerUp']));
+const TECH_DB: Partial<Record<CategoryId, string>> = {
+  ...Object.fromEntries((['gpu', 'cpu', 'ssd'] as const).map((c) => [c, ' ou, no que ele não divulgar, pelo TechPowerUp'])),
+  // Cooler: o TechPowerUp não tem base, mas tem análises com a carga que ele dissipa (fabricante que não divulga TDP, como a Noctua).
+  cooler: ' ou, no que ele não divulgar, por análises (TechPowerUp) e fichas técnicas de lojas',
+};
+/** Sem base técnica (gabinete, cooler, fonte, placa-mãe, memória): fichas de lojas e análises (o máximo de ventoinhas de um gabinete ABKO). */
+const OTHER_SOURCES = ' ou, no que ele não divulgar, por fichas técnicas de lojas e análises';
 
 /**
  * O pedido: preencher as chaves selecionadas da categoria com as especificações do produto,
@@ -291,7 +297,7 @@ export function webPrompt(category: CategoryId, title: string, fields?: readonly
         category === 'ssd' ? 'Use a mesma capacidade e o mesmo código do SSD. ' :
         category === 'case' ? 'Procure folgas da GPU e do cooler e posições de radiador na tabela técnica. ' :
         category === 'cpu' ? 'Sem turbo: clock_boost_ghz igual ao clock_base_ghz. ' :
-        category === 'cooler' ? 'tdp_w: o TDP máximo suportado que o fabricante ou as lojas divulgam ("suporta até 250 W"). ' :
+        category === 'cooler' ? 'tdp_w: o TDP máximo suportado que o fabricante ou as lojas divulgam ("suporta até 250 W"); sem isso, quantos watts as análises mostram que ele dissipa (o menor, se for faixa). ' :
         category === 'gpu' ? 'Sem boost: clock_boost_mhz igual ao clock_base_mhz. ' : '')
     : ' ';
   const legend = keys
@@ -301,7 +307,7 @@ export function webPrompt(category: CategoryId, title: string, fields?: readonly
   // Listas também começam em null: assim [] na resposta quer dizer "não tem" (e não "não preenchi").
   const template = JSON.stringify({ produto: name, ...Object.fromEntries(keys.map((k) => [k.key, null])), confianca: null });
   return (
-    `Preencha este JSON com as especificações ${NOUN[category]} ${name}, pelo site do fabricante${TECH_DB[category] ?? ''}.${search}` +
+    `Preencha este JSON com as especificações ${NOUN[category]} ${name}, pelo site do fabricante${TECH_DB[category] ?? OTHER_SOURCES}.${search}` +
     'Não invente: o que não achar fica null. Se o produto não tem o recurso (sem Wi-Fi, sem conector de 16 pinos, sem suporte a radiador), responda "Não", 0, false ou []; null só quando não souber. ' +
     'Números sem unidade; listas com os itens. confianca: alta, media ou baixa. ' +
     (legend ? `Opções: ${legend}. ` : '') +
