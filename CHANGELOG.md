@@ -4,6 +4,8 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+- Busca na web, a partir da revisão das fichas "precisam de você" em produção: o leitor da resposta passa a aceitar os formatos que a IA usa de fato (PCIe como número, ventoinhas em lista de objetos, dissipador do VRM e XMP descritos em texto, "Não" como "não tem", fases do VRM com 5 grupos, Bluetooth "5", "12V-2x6", soquete com a marca, faixas reais de shaders, banda, TBW e cooler); a pergunta cobre o compartilhamento de linhas do M.2 e o código do chip, e dá a pista do TDP suportado do cooler. Ao subir, o servidor relê as respostas guardadas (na cópia de produção de 26/11: 347 valores recuperados) e os produtos que continuarem em "precisa de você" voltam à web uma vez com a pergunta nova (588 na mesma cópia).
+
 ## [1.0.0] - 2026-11-26
 
 - A página inicial e as páginas de produto abrem diretamente na interface do app. A versão em HTML simples aparece apenas com JavaScript desativado.

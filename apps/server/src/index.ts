@@ -35,7 +35,7 @@ import { activeSessions, canReadSheet } from './prices/collect.ts';
 import { listingBrands, listingsHistory, recentOffers } from './prices/prices.ts';
 import { productPage } from './prices/product-page.ts';
 import { rereadSheets, setManualSheet, setSheetCompletion, SHEET_SCOPE_DAYS, sheetCoverage, syncSheetTables } from './prices/sheets.ts';
-import { askNextNow, clearWebPause, rereadWebAnswers, setWebFill, startWebFill, stopWebFill, useWebFillStorage, webAnswers, webFillStatus } from './prices/web-fill.ts';
+import { askNextNow, clearWebPause, requeueHumanReview, rereadWebAnswers, setWebFill, startWebFill, stopWebFill, useWebFillStorage, webAnswers, webFillStatus } from './prices/web-fill.ts';
 import { startProductKeys } from './prices/identity.ts';
 import { setSheetRoutine, sheetNextAt, sheetRoutineBusy, sheetRoutineSettings, startSheetRoutine, stopSheetRoutine, useSheetRoutineStorage } from './prices/sheet-routine.ts';
 import { routineInfo, routineSettings, setRoutineSettings, startRoutine, stopRoutine, useRoutineStorage } from './prices/routine.ts';
@@ -117,6 +117,9 @@ const SearchQuery = z.object({
   if (reread) app.log.info(`Fichas: ${reread} página(s) relida(s) com o leitor atual.`);
   const web = rereadWebAnswers(db);
   if (web.changed || web.requeued) app.log.info(`Busca na web: ${web.changed} resposta(s) relida(s) com valor novo; ${web.requeued} sem resposta de volta à fila.`);
+  // Depois de reler: o que ainda ficou para uma pessoa volta à web uma vez com a pergunta nova.
+  const back = requeueHumanReview(db);
+  if (back) app.log.info(`Busca na web: ${back} produto(s) de "precisa de você" de volta à fila com a pergunta nova.`);
   // Lojas: do banco (admin); na primeira vez, copiadas do .env.
   const seeded = useStoreStorage(db);
   if (seeded) app.log.info(`Lojas: ${seeded} copiada(s) do .env para o banco; daqui em diante, edite no admin (/admin).`);

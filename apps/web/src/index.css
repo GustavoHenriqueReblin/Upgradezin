@@ -68,6 +68,49 @@ body {
   background: var(--color-zinc-950);
 }
 
+/*
+ * Barra de rolagem do app: fina, nos cinzas quentes do tema, mais clara com o mouse sobre a área que rola. Vale para a
+ * página e para tudo que rola dentro dela (modais, tabelas, listas). Firefox e Chrome/Edge 121+ usam as propriedades
+ * padrão; o Safari, as ::-webkit-scrollbar (que o Chrome ignora quando as padrão estão definidas). A página (html) fica
+ * com a cor de repouso: ela está sempre sob o mouse.
+ */
+:root {
+  --scrollbar-thumb: var(--color-zinc-700);
+  --scrollbar-thumb-hover: var(--color-zinc-600);
+  --scrollbar-track: transparent;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+body *:hover {
+  scrollbar-color: var(--scrollbar-thumb-hover) var(--scrollbar-track);
+}
+html {
+  scrollbar-color: var(--scrollbar-thumb) var(--color-zinc-950);
+}
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
 @layer components {
   .accent-control {
     @apply border border-accent-500 bg-accent-100 text-accent-900;

@@ -98,7 +98,7 @@ function UsagePanel({ onUnauthorized }: Props) {
     setPage(1);
   };
   const ranking = (rows: { label: string; count: number }[]) => rows.length ? (
-    <ul className="max-h-72 space-y-1 overflow-y-auto text-sm">
+    <ul className="max-h-72 space-y-1 overflow-y-auto text-sm pr-4">
       {rows.map(({ label, count }) => <li key={label} className="flex justify-between gap-4 border-b border-zinc-100 py-1 dark:border-zinc-800">
         <span>{label}</span><span className="tabular-nums">{activityCount.format(count)}</span>
       </li>)}
@@ -130,7 +130,7 @@ function UsagePanel({ onUnauthorized }: Props) {
           <label className="grid gap-1 text-sm">E-mail ou ID do visitante
             <input className={usageField} value={personInput} onChange={(e) => setPersonInput(e.target.value)} maxLength={254} />
           </label>
-          <button className={`${usageField} accent-control`} type="submit">Filtrar pessoa</button>
+          <button className={`${usageField} text-sm accent-control`} type="submit">Filtrar pessoa</button>
           {filters.person && <button type="button" className={usageField} onClick={() => { setPersonInput(''); change('person', ''); }}>Limpar pessoa</button>}
         </form>
         {failed === query && <p role="status" className="mt-3 text-sm text-red-600 dark:text-red-400">Não foi possível carregar a atividade.</p>}

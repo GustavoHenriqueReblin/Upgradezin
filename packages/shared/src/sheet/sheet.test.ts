@@ -735,3 +735,47 @@ describe('"não tem" × "não sei" e os campos novos', () => {
     expect(parseWebReply('gpu', '{"produto":"X","conectores_alimentacao":"2 x 8-pin","confianca":"media"}')?.values).toEqual({ powerConnectors: '2x 8 pinos' });
   });
 });
+
+describe('web: formatos reais que o leitor perdia (fichas "precisam de você", nov/2026)', () => {
+  const read = (category: Parameters<typeof parseWebReply>[0], fields: Record<string, unknown>, question?: string) =>
+    parseWebReply(category, JSON.stringify({ produto: 'X', ...fields, confianca: 'alta' }), question)?.values ?? {};
+
+  it('número onde a opção é "4.0": PCIe do M.2 e do slot x16, geração do SSD', () => {
+    expect(read('motherboard', { m2_pcie_versao: 5, pcie_x16_versao: '4' })).toEqual({ m2Pcie: '5.0', pcieX16: '4.0' });
+    expect(read('ssd', { geracao_pcie: 4 })).toEqual({ pcieGen: '4.0' });
+  });
+
+  it('contagem que veio como lista: soma as quantidades ou conta os itens', () => {
+    expect(read('cooler', { ventoinhas: [{ quantidade: 3, dimensoes: '120x120' }, { quantidade: 1, dimensoes: '70x70' }] })).toEqual({ fans: 4 });
+    expect(read('cooler', { ventoinhas: ['F140P'] })).toEqual({ fans: 1 });
+    expect(read('psu', { conectores_cpu_eps: ['4+4p'] })).toEqual({ eps: 1 });
+  });
+
+  it('sim/não descrito em texto ou número: dissipador, XMP/EXPO, cache DRAM', () => {
+    expect(read('motherboard', { dissipador_vrm: 'VRM Thermal Armor Advanced' })).toEqual({ vrmHeatsink: true });
+    expect(read('ram', { xmp: 'Intel XMP 2.0', expo: 'Intel XMP 3.0' })).toEqual({ xmp: true }); // XMP não é EXPO
+    expect(read('ssd', { cache_dram: 256 })).toEqual({ dram: true });
+    expect(read('ssd', { cache_dram: 0 })).toEqual({ dram: false });
+  });
+
+  it('"não tem" escrito de outro jeito; fases com 5 grupos; Bluetooth "5"; conector só pelo nome; soquete com a marca', () => {
+    expect(read('psu', { conectores_16_pinos: 'Não' })).toEqual({ pcie16: 0 });
+    expect(read('gpu', { conectores_alimentacao: 0 })).toEqual({ powerConnectors: 'Não' });
+    expect(read('gpu', { conectores_alimentacao: ['12V-2x6'] })).toEqual({ powerConnectors: '1x 16 pinos' });
+    expect(read('motherboard', { fases_vrm: '20+1+2+1+1', bluetooth_versao: 5 })).toEqual({ vrmPhases: '20+1+2+1+1', bluetooth: '5.0' });
+    expect(read('cooler', { soquetes: ['Intel LGA1155', 'AMD AM3+'] })).toEqual({ sockets: 'LGA1155,AM3+' });
+  });
+
+  it('faixas e opções que eram apertadas demais; frente pelas palavras; formato 2,5 pol', () => {
+    expect(read('gpu', { nucleos_cuda_ou_stream: 48, largura_banda_gbs: 8 })).toEqual({ shaders: 48, bandwidthGbs: 8 });
+    expect(read('ssd', { durabilidade_tbw: 109500, formato: '2,5 pol' })).toEqual({ tbw: 109500, formFactor: '2,5"' });
+    expect(read('case', { cooler_max_mm: 210, frente: 'Vidro Temperado Frontal e Lateral' })).toEqual({ maxCoolerMm: 210, front: 'Vidro' });
+    expect(read('cooler', { ventoinha_mm: 135, heatpipes: 0 })).toEqual({ fanMm: 140, heatpipes: 0 });
+  });
+
+  it('campos que a web passou a perguntar: compartilhamento do M.2 e código do chip', () => {
+    expect(read('motherboard', { m2_desativa_portas_sata: true, m2_divide_linhas_do_slot_x16: false })).toEqual({ m2SharesSata: true, m2SharesGpu: false });
+    expect(read('gpu', { codigo_do_chip: 'ad107' })).toEqual({ silicon: 'AD107' });
+    expect(webPrompt('cooler', 'Water Cooler X 360', ['tdpW'])).toContain('TDP máximo suportado');
+  });
+});

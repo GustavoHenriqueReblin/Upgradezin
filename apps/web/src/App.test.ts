@@ -57,6 +57,13 @@ it('aplica a altura compartilhada às ações, inclusive aos links com estilo de
   expect(styles).toMatch(/:is\(button,[^\n]+\.button-link\):not\(\[data-button-layout\]\)\s*\{\s*min-block-size: var\(--button-height\)/);
 });
 
+it('barra de rolagem do tema em todos os navegadores: padrão (fina, nas cores do tema) e a do Safari', () => {
+  const styles = readFileSync(new URL('./index.css', import.meta.url), 'utf8');
+  expect(styles).toMatch(/\*\s*\{\s*scrollbar-width: thin;\s*scrollbar-color: var\(--scrollbar-thumb\) var\(--scrollbar-track\);/);
+  expect(styles).toMatch(/html\s*\{\s*scrollbar-color: var\(--scrollbar-thumb\) var\(--color-zinc-950\);/);
+  expect(styles).toMatch(/@supports not \(scrollbar-color: auto\)\s*\{\s*::-webkit-scrollbar\s*\{/);
+});
+
 it('reserva a largura total para os contêineres principais do admin', () => {
   const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
   const admin = readFileSync(new URL('./admin/Admin.tsx', import.meta.url), 'utf8');

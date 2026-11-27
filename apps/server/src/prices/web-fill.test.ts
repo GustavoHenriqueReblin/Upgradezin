@@ -9,7 +9,7 @@ import { saveCollection } from './prices.ts';
 import { webKeys, webPrompt } from '@upgradezin/shared';
 import { listSheetProducts } from '../admin/sheets.ts';
 import { catalogProducts, productSheet, savePage, setManualSheet, setSheetCompletion, sheetCoverage } from './sheets.ts';
-import { askNextNow, askWeb, clearWebPause, EMPTY_RETRY_MS, EMPTY_TRIES, googlePage, googleUrl, rereadWebAnswers, webAnswers, webFillStatus, webQueue } from './web-fill.ts';
+import { askNextNow, askWeb, clearWebPause, EMPTY_RETRY_MS, EMPTY_TRIES, googlePage, googleUrl, requeueHumanReview, rereadWebAnswers, webAnswers, webFillStatus, webQueue } from './web-fill.ts';
 
 afterEach(() => {
   usePageLoader(null);
@@ -167,7 +167,7 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
     db.close();
   });
 
-  it('opcional que a web não pergunta (código do chip) não segura o produto fora do "precisa de você"', () => {
+  it('com a web já perguntada de todos os campos em aberto, o produto vai para "precisa de você"; com a pergunta nova, volta à web uma vez', () => {
     const db = openDb(':memory:');
     const offer = { store: 's1', storeSku: 'g', title: 'Placa de Video Marca GeForce GTX 750 Ti, 4GB', url: 'https://s1.example/g', priceCash: 500, inStock: true, specs: {}, modelKey: 'g', collectedAt: '' } as Offer;
     saveCollection(db, { store: 's1', category: 'gpu', offers: [offer], at: new Date().toISOString() });
@@ -178,8 +178,14 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
     const insert = db.prepare(`INSERT INTO sheet_web (product_key, field, category, title, question, answer, value, status, store, asked_at) VALUES (?, ?, 'gpu', 't', 'q', '{}', NULL, 'none', 's1', '2026-11-25')`);
     for (const f of [...before!.missing, ...before!.gaps]) if (askable.has(f)) insert.run(before!.key, f);
     const [after] = catalogProducts(db, 'gpu', '2000-01-01');
-    expect(after!.gaps).toContain('silicon'); // continua vazio (a web não pergunta)
+    expect(after!.gaps).toContain('silicon'); // continua vazio (a web respondeu null)
     expect(after!.needsHuman).toBe(true);
+    // Um campo que a web respondeu fica; a pergunta mudou: os sem valor voltam à fila uma vez (e só uma).
+    db.prepare(`INSERT INTO sheet_web (product_key, field, category, title, question, answer, value, status, store, asked_at) VALUES (?, 'chip', 'gpu', 't', 'q', '{}', '"GM107"', 'ok', 's1', '2026-11-25')`).run(before!.key);
+    expect(requeueHumanReview(db, Date.now(), true)).toBe(1);
+    expect(db.prepare('SELECT field FROM sheet_web WHERE product_key = ?').all(before!.key)).toEqual([{ field: 'chip' }]);
+    expect(webQueue(db).map((q) => q.key)).toContain(before!.key);
+    expect(requeueHumanReview(db)).toBe(0); // a mesma versão: não repete
     db.close();
   });
 

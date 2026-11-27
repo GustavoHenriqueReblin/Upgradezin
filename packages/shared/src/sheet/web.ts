@@ -11,7 +11,9 @@ import { SHEET_FIELDS, type SheetField, type SheetValue, type SheetValues } from
  */
 
 /** Versão do leitor da resposta: mudou, o servidor relê as respostas guardadas (recupera o que o leitor antigo perdia). */
-export const WEB_PARSER_VERSION = 2;
+export const WEB_PARSER_VERSION = 3;
+/** Versão da pergunta: mudou, os produtos que ficaram para uma pessoa voltam à web uma vez (o servidor faz ao subir). */
+export const WEB_PROMPT_VERSION = 2;
 
 /** Uma chave do JSON de resposta. */
 export interface WebKey {
@@ -28,6 +30,8 @@ export interface WebKey {
   item?: (s: string) => string | undefined;
   /** "Não tem" do campo (lista vazia na resposta vale isto). */
   none?: SheetValue;
+  /** Sim/não: texto que descreve o recurso conta como sim ("VRM Thermal Armor" no dissipador, "XMP 2.0" no XMP). */
+  truthy?: RegExp;
 }
 
 /** Faixa pela unidade do campo. */
@@ -42,14 +46,16 @@ const RANGE: Record<string, [number, number]> = {
   bits: [32, 1024],
   'MB/s': [50, 20000],
   CL: [4, 60],
-  'GB/s': [10, 3000],
-  TBW: [10, 30000],
+  'GB/s': [1, 3000],
+  // SSDs de IA chegam a 100 mil TBW (1 TB).
+  TBW: [10, 250000],
 };
 
 const opts = (...xs: string[]) => Object.fromEntries(xs.map((x) => [x.toLowerCase(), x]));
 const socket = (s: string) => {
   const m = s
     .toUpperCase()
+    .replace(/^(INTEL|AMD)\s*/, '')
     .replace(/[\s-]/g, '')
     .match(/^(?:LGA)?(1851|1700|1200|1151|1150|1155|1156|2066|2011|1366|775)$|^(AM5|AM4|AM3\+?|AM2\+?|FM2\+?|FM1|TR4|STRX4|STR5)$/);
   return m ? (m[1] ? `LGA${m[1]}` : m[2]) : undefined;
@@ -67,16 +73,23 @@ const board = (s: string) =>
 /** "Não tem" num campo de texto: "não", "nao", "nenhum", "sem". */
 const NO = /^(n[aã]o( possui| tem)?|nenhum|sem|none|no)$/i;
 /** Bluetooth: a versão ("5.3") ou "Não". */
-const btItem = (s: string) => (NO.test(s.trim()) ? 'Não' : s.match(/\d\.\d/)?.[0]);
-/** Fases do VRM: "14+2+1" (sem espaços). */
-const phases = (s: string) => s.replace(/\s/g, '').match(/^\d{1,2}(\+\d{1,2}){0,3}$/)?.[0];
+const btItem = (s: string) => (NO.test(s.trim()) ? 'Não' : s.match(/\d\.\d/)?.[0] ?? (/^\d$/.test(s.trim()) ? `${s.trim()}.0` : undefined));
+/** Fases do VRM: "14+2+1" (sem espaços; placas topo têm até 5 grupos, "20+1+2+1+1"). */
+const phases = (s: string) => s.replace(/\s/g, '').match(/^\d{1,2}(\+\d{1,2}){0,5}$/)?.[0];
 /** Conectores de alimentação da placa de vídeo: "1x 8 pinos", "2x 8 pinos", "1x 16 pinos" ou "Não". */
 const powerItem = (s: string) => {
   if (NO.test(s.trim())) return 'Não';
   const t = s.toLowerCase().replace(/12v-?2x6|12vhpwr|12\s*\+\s*4/g, '16');
   const items = [...t.matchAll(/(?:(\d)\s*x\s*)?(16|8|6\s*\+\s*2|6)\s*-?\s*(?:pinos?|pins?)/g)].map((m) => `${m[1] ?? 1}x ${m[2]!.replace(/\s/g, '')} pinos`);
+  // Só o nome do conector de 16 pinos ("12V-2x6", "12VHPWR").
+  if (!items.length && /12v-?2x6|12vhpwr/i.test(s)) return '1x 16 pinos';
   return items.length ? items.join(' + ') : undefined;
 };
+/** Frente do gabinete pelas palavras da resposta ("Vidro Temperado Frontal e Lateral" -> "Vidro"). */
+const frontItem = (s: string) => /mesh|tela|perfura/i.test(s) ? 'Mesh' : /vidro|glass/i.test(s) ? 'Vidro' : /acr[ií]l/i.test(s) ? 'Acrílico'
+  : /fechad|s[oó]lid|met[aá]l|alum[ií]n|pl[aá]stic|\babs\b/i.test(s) ? 'Fechada' : undefined;
+/** Código do chip da placa de vídeo ("AD107", "GB206", "Navi 44"). */
+const siliconItem = (s: string) => s.trim().toUpperCase().replace(/\s+/g, ' ').match(/^(?:[A-Z]{1,4}\d{2,3}[A-Z]?|NAVI \d{2})$/)?.[0];
 const radiator = (s: string) => (['120', '140', '240', '280', '360', '420', '480'].includes(s.replace(/\D/g, '')) ? s.replace(/\D/g, '') : undefined);
 
 /** As chaves de cada categoria: nome da chave, opções e normalização (o tipo e a faixa vêm do campo). */
@@ -110,11 +123,14 @@ const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>
     wifi: { key: 'wifi', options: opts('Wi-Fi 5', 'Wi-Fi 6', 'Wi-Fi 6E', 'Wi-Fi 7', 'Wi-Fi', 'Não') },
     bluetooth: { key: 'bluetooth_versao', item: btItem },
     vrmPhases: { key: 'fases_vrm', item: phases },
-    vrmHeatsink: { key: 'dissipador_vrm' },
-    biosFlashback: { key: 'bios_flashback' },
+    vrmHeatsink: { key: 'dissipador_vrm', truthy: /dissip|heat ?sink|armor|aleta|heat-?pipe|t[eé]rmic|thermal/i },
+    biosFlashback: { key: 'bios_flashback', truthy: /flash ?back|q-?flash|bios ?flash/i },
+    m2SharesSata: { key: 'm2_desativa_portas_sata' },
+    m2SharesGpu: { key: 'm2_divide_linhas_do_slot_x16' },
   },
   gpu: {
     chip: { key: 'chip' },
+    silicon: { key: 'codigo_do_chip', item: siliconItem },
     vramGb: { key: 'vram_gb', min: 1, max: 48 },
     memType: { key: 'tipo_memoria', options: opts('GDDR5', 'GDDR5X', 'GDDR6', 'GDDR6X', 'GDDR7') },
     busBits: { key: 'barramento_bits' },
@@ -127,7 +143,7 @@ const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>
     power16Pin: { key: 'conector_16_pinos' },
     fans: { key: 'ventoinhas', min: 0, max: 4 },
     architecture: { key: 'arquitetura', options: opts('Blackwell', 'Ada Lovelace', 'Ampere', 'Turing', 'Pascal', 'NVIDIA Kepler', 'RDNA 4', 'RDNA 3', 'RDNA 2', 'RDNA', 'Polaris', 'Battlemage', 'Alchemist') },
-    shaders: { key: 'nucleos_cuda_ou_stream', min: 128, max: 32768 },
+    shaders: { key: 'nucleos_cuda_ou_stream', min: 16, max: 32768 },
     bandwidthGbs: { key: 'largura_banda_gbs' },
     powerConnectors: { key: 'conectores_alimentacao', item: powerItem },
   },
@@ -137,18 +153,18 @@ const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>
     type: { key: 'tipo', options: opts('DDR3', 'DDR4', 'DDR5') },
     mhz: { key: 'frequencia_mhz', min: 800, max: 12000 },
     cl: { key: 'latencia_cl' },
-    xmp: { key: 'xmp' },
-    expo: { key: 'expo' },
+    xmp: { key: 'xmp', truthy: /xmp/i },
+    expo: { key: 'expo', truthy: /expo/i },
   },
   ssd: {
     capacityGb: { key: 'capacidade_gb', min: 60, max: 16000 },
-    formFactor: { key: 'formato', options: opts('M.2 2280', 'M.2 2242', 'M.2 2230', '2,5"', 'mSATA') },
+    formFactor: { key: 'formato', options: { ...opts('M.2 2280', 'M.2 2242', 'M.2 2230', '2,5"', 'mSATA'), '2.5"': '2,5"', '2,5 pol': '2,5"', '2.5 pol': '2,5"', '2,5': '2,5"', '2.5': '2,5"' } },
     interface: { key: 'interface', options: opts('SATA', 'NVMe PCIe 3.0', 'NVMe PCIe 4.0', 'NVMe PCIe 5.0') },
     readMbs: { key: 'leitura_mbs' },
     writeMbs: { key: 'gravacao_mbs' },
     pcieGen: { key: 'geracao_pcie', options: opts('3.0', '4.0', '5.0', 'Não') },
     nand: { key: 'tipo_nand', options: opts('SLC', 'MLC', 'TLC', 'QLC') },
-    dram: { key: 'cache_dram' },
+    dram: { key: 'cache_dram', truthy: /dram|ddr|cache/i },
     tbw: { key: 'durabilidade_tbw' },
   },
   psu: {
@@ -181,9 +197,9 @@ const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>
     formFactor: { key: 'tamanho', options: opts('Mid Tower', 'Mini Tower', 'Full Tower', 'Micro Tower', 'SFF') },
     mbFormats: { key: 'placas_mae', item: board },
     maxGpuMm: { key: 'placa_de_video_max_mm', min: 150, max: 600 },
-    maxCoolerMm: { key: 'cooler_max_mm', min: 50, max: 200 },
+    maxCoolerMm: { key: 'cooler_max_mm', min: 50, max: 300 },
     dimensions: { key: 'dimensoes_mm' },
-    front: { key: 'frente', options: opts('Mesh', 'Vidro', 'Fechada', 'Acrílico', 'Acrílico e ABS') },
+    front: { key: 'frente', item: frontItem, options: opts('Mesh', 'Vidro', 'Fechada', 'Acrílico', 'Acrílico e ABS') },
     fansIncluded: { key: 'ventoinhas_inclusas', min: 0, max: 12 },
     fansMax: { key: 'ventoinhas_max', min: 1, max: 20 },
     radiators: { key: 'radiadores_mm', item: radiator },
@@ -196,8 +212,8 @@ const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>
     noiseDba: { key: 'ruido_dba' },
     sockets: { key: 'soquetes', item: socket },
     fans: { key: 'ventoinhas', min: 1, max: 6 },
-    heatpipes: { key: 'heatpipes', min: 1, max: 12 },
-    fanMm: { key: 'ventoinha_mm', options: opts('80', '92', '120', '140', '200') },
+    heatpipes: { key: 'heatpipes', min: 0, max: 12 },
+    fanMm: { key: 'ventoinha_mm', options: { ...opts('80', '92', '120', '140', '200'), 90: '92', 135: '140', 150: '140' } },
   },
 };
 
@@ -257,10 +273,11 @@ export function webPrompt(category: CategoryId, title: string, fields?: readonly
   const identity = [known.brand, known.model].filter((v) => typeof v === 'string' && /[a-z]/i.test(v)).join(' ');
   const search = fields
     ? ` Confirme a variante pelo título ("${title.slice(0, 180)}")${identity ? ` e pela identificação ("${identity.slice(0, 100)}")` : ''}. Busque também no manual ou datasheet. `
-      + (category === 'motherboard' ? 'Separe o slot gráfico x16 do M.2. ' :
+      + (category === 'motherboard' ? 'Separe o slot gráfico x16 do M.2. Pelo manual: true se usar um M.2 desliga portas SATA ou divide as linhas do slot x16. ' :
         category === 'ssd' ? 'Use a mesma capacidade e o mesmo código do SSD. ' :
         category === 'case' ? 'Procure folgas da GPU e do cooler e posições de radiador na tabela técnica. ' :
         category === 'cpu' ? 'Sem turbo: clock_boost_ghz igual ao clock_base_ghz. ' :
+        category === 'cooler' ? 'tdp_w: o TDP máximo suportado que o fabricante ou as lojas divulgam ("suporta até 250 W"). ' :
         category === 'gpu' ? 'Sem boost: clock_boost_mhz igual ao clock_base_mhz. ' : '')
     : ' ';
   const legend = keys
@@ -334,6 +351,22 @@ const toNumber = (v: unknown): number | undefined => {
 /** O valor de uma chave, validado pelo tipo, pelas opções e pela faixa (undefined: fora). */
 export function acceptWebValue(k: WebKey, v: unknown): SheetValue | undefined {
   if (v === null || v === undefined || v === '') return undefined;
+  // "Não tem" escrito de outro jeito ("Não", false, 0 num campo de texto) vale o "não tem" do campo.
+  if (k.none !== undefined && k.type !== 'bool' && (v === false || (typeof v === 'string' && NO.test(v.trim())) || (v === 0 && k.type !== 'int' && k.type !== 'real'))) return k.none;
+  // Número numa lista de opções "4.0" ("4" ou 4 = PCIe 4.0).
+  if (k.options && (typeof v === 'number' || /^\d+$/.test(String(v).trim())) && k.options[`${String(v).trim()}.0`] !== undefined && k.options[String(v).trim()] === undefined) {
+    return k.options[`${String(v).trim()}.0`];
+  }
+  // Contagem que veio como lista: soma as quantidades ({"quantidade": 3, ...}) ou conta os itens.
+  if ((k.type === 'int' || k.type === 'real') && Array.isArray(v)) {
+    const qty = v.map((x) => (x && typeof x === 'object' ? toNumber((x as Record<string, unknown>).quantidade ?? (x as Record<string, unknown>).quantity) : undefined));
+    const n = qty.every((q) => q !== undefined) ? qty.reduce<number>((t, q) => t + q!, 0) : v.length;
+    return acceptWebValue(k, n);
+  }
+  if (k.type === 'bool') {
+    if (typeof v === 'number') return v > 0;
+    if (typeof v === 'string' && k.truthy?.test(v) && !NO.test(v.trim())) return true;
+  }
   if (k.type === 'list') {
     const items = (Array.isArray(v) ? v : String(v).split(/[,;]|\s\/\s/)).map((x) => String(x).trim()).filter(Boolean);
     const ok = [...new Set(items.map((x) => (k.item ? k.item(x) : x)).filter((x): x is string => !!x))];
@@ -343,7 +376,7 @@ export function acceptWebValue(k: WebKey, v: unknown): SheetValue | undefined {
   if (k.options) {
     // Também com a unidade no fim ("480 mm" para a opção "480").
     const s = String(v).trim().toLowerCase();
-    const o = k.options[s] ?? k.options[s.replace(/\s*mm$/, '')];
+    const o = k.options[s] ?? k.options[s.replace(/\s*mm$/, '')] ?? (k.item ? k.item(String(v)) : undefined);
     // Campo numérico com opções (radiador): o valor é o número, não o texto da opção.
     return o !== undefined && (k.type === 'int' || k.type === 'real') ? Number(o) : o;
   }

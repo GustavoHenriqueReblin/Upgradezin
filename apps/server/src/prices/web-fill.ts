@@ -4,6 +4,7 @@ import {
   STORE_INTERVAL_S_MAX,
   STORE_INTERVAL_S_MIN,
   WEB_PARSER_VERSION,
+  WEB_PROMPT_VERSION,
   webKeys,
   webPrompt,
   type CategoryId,
@@ -355,6 +356,31 @@ export function rereadWebAnswers(db: Db, force = false): { changed: number; requ
     db.exec('ROLLBACK');
     throw err;
   }
+}
+
+/**
+ * A pergunta mudou (WEB_PROMPT_VERSION): os produtos que ficaram para uma pessoa ("precisa de você") voltam à web uma vez.
+ * Só os campos sem valor saem de sheet_web (os que a web já respondeu ficam) e entram de novo na fila, com a pergunta nova.
+ * Devolve quantos produtos voltaram.
+ */
+export function requeueHumanReview(db: Db, now = Date.now(), force = false): number {
+  const stamp = String(WEB_PROMPT_VERSION);
+  if (!force && getMeta(ready(db), 'web-prompt') === stamp) return 0;
+  const since = webSince(now);
+  const unanswered = db.prepare('DELETE FROM sheet_web WHERE product_key = ? AND value IS NULL');
+  let products = 0;
+  db.exec('BEGIN');
+  try {
+    for (const category of ENABLED_CATEGORIES) {
+      for (const p of catalogProducts(db, category, since)) if (p.needsHuman && Number(unanswered.run(p.key).changes) > 0) products++;
+    }
+    setMeta(db, 'web-prompt', stamp);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  return products;
 }
 
 const valueText = (r: WebAnswer) =>
