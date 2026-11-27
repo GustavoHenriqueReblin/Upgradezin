@@ -11,7 +11,7 @@ import { SHEET_FIELDS, type SheetField, type SheetValue, type SheetValues } from
  */
 
 /** Versão do leitor da resposta: mudou, o servidor relê as respostas guardadas (recupera o que o leitor antigo perdia). */
-export const WEB_PARSER_VERSION = 3;
+export const WEB_PARSER_VERSION = 4;
 /** Versão da pergunta: mudou, os produtos que ficaram para uma pessoa voltam à web uma vez (o servidor faz ao subir). */
 export const WEB_PROMPT_VERSION = 2;
 
@@ -88,8 +88,14 @@ const powerItem = (s: string) => {
 /** Frente do gabinete pelas palavras da resposta ("Vidro Temperado Frontal e Lateral" -> "Vidro"). */
 const frontItem = (s: string) => /mesh|tela|perfura/i.test(s) ? 'Mesh' : /vidro|glass/i.test(s) ? 'Vidro' : /acr[ií]l/i.test(s) ? 'Acrílico'
   : /fechad|s[oó]lid|met[aá]l|alum[ií]n|pl[aá]stic|\babs\b/i.test(s) ? 'Fechada' : undefined;
-/** Código do chip da placa de vídeo ("AD107", "GB206", "Navi 44"). */
-const siliconItem = (s: string) => s.trim().toUpperCase().replace(/\s+/g, ' ').match(/^(?:[A-Z]{1,4}\d{2,3}[A-Z]?|NAVI \d{2})$/)?.[0];
+/** Código do chip das AMD mais antigas: nome em vez de letras e número ("Ellesmere" da RX 580, "Polaris 20"). */
+const AMD_CODENAME = /^(?:ellesmere|baffin|lexa|polaris \d{2}|vega \d{2}|tonga|fiji|hawaii|tahiti|pitcairn|bonaire|oland|cape verde)$/i;
+/** Código do chip da placa de vídeo ("AD107", "GB206", "Navi 44", "Ellesmere"). */
+const siliconItem = (s: string) => {
+  const t = s.trim().replace(/\s+/g, ' ');
+  if (AMD_CODENAME.test(t)) return t.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+  return t.toUpperCase().match(/^(?:[A-Z]{1,4}\d{2,3}[A-Z]?|NAVI \d{2})$/)?.[0];
+};
 const radiator = (s: string) => (['120', '140', '240', '280', '360', '420', '480'].includes(s.replace(/\D/g, '')) ? s.replace(/\D/g, '') : undefined);
 
 /** As chaves de cada categoria: nome da chave, opções e normalização (o tipo e a faixa vêm do campo). */

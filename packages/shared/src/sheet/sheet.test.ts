@@ -779,3 +779,11 @@ describe('web: formatos reais que o leitor perdia (fichas "precisam de você", n
     expect(webPrompt('cooler', 'Water Cooler X 360', ['tdpW'])).toContain('TDP máximo suportado');
   });
 });
+
+it('web: código do chip das AMD antigas pelo nome (RX 580 "Ellesmere")', () => {
+  const read = (v: unknown) => parseWebReply('gpu', JSON.stringify({ produto: 'X', codigo_do_chip: v, confianca: 'alta' }))?.values ?? {};
+  expect(read('Ellesmere')).toEqual({ silicon: 'Ellesmere' });
+  expect(read('POLARIS 20')).toEqual({ silicon: 'Polaris 20' });
+  expect(read('Navi 23')).toEqual({ silicon: 'NAVI 23' });
+  expect(read('chip grande')).toEqual({});
+});
