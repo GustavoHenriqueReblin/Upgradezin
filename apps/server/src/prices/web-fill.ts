@@ -359,9 +359,10 @@ export function rereadWebAnswers(db: Db, force = false): { changed: number; requ
 }
 
 /**
- * A pergunta mudou (WEB_PROMPT_VERSION): os produtos que ficaram para uma pessoa ("precisa de você") voltam à web uma vez.
- * Só os campos sem valor saem de sheet_web (os que a web já respondeu ficam) e entram de novo na fila, com a pergunta nova.
- * Devolve quantos produtos voltaram.
+ * A pergunta mudou (WEB_PROMPT_VERSION): os campos que a web deixou sem valor voltam a ela uma vez, com a pergunta nova. Vale para
+ * todo produto, não só para o que já está em "precisa de você": o que ainda tinha um campo novo a perguntar (código do chip) não
+ * estava lá na hora, e o campo antigo sem resposta ficava para uma pessoa depois. Os que a web respondeu ficam; a ficha completada à
+ * mão fica como está. Devolve quantos produtos voltaram.
  */
 export function requeueHumanReview(db: Db, now = Date.now(), force = false): number {
   const stamp = String(WEB_PROMPT_VERSION);
@@ -372,7 +373,7 @@ export function requeueHumanReview(db: Db, now = Date.now(), force = false): num
   db.exec('BEGIN');
   try {
     for (const category of ENABLED_CATEGORIES) {
-      for (const p of catalogProducts(db, category, since)) if (p.needsHuman && Number(unanswered.run(p.key).changes) > 0) products++;
+      for (const p of catalogProducts(db, category, since)) if (!p.completedManually && Number(unanswered.run(p.key).changes) > 0) products++;
     }
     setMeta(db, 'web-prompt', stamp);
     db.exec('COMMIT');

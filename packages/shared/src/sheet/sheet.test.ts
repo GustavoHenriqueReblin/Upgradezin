@@ -787,3 +787,19 @@ it('web: código do chip das AMD antigas pelo nome (RX 580 "Ellesmere")', () => 
   expect(read('Navi 23')).toEqual({ silicon: 'NAVI 23' });
   expect(read('chip grande')).toEqual({});
 });
+
+it('web: placa de vídeo, processador e SSD buscam no TechPowerUp o que o fabricante não divulga; os demais, só no fabricante', () => {
+  expect(webPrompt('gpu', 'Placa de Vídeo Asus Prime Radeon RX 9070 EVO OC, 16GB', ['baseMhz'])).toContain('pelo site do fabricante ou, no que ele não divulgar, pelo TechPowerUp.');
+  expect(webPrompt('cpu', 'Processador AMD Ryzen 5 5600', ['l3Mb'])).toContain('TechPowerUp');
+  expect(webPrompt('case', 'Gabinete X Mid Tower', ['fansMax'])).not.toContain('TechPowerUp');
+});
+
+it('web: do código completo do chip fica o do chip ("GB206-250-A1", "Navi 44 XT")', () => {
+  const read = (v: unknown) => parseWebReply('gpu', JSON.stringify({ produto: 'X', codigo_do_chip: v, confianca: 'alta' }))?.values ?? {};
+  expect(read('GB206-250-A1')).toEqual({ silicon: 'GB206' });
+  expect(read('GB206-300-A1')).toEqual({ silicon: 'GB206' });
+  expect(read('AD104-400')).toEqual({ silicon: 'AD104' });
+  expect(read('Navi 44 XT ')).toEqual({ silicon: 'NAVI 44' });
+  expect(read('Navi 31 XTX')).toEqual({ silicon: 'NAVI 31' });
+  expect(read('GB206 ou GB207')).toEqual({});
+});

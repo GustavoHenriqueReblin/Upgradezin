@@ -13,7 +13,7 @@ import { SHEET_FIELDS, type SheetField, type SheetValue, type SheetValues } from
 /** Versão do leitor da resposta: mudou, o servidor relê as respostas guardadas (recupera o que o leitor antigo perdia). */
 export const WEB_PARSER_VERSION = 4;
 /** Versão da pergunta: mudou, os produtos que ficaram para uma pessoa voltam à web uma vez (o servidor faz ao subir). */
-export const WEB_PROMPT_VERSION = 2;
+export const WEB_PROMPT_VERSION = 3;
 
 /** Uma chave do JSON de resposta. */
 export interface WebKey {
@@ -94,7 +94,9 @@ const AMD_CODENAME = /^(?:ellesmere|baffin|lexa|polaris \d{2}|vega \d{2}|tonga|f
 const siliconItem = (s: string) => {
   const t = s.trim().replace(/\s+/g, ' ');
   if (AMD_CODENAME.test(t)) return t.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-  return t.toUpperCase().match(/^(?:[A-Z]{1,4}\d{2,3}[A-Z]?|NAVI \d{2})$/)?.[0];
+  // Do código completo fica o do chip: "GB206-250-A1" (variante e revisão) -> "GB206"; "Navi 44 XT" -> "NAVI 44".
+  const u = t.toUpperCase();
+  return u.match(/^[A-Z]{1,4}\d{2,3}[A-Z]?(?=$|-\d{3}(?:-[A-Z]\d)?$)/)?.[0] ?? u.match(/^NAVI \d{2}(?=$| (?:XTX|XT|XL|GRE)$)/)?.[0];
 };
 const radiator = (s: string) => (['120', '140', '240', '280', '360', '420', '480'].includes(s.replace(/\D/g, '')) ? s.replace(/\D/g, '') : undefined);
 
@@ -270,6 +272,12 @@ const NOUN: Record<CategoryId, string> = {
 };
 
 /**
+ * Onde buscar o que o fabricante não divulga: placa de vídeo, processador e SSD têm bases técnicas com a ficha completa (o clock base
+ * da RX 9070 EVO não está no site do fabricante, mas está no TechPowerUp). Só "pelo site do fabricante", a IA respondia null.
+ */
+const TECH_DB: Partial<Record<CategoryId, string>> = Object.fromEntries((['gpu', 'cpu', 'ssd'] as const).map((c) => [c, ' ou, no que ele não divulgar, pelo TechPowerUp']));
+
+/**
  * O pedido: preencher as chaves selecionadas da categoria com as especificações do produto,
  * com as opções das chaves fechadas e as regras curtas (o pedido vai no endereço da busca).
  */
@@ -293,7 +301,7 @@ export function webPrompt(category: CategoryId, title: string, fields?: readonly
   // Listas também começam em null: assim [] na resposta quer dizer "não tem" (e não "não preenchi").
   const template = JSON.stringify({ produto: name, ...Object.fromEntries(keys.map((k) => [k.key, null])), confianca: null });
   return (
-    `Preencha este JSON com as especificações ${NOUN[category]} ${name}, pelo site do fabricante.${search}` +
+    `Preencha este JSON com as especificações ${NOUN[category]} ${name}, pelo site do fabricante${TECH_DB[category] ?? ''}.${search}` +
     'Não invente: o que não achar fica null. Se o produto não tem o recurso (sem Wi-Fi, sem conector de 16 pinos, sem suporte a radiador), responda "Não", 0, false ou []; null só quando não souber. ' +
     'Números sem unidade; listas com os itens. confianca: alta, media ou baixa. ' +
     (legend ? `Opções: ${legend}. ` : '') +

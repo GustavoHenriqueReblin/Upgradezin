@@ -189,6 +189,26 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
     db.close();
   });
 
+  it('com a pergunta nova, volta à web também o campo sem resposta de produto que ainda não estava em "precisa de você" (campo novo a perguntar)', () => {
+    const db = openDb(':memory:');
+    const offer = { store: 's1', storeSku: 'r', title: 'Placa de Video Marca Radeon RX 9070 EVO OC, 16GB', url: 'https://s1.example/r', priceCash: 4000, inStock: true, specs: {}, modelKey: 'r', collectedAt: '' } as Offer;
+    saveCollection(db, { store: 's1', category: 'gpu', offers: [offer], at: new Date().toISOString() });
+    savePage(db, { store: 's1', sku: 'r', category: 'gpu', text: ['Memória: 16GB GDDR6', 'Clock boost: 2590 MHz'].join('\n') });
+    const [p] = catalogProducts(db, 'gpu', '2000-01-01');
+    const askable = new Set(webKeys('gpu').map((k) => k.field));
+    const old = [...p!.missing, ...p!.gaps].find((f) => askable.has(f) && f !== 'silicon')!;
+    // Perguntado com a pergunta antiga (sem resposta); o código do chip, campo novo, ainda não: o produto não está para uma pessoa.
+    db.prepare(`INSERT INTO sheet_web (product_key, field, category, title, question, answer, value, status, store, asked_at) VALUES (?, ?, 'gpu', 't', 'q', '{}', NULL, 'none', 's1', '2026-11-25')`).run(p!.key, old);
+    expect(catalogProducts(db, 'gpu', '2000-01-01')[0]!.needsHuman).toBe(false);
+    expect(requeueHumanReview(db, Date.now(), true)).toBe(1);
+    expect(db.prepare('SELECT count(*) AS n FROM sheet_web WHERE product_key = ?').get(p!.key)).toEqual({ n: 0 });
+    // Ficha completada à mão: fica como está.
+    db.prepare(`INSERT INTO sheet_web (product_key, field, category, title, question, answer, value, status, store, asked_at) VALUES (?, ?, 'gpu', 't', 'q', '{}', NULL, 'none', 's1', '2026-11-25')`).run(p!.key, old);
+    setSheetCompletion(db, p!.key, 'gpu', true);
+    expect(requeueHumanReview(db, Date.now(), true)).toBe(0);
+    db.close();
+  });
+
   it('registra a ficha que ficou completa e dá o estado atual às respostas antigas', async () => {
     const db = caseDb();
     const [q] = webQueue(db);

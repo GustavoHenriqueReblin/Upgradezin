@@ -6,7 +6,9 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 - Busca na web, a partir da revisão das fichas "precisam de você" em produção: o leitor da resposta passa a aceitar os formatos que a IA usa de fato (PCIe como número, ventoinhas em lista de objetos, dissipador do VRM e XMP descritos em texto, "Não" como "não tem", fases do VRM com 5 grupos, Bluetooth "5", "12V-2x6", soquete com a marca, faixas reais de shaders, banda, TBW e cooler); a pergunta cobre o compartilhamento de linhas do M.2 e o código do chip, e dá a pista do TDP suportado do cooler. Ao subir, o servidor relê as respostas guardadas (na cópia de produção de 26/11: 347 valores recuperados) e os produtos que continuarem em "precisa de você" voltam à web uma vez com a pergunta nova (588 na mesma cópia).
 
-- Busca na web: o código do chip das placas AMD mais antigas vem pelo nome ("Ellesmere" da RX 580, "Polaris 20") e passa a ser aceito. O servidor relê as respostas guardadas ao subir.
+- Busca na web: o código do chip passa a ser aceito como a IA escreve: das AMD mais antigas pelo nome ("Ellesmere" da RX 580, "Polaris 20") e o código completo, com variante e revisão ("GB206-250-A1" vira GB206, "Navi 44 XT" vira Navi 44). O servidor relê as respostas guardadas ao subir.
+
+- Busca na web: placa de vídeo, processador e SSD buscam no TechPowerUp o que o fabricante não divulga (o clock base de uma RX 9070 ficava para uma pessoa com a resposta na internet). Com a pergunta nova, todo campo que a web deixou sem valor volta a ela uma vez, não só os dos produtos que já estavam em "precisa de você" (o produto com um campo novo ainda a perguntar ficava de fora).
 
 ## [1.0.0] - 2026-11-26
 
