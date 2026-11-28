@@ -178,6 +178,8 @@ export const NOTE_TEXT: Record<BudgetNote, string> = {
   'case-clearance': 'Confira a folga no gabinete. Um radiador frontal com ventoinhas pode reduzir o espaço para a placa de vídeo.',
   'cooling-estimate': 'O cooler foi dimensionado pela potência estimada do processador. A temperatura depende da ventilação e da carga.',
   'more-ram': 'Mais memória na placa-mãe atual: a que você tem fica abaixo do que o processador e o seu tipo de uso pedem.',
+  'ram-added': 'A memória nova se soma à que você já tem, nos slots livres. Pentes de kits diferentes podem rodar na frequência do mais lento; se possível, use o mesmo modelo.',
+  'keeps-ssd': 'O SSD atual continua no PC como disco extra, somando espaço ao novo.',
 };
 
 /** Erro do pedido: 'invalid' quando o servidor recusou os dados (tentar de novo não adianta), 'failed' no resto. */

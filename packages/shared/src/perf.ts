@@ -226,7 +226,8 @@ export function chipsetPcie(chipset: string | undefined): 3 | 4 | 5 | undefined 
 }
 
 /** Chipsets de entrada: menos recursos e, em geral, regulagem de energia (VRM) mais simples. */
-export const ENTRY_CHIPSETS = new Set(['A320', 'B350', 'B450', 'A520', 'H310', 'H410', 'H510', 'H610', 'A620', 'H810']);
+// B840: o chipset de entrada do AM5 abaixo do B850 (sem overclock, VRM de placa de entrada), como o A620.
+export const ENTRY_CHIPSETS = new Set(['A320', 'B350', 'B450', 'A520', 'H310', 'H410', 'H510', 'H610', 'A620', 'B840', 'H810']);
 
 export type Resolution = '1080p' | '1440p' | '4k';
 export const resolutionOf = (width?: number, height?: number): Resolution => {

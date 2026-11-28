@@ -25,7 +25,7 @@ Fora do escopo: marketplaces abertos, usado/recondicionado, checkout, afiliados,
 - **Em produção** num servidor Ubuntu doméstico, com acesso público por túnel. A rotina de coleta, a varredura completa da madrugada e a rotina de fichas rodam lá. O servidor pode estar alguns commits atrás do `main`: o deploy é manual (seção 12).
 - **Catálogo** (snapshot local de 25/11/2026) com 19.067 anúncios catalogados e 14.456 páginas de produto lidas.
 - **Versão 1.0.0** (26/11/2026), a 1ª versão: busca, montagem com compatibilidade, Identificar gargalo, Montar pelo orçamento com o motor único (as dicas do Gargalo saem dele), comparador, login com a conta sincronizada e alertas de preço. O `[Não lançado]` do CHANGELOG lista o que já está no código e ainda não virou versão.
-- **Próximo passo:** ajuste fino do motor (V5) com a matriz sobre um snapshot congelado (seção 11).
+- **Próximo passo:** validar a V5 do motor (upgrade na escala do PC atual, upgrades complementares, placas-mãe por construção) contra a V4 com a matriz sobre o snapshot congelado de 26/11 (seção 11).
 
 ---
 

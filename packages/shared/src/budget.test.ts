@@ -593,7 +593,10 @@ describe('motor: escolha por utilidade (cenários direcionados)', () => {
       if (p.status !== 'ok') continue;
       expect(p.gain).toBeGreaterThanOrEqual(0.1);
       if (prev) expect(p.objective!).toBeGreaterThanOrEqual(prev.objective! - 1e-9);
-      for (const alt of p.alternatives) expect(alt.total >= p.total && alt.objective! <= p.objective! && !alt.stretch).toBe(false);
+      // Mais cara com índice igual ou menor só entra com vantagem na configuração (V5: mais memória ou SSD contam).
+      const ramOf = (o: BudgetOption) => (o.parts.ram ? (o.parts.ram.offer.specs.ramCapacity ?? 0) * (o.parts.ram.qty ?? 1) : 16);
+      const ssdOf = (o: BudgetOption) => o.parts.ssd?.offer.specs.ssdCapacity ?? 0;
+      for (const alt of p.alternatives) expect(alt.total >= p.total && alt.objective! <= p.objective! && !alt.stretch && ramOf(alt) <= ramOf(p) && ssdOf(alt) <= ssdOf(p)).toBe(false);
       prev = p;
     }
     expect(prev?.parts.cpu && prev.parts.gpu).toBeTruthy(); // com valor para as duas, troca as duas
@@ -725,7 +728,7 @@ describe('motor V4: cenários direcionados', () => {
       gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'RTX 3060', vram: 12 } },
       psu: { specs: { watts: 750, efficiency: 'gold' } },
     };
-    // A única troca à venda rende ~11% por R$ 9.000: muito pouco por real.
+    // A única troca à venda rende ~30% por R$ 9.000: menos de 4% por R$ 1.000, muito pouco por real.
     const pricey = { ...catalog(), cpu: [], motherboard: [], gpu: [gpu('RTX 4060 Ti', 9000, { vram: 16 })] };
     const p = planBudget({ budget: 10000, res: '1080p', owned }, pricey);
     expect(['no-gain', 'no-data']).toContain(p.status);
@@ -739,5 +742,341 @@ describe('motor V4: cenários direcionados', () => {
     const b = planBudget(req, offers);
     expect(performance.now() - start).toBeLessThan(2000);
     expect(JSON.stringify({ ...a, parts: ids(a) })).toBe(JSON.stringify({ ...b, parts: ids(b) }));
+  });
+});
+
+describe('motor V5: configuração inteira, upgrades complementares e retorno marginal', () => {
+  const ramGb = (o: BudgetOption) => (o.parts.ram ? (o.parts.ram.offer.specs.ramCapacity ?? 0) * (o.parts.ram.qty ?? 1) : 0);
+  const am5Pc = (more: Partial<Build> = {}): Build => ({
+    cpu: { specs: { cpuBrand: 'amd', cpuLine: 'Ryzen 7', cpuModel: '7800X3D', socket: 'AM5', tdp: 120 } },
+    motherboard: { specs: { chipset: 'B650', socket: 'AM5', formFactor: 'matx', memory: 'ddr5', memoryMaxGb: 192 } },
+    gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'RTX 5080', vram: 16 } },
+    psu: { specs: { watts: 850, efficiency: 'gold', atx: '3.0' } },
+    ...more,
+  });
+
+  it('PC forte com pouca memória e SSD pequeno: sugere memória e SSD sem trocar processador nem placa de vídeo', () => {
+    const owned = am5Pc({
+      ram: { specs: { memory: 'ddr5', ramCapacity: 8, ramModules: 1, ramSpeed: 4800 } },
+      ssd: { specs: { ssdInterface: 'sata', ssdForm: '2.5', ssdCapacity: 240 } },
+    });
+    const p = planBudget({ budget: 3000, res: '1440p', owned }, catalog());
+    expect(p.status).toBe('ok');
+    expect(p.parts.cpu).toBeUndefined();
+    expect(p.parts.gpu).toBeUndefined();
+    expect(!!p.parts.ram || !!p.parts.ssd).toBe(true);
+    // Memória e SSD juntos também são opção (sem ganho de FPS).
+    expect(prepareBudget({ res: '1440p', owned }, catalog()).options().some((o) => o.parts.ram && o.parts.ssd && !o.parts.gpu)).toBe(true);
+  });
+
+  it('memória e SSD adequados ficam: o upgrade não troca o que já serve', () => {
+    const owned: Build = {
+      cpu: { specs: { cpuBrand: 'amd', cpuLine: 'Ryzen 5', cpuModel: '5600', socket: 'AM4', tdp: 65 } },
+      motherboard: { specs: { chipset: 'B550', socket: 'AM4', formFactor: 'matx', memory: 'ddr4' } },
+      ram: { specs: { memory: 'ddr4', ramCapacity: 32, ramModules: 2, ramSpeed: 3200 } },
+      ssd: { specs: { ssdInterface: 'nvme', ssdForm: 'm2', ssdCapacity: 2000 } },
+      gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'GTX 1660 Super' } },
+      psu: { specs: { watts: 750, efficiency: 'gold' } },
+    };
+    const p = planBudget({ budget: 5000, res: '1080p', owned }, catalog());
+    expect(p.status).toBe('ok');
+    expect(p.parts.gpu).toBeDefined();
+    expect(p.parts.ram).toBeUndefined();
+    expect(p.parts.ssd).toBeUndefined();
+    expect(p.parts.psu).toBeUndefined(); // a fonte atual aguenta: não troca por melhoria irrelevante
+  });
+
+  it('placa de vídeo junto com SSD ou memória são combinações consideradas quando a peça atual limita', () => {
+    const owned: Build = {
+      cpu: { specs: { cpuBrand: 'amd', cpuLine: 'Ryzen 7', cpuModel: '5800X3D', socket: 'AM4', tdp: 105 } },
+      motherboard: { specs: { chipset: 'B550', socket: 'AM4', formFactor: 'matx', memory: 'ddr4' } },
+      ram: { specs: { memory: 'ddr4', ramCapacity: 16, ramModules: 2, ramSpeed: 3200 } },
+      ssd: { specs: { ssdInterface: 'sata', ssdForm: '2.5', ssdCapacity: 480 } },
+      gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'GTX 1660 Super' } },
+      psu: { specs: { watts: 750, efficiency: 'gold' } },
+    };
+    const options = prepareBudget({ res: '1440p', owned }, catalog()).options();
+    expect(options.some((o) => o.parts.gpu && o.parts.ssd)).toBe(true);
+    expect(options.some((o) => o.parts.gpu && o.parts.ram)).toBe(true);
+  });
+
+  it('retorno marginal muito baixo: a recomendada não é a mais rápida, e a mais rápida continua como opção', () => {
+    const fast = budgetGpuScore({ gpuModel: 'RTX 5080' }, '1440p')!;
+    const mid = budgetGpuScore({ gpuModel: 'RTX 4080 Super' }, '1440p')!;
+    expect(fast / mid).toBeLessThan(1.15);
+    // A mais rápida rende ~11% a mais custando 3x: muito pouco a mais por real.
+    const offers = { ...catalog(), gpu: [gpu('RTX 4080 Super', 6000, { gpuLength: 300 }), gpu('RTX 5080', 18000, { gpuLength: 300 })] };
+    const p = planBudget({ budget: 30000, res: '1440p', hz: 144 }, offers);
+    expect(p.status).toBe('ok');
+    expect(p.parts.gpu?.offer.specs.gpuModel).toBe('RTX 4080 Super');
+    expect([p, ...p.alternatives].some((o) => o.parts.gpu?.offer.specs.gpuModel === 'RTX 5080')).toBe(true);
+    // O bestObjective é o da opção mais forte que aparece (sem divergência).
+    expect(Math.max(...[p, ...p.alternatives].filter((o) => !o.stretch).map((o) => o.objective!))).toBeCloseTo(p.bestObjective!, 1);
+  });
+
+  it('upgrade com orçamento enorme: a nota de cada opção não depende do valor (R$ 30 mil, 50 mil e 100 mil dão a mesma escolha)', () => {
+    const owned: Build = {
+      cpu: { specs: { cpuBrand: 'amd', cpuLine: 'Ryzen 5', cpuModel: '2600', socket: 'AM4', tdp: 65 } },
+      motherboard: { specs: { chipset: 'B550', socket: 'AM4', formFactor: 'matx', memory: 'ddr4' } },
+      ram: { specs: { memory: 'ddr4', ramCapacity: 16, ramModules: 2, ramSpeed: 3200 } },
+      gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'GTX 1660 Super' } },
+      psu: { specs: { watts: 750, efficiency: 'gold' } },
+    };
+    const evaluate = prepareBudget({ res: '1440p', owned }, catalog());
+    const picks = [30000, 50000, 100000].map((b) => evaluate(b));
+    for (const p of picks) expect(p.status).toBe('ok');
+    expect(new Set(picks.map((p) => p.total)).size).toBe(1);
+    expect(new Set(picks.map((p) => p.utility)).size).toBe(1);
+    // Não gasta tudo: o total fica bem abaixo do valor.
+    expect(picks[2]!.total).toBeLessThan(30000);
+  });
+
+  it('o mesmo ganho relativo vale igual em escalas diferentes (sem limite fixo de pontos por real)', () => {
+    const owned: Build = {
+      cpu: { specs: { cpuBrand: 'amd', cpuLine: 'Ryzen 7', cpuModel: '5800X3D', socket: 'AM4' } },
+      motherboard: { specs: { chipset: 'B550', socket: 'AM4', formFactor: 'matx', memory: 'ddr4' } },
+      gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'RTX 3060', vram: 12 } },
+      psu: { specs: { watts: 750, efficiency: 'gold' } },
+    };
+    // ~30% por R$ 9.000 não compensa; o mesmo ganho por R$ 3.000 compensa.
+    const at = (price: number) => planBudget({ budget: 10000, res: '1080p', owned }, { ...catalog(), cpu: [], motherboard: [], gpu: [gpu('RTX 4060 Ti', price, { vram: 16 })] }).status;
+    expect(['no-gain', 'no-data']).toContain(at(9000));
+    expect(at(3000)).toBe('ok');
+  });
+
+  it('placa-mãe: mais de uma por plataforma quando a mais cara tem construção melhor (VRM com evidência, expansão)', () => {
+    const offers = catalog();
+    offers.motherboard.push(offer({ socket: 'AM5', chipset: 'B650', memory: 'ddr5', formFactor: 'matx', memorySlots: 4, m2Slots: 2 }, 1150,
+      { sheet: { vrmHeatsink: true, vrmPhases: '12+2+1' } }));
+    const boards = new Set(prepareBudget({ res: '1440p', hz: 144 }, offers).options()
+      .filter((o) => o.parts.cpu?.offer.specs.cpuModel === '7800X3D').map((o) => o.parts.motherboard?.offer.storeSku));
+    expect(boards.size).toBe(2);
+  });
+
+  it('B840 é chipset de entrada: processador de 170 W não vai nele; um de 65 W vai', () => {
+    const offers = catalog();
+    offers.motherboard = [offer({ socket: 'AM5', chipset: 'B840', memory: 'ddr5', formFactor: 'matx' }, 650)];
+    offers.cpu = [amd('Ryzen 9', '9950X', 'AM5', { tdp: 170, cooler: false, igpu: true }, 4000), amd('Ryzen 5', '7600', 'AM5', { tdp: 65, cooler: true, igpu: true }, 1100)];
+    offers.cooler.push(offer({ coolerType: 'water', coolerSockets: ['AM5'], radiator: 360, coolerTdp: 300 }, 600));
+    const options = prepareBudget({ res: '1080p' }, offers).options();
+    expect(options.some((o) => o.parts.cpu?.offer.specs.cpuModel === '9950X')).toBe(false);
+    expect(options.some((o) => o.parts.cpu?.offer.specs.cpuModel === '7600')).toBe(true);
+  });
+
+  it('edição de vídeo pede pelo menos 32 GB, mesmo com processador de poucas threads', () => {
+    const p = planBudget({ budget: 9000, res: '1080p', profile: 'productivity', workload: 'video' }, catalog());
+    expect(p.status).toBe('ok');
+    expect(ramGb(p)).toBeGreaterThanOrEqual(32);
+  });
+
+  it('pequena mudança de preço não troca a recomendação por uma bem pior', () => {
+    const offers = catalog();
+    const before = planBudget({ budget: 9000, res: '1440p', hz: 144 }, offers);
+    const nudged = { ...offers, gpu: offers.gpu.map((g) => ({ ...g, priceCash: g.priceCash * 1.01 })) };
+    const after = planBudget({ budget: 9000, res: '1440p', hz: 144 }, nudged);
+    expect(after.objective!).toBeGreaterThanOrEqual(before.objective! * 0.95);
+  });
+
+  it('determinismo e tempo no upgrade com as combinações complementares', () => {
+    const owned = am5Pc({ ram: { specs: { memory: 'ddr5', ramCapacity: 16, ramModules: 2, ramSpeed: 5600 } }, ssd: { specs: { ssdInterface: 'sata', ssdForm: '2.5', ssdCapacity: 480 } } });
+    const start = performance.now();
+    const a = planBudget({ budget: 20000, res: '4k', hz: 144, owned, profile: 'mixed' }, catalog());
+    const b = planBudget({ budget: 20000, res: '4k', hz: 144, owned, profile: 'mixed' }, catalog());
+    expect(performance.now() - start).toBeLessThan(2000);
+    expect([a.status, a.total, a.utility]).toEqual([b.status, b.total, b.utility]);
+  });
+});
+
+describe('motor V6: configuração final, somar em vez de trocar, adequação e otimização', () => {
+  const amdPc = (more: Partial<Build> = {}): Build => ({
+    cpu: { specs: { cpuBrand: 'amd', cpuLine: 'Ryzen 7', cpuModel: '7800X3D', socket: 'AM5', tdp: 120 } },
+    motherboard: { specs: { chipset: 'B650', socket: 'AM5', formFactor: 'atx', memory: 'ddr5', memorySlots: 4, m2Slots: 2, memoryMaxGb: 192 } },
+    gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'RTX 5080', vram: 16 } },
+    psu: { specs: { watts: 850, efficiency: 'gold', atx: '3.0' } },
+    ...more,
+  });
+  const ddr5Kit = (cap: number, price: number) => offer({ memory: 'ddr5', ramCapacity: cap, ramModules: 2, ramSpeed: 6000 }, price);
+
+  it('soma memória nos slots livres em vez de trocar: a configuração final tem a atual mais o kit', () => {
+    const owned = amdPc({ ram: { specs: { memory: 'ddr5', ramCapacity: 16, ramModules: 2, ramSpeed: 6000 } } });
+    const offers = { ...catalog(), ram: [ddr5Kit(16, 450), ddr5Kit(32, 800)] };
+    const options = prepareBudget({ res: '1440p', owned }, offers).options();
+    const added = options.find((o) => o.notes.includes('ram-added'));
+    expect(added).toBeDefined();
+    expect(added!.parts.ram?.offer.specs.ramCapacity).toBe(16);
+    expect(added!.final?.ramGb).toBe(32);
+    expect(added!.parts.cpu).toBeUndefined();
+  });
+
+  it('não soma memória sem slots livres informados (2 slots ocupados)', () => {
+    const owned = amdPc({
+      motherboard: { specs: { chipset: 'B650', socket: 'AM5', formFactor: 'matx', memory: 'ddr5', memorySlots: 2 } },
+      ram: { specs: { memory: 'ddr5', ramCapacity: 16, ramModules: 2, ramSpeed: 6000 } },
+    });
+    const options = prepareBudget({ res: '1440p', owned }, { ...catalog(), ram: [ddr5Kit(16, 450), ddr5Kit(32, 800)] }).options();
+    expect(options.some((o) => o.notes.includes('ram-added'))).toBe(false);
+  });
+
+  it('SSD novo soma ao atual (que fica como disco extra) quando há onde ligar', () => {
+    const owned = amdPc({
+      ram: { specs: { memory: 'ddr5', ramCapacity: 32, ramModules: 2, ramSpeed: 6000 } },
+      ssd: { specs: { ssdInterface: 'sata', ssdForm: '2.5', ssdCapacity: 480 } },
+    });
+    const p = planBudget({ budget: 2000, res: '1440p', owned }, catalog());
+    expect(p.status).toBe('ok');
+    expect(p.parts.ssd).toBeDefined();
+    expect(p.notes).toContain('keeps-ssd');
+    expect(p.final?.storageGb).toBe((p.parts.ssd!.offer.specs.ssdCapacity ?? 0) + 480);
+    expect(p.final?.storageKind).toBe('nvme');
+  });
+
+  it('8 GB e 16 GB não valem igual quando a configuração pede 32: o processador forte de produtividade leva memória', () => {
+    const owned: Build = {
+      cpu: { specs: { cpuBrand: 'amd', cpuLine: 'Ryzen 9', cpuModel: '7950X', socket: 'AM5', tdp: 170, cores: 16, threads: 32 } },
+      motherboard: { specs: { chipset: 'X670', socket: 'AM5', formFactor: 'atx', memory: 'ddr5', memorySlots: 2 } },
+      ram: { specs: { memory: 'ddr5', ramCapacity: 8, ramModules: 1, ramSpeed: 5600 } },
+      gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'RTX 4070' } },
+      psu: { specs: { watts: 850, efficiency: 'gold' } },
+    };
+    const offers = { ...catalog(), ram: [ddr5Kit(16, 450), ddr5Kit(32, 800), ddr5Kit(64, 1700)] };
+    const p = planBudget({ budget: 3000, res: '1080p', profile: 'productivity', owned }, offers);
+    expect(p.status).toBe('ok');
+    expect(p.parts.ram).toBeDefined();
+    expect(p.final?.ramGb).toBeGreaterThanOrEqual(32);
+  });
+
+  it('placa de vídeo com muita memória de vídeo leva 32 GB em jogos (pela configuração, não pelo orçamento)', () => {
+    const offers = { ...catalog(), gpu: [gpu('RTX 5080', 7000, { gpuLength: 300, vram: 16 })] };
+    const p = planBudget({ budget: 15000, res: '1440p', hz: 144 }, offers);
+    expect(p.status).toBe('ok');
+    expect(p.final?.ramGb).toBe(32);
+    expect(p.adequacy?.ram).toBe('confirmed');
+  });
+
+  it('adequação separada da compatibilidade: fonte atual sem potência informada fica "unknown", nunca confirmada', () => {
+    const owned = amdPc({ psu: { specs: {} }, gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'GTX 1660 Super' } } });
+    const p = planBudget({ budget: 5000, res: '1080p', owned }, catalog());
+    expect(p.status).toBe('ok');
+    expect(p.adequacy?.psu).toBe('unknown');
+    expect(p.notes).toContain('psu-unknown');
+  });
+
+  it('cooler com TDP declarado acima da carga é adequação confirmada; só pela construção, estimada', () => {
+    const offers = catalog();
+    const p = planBudget({ budget: 9000, res: '1440p', hz: 144 }, offers);
+    expect(p.status).toBe('ok');
+    if (p.parts.cooler) expect(p.adequacy?.cooler).toBe(p.parts.cooler.offer.specs.coolerTdp !== undefined ? 'confirmed' : 'estimated');
+    else expect(['estimated', 'confirmed']).toContain(p.adequacy?.cooler);
+  });
+
+  it('cooler: além do mais barato que passa, o de mais evidência térmica entra na busca (sem diversidade forçada)', () => {
+    const offers = catalog();
+    offers.cooler.push(offer({ coolerType: 'air', coolerSockets: ['AM4', 'AM5'], coolerTdp: 260 }, 180));
+    const coolersUsed = new Set(prepareBudget({ res: '1440p', hz: 144 }, offers).options()
+      .filter((o) => o.parts.cpu?.offer.specs.cpuModel === '7800X3D' && o.parts.cooler).map((o) => o.parts.cooler!.offer.specs.coolerTdp));
+    expect(coolersUsed.has(180)).toBe(true);
+    expect(coolersUsed.has(260)).toBe(true);
+  });
+
+  it('busca exaustiva sobre as opções válidas: a recomendada tem a maior utilidade entre as que cabem (PC inteiro)', () => {
+    const evaluate = prepareBudget({ res: '1440p', hz: 144 }, catalog());
+    const all = evaluate.options();
+    for (const budget of [5000, 9000, 15000]) {
+      const p = evaluate(budget);
+      if (p.status !== 'ok') continue;
+      const best = Math.max(...all.filter((o) => o.total <= budget).map((o) => o.utility!));
+      expect(p.utility).toBeCloseTo(best, 4);
+    }
+  });
+
+  it('catálogo sintético com ótimo conhecido: uma placa de vídeo domina as outras (mais rápida e mais barata) e é a escolhida', () => {
+    const offers = { ...catalog(), gpu: [gpu('RTX 4070', 3500), gpu('RTX 4080 Super', 3400, { gpuLength: 300 }), gpu('RTX 3060', 3600)] };
+    const p = planBudget({ budget: 12000, res: '1440p', hz: 144 }, offers);
+    expect(p.parts.gpu?.offer.specs.gpuModel).toBe('RTX 4080 Super');
+    for (const alt of p.alternatives) expect(alt.parts.gpu?.offer.specs.gpuModel === 'RTX 3060' && alt.total >= p.total).toBe(false);
+  });
+
+  it('nenhuma alternativa é dominada pela configuração completa (custo, índice, memória, armazenamento)', () => {
+    const p = planBudget({ budget: 12000, res: '1440p', hz: 144, profile: 'mixed' }, catalog());
+    const opts = [p, ...p.alternatives].filter((o) => !o.stretch);
+    for (const x of opts) for (const y of opts) {
+      if (x === y) continue;
+      const dom = y.total <= x.total && y.objective! >= x.objective! && (y.final?.ramGb ?? 0) >= (x.final?.ramGb ?? 0) && (y.final?.storageGb ?? 0) >= (x.final?.storageGb ?? 0)
+        && (y.total < x.total || y.objective! > x.objective! || (y.final?.ramGb ?? 0) > (x.final?.ramGb ?? 0) || (y.final?.storageGb ?? 0) > (x.final?.storageGb ?? 0));
+      expect(dom && (y.utility ?? 0) >= (x.utility ?? 0) + 0.05).toBe(false);
+    }
+  });
+
+  it('rótulos vêm do motor e batem com a vantagem: a de maior desempenho é a de maior índice; a econômica é mais barata', () => {
+    const offers = { ...catalog(), gpu: [gpu('RTX 3060', 1800), gpu('RTX 4070', 3500), gpu('RTX 4080 Super', 6000, { gpuLength: 300 }), gpu('RTX 5080', 18000, { gpuLength: 300 })] };
+    const p = planBudget({ budget: 30000, res: '1440p', hz: 144 }, offers);
+    expect(p.reason).toBe('recommended');
+    for (const alt of p.alternatives) {
+      if (alt.reason === 'max-performance') expect(alt.objective!).toBeGreaterThan(p.objective!);
+      if (alt.reason === 'economy' || alt.reason === 'value') expect(alt.total).toBeLessThan(p.total);
+    }
+    const strongest = Math.max(...[p, ...p.alternatives].filter((o) => !o.stretch).map((o) => o.objective!));
+    expect(strongest).toBeCloseTo(p.bestObjective!, 1);
+  });
+
+  it('orçamentos extremos (R$ 40, 50, 75 e 100 mil): monotônico, nunca acima do valor e sem gastar tudo à toa', () => {
+    const evaluate = prepareBudget({ res: '4k', hz: 144 }, catalog());
+    let prev: number | undefined;
+    for (const budget of [40000, 50000, 75000, 100000]) {
+      const p = evaluate(budget);
+      expect(p.status).toBe('ok');
+      expect(p.total).toBeLessThanOrEqual(budget);
+      if (prev !== undefined) expect(p.utility!).toBeGreaterThanOrEqual(prev - 1e-9);
+      prev = p.utility;
+    }
+    expect(evaluate(100000).total).toBeLessThan(40000);
+  });
+
+  it('preferência muda a escolha entre alternativas parecidas; exigência obriga mesmo mais cara', () => {
+    // Par real empatado em 1440p (RTX 5070 Ti 116,8 e RX 9070 XT 116,5 na tabela), mesmo preço: a preferência decide.
+    const amdGpu = (price: number) => offer({ gpuMaker: 'amd', gpuModel: 'RX 9070 XT', gpuLength: 300 }, price);
+    const offers = { ...catalog(), gpu: [gpu('RTX 5070 Ti', 4500, { gpuLength: 300 }), amdGpu(4500)] };
+    const amdPick = planBudget({ budget: 12000, res: '1440p', hz: 144, preferences: { gpu: 'amd' } }, offers);
+    const nvPick = planBudget({ budget: 12000, res: '1440p', hz: 144, preferences: { gpu: 'nvidia' } }, offers);
+    expect(amdPick.parts.gpu?.offer.specs.gpuMaker).toBe('amd');
+    expect(nvPick.parts.gpu?.offer.specs.gpuMaker).toBe('nvidia');
+    const pricey = { ...catalog(), gpu: [gpu('RTX 5070 Ti', 4500, { gpuLength: 300 }), amdGpu(7000)] };
+    expect(planBudget({ budget: 12000, res: '1440p', hz: 144, requiredBrands: { gpu: 'amd' } }, pricey).parts.gpu?.offer.specs.gpuMaker).toBe('amd');
+  });
+
+  it('upgrade: o plano traz o PC atual (antes) e o motor ainda recomenda não trocar quando nada compensa', () => {
+    const owned: Build = {
+      cpu: { specs: { cpuBrand: 'amd', cpuLine: 'Ryzen 7', cpuModel: '5800X3D', socket: 'AM4' } },
+      motherboard: { specs: { chipset: 'B550', socket: 'AM4', formFactor: 'matx', memory: 'ddr4' } },
+      gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'RTX 3060', vram: 12 } },
+      psu: { specs: { watts: 750, efficiency: 'gold' } },
+    };
+    const ok = planBudget({ budget: 10000, res: '1080p', owned }, { ...catalog(), cpu: [], motherboard: [], gpu: [gpu('RTX 4060 Ti', 3000, { vram: 16 })] });
+    expect(ok.status).toBe('ok');
+    expect(ok.current?.objective).toBeGreaterThan(0);
+    expect(ok.objective! / ok.current!.objective - 1).toBeCloseTo(ok.gain!, 1);
+    expect(ok.utility!).toBeGreaterThan(ok.current!.utility);
+    const no = planBudget({ budget: 10000, res: '1080p', owned }, { ...catalog(), cpu: [], motherboard: [], gpu: [gpu('RTX 4060 Ti', 9000, { vram: 16 })] });
+    expect(['no-gain', 'no-data']).toContain(no.status);
+  });
+
+  it('consistência entre funcionalidades: as opções do motor (usadas pelas dicas do gargalo) contêm a recomendada', () => {
+    const owned: Build = {
+      cpu: { specs: { cpuBrand: 'amd', cpuLine: 'Ryzen 5', cpuModel: '5600', socket: 'AM4', tdp: 65 } },
+      motherboard: { specs: { chipset: 'B550', socket: 'AM4', formFactor: 'matx', memory: 'ddr4' } },
+      gpu: { specs: { gpuMaker: 'nvidia', gpuModel: 'GTX 1660 Super' } },
+      psu: { specs: { watts: 750, efficiency: 'gold' } },
+    };
+    const evaluate = prepareBudget({ res: '1080p', owned }, catalog());
+    const p = evaluate(6000);
+    expect(p.status).toBe('ok');
+    expect(evaluate.options().some((o) => o.total === p.total && o.objective === p.objective)).toBe(true);
+  });
+
+  it('estatísticas da busca no plano (candidatos e descartes), deterministas', () => {
+    const a = planBudget({ budget: 9000, res: '1440p', hz: 144 }, catalog());
+    const b = planBudget({ budget: 9000, res: '1440p', hz: 144 }, catalog());
+    expect(a.stats?.candidates).toBeGreaterThan(0);
+    expect(a.stats).toEqual(b.stats);
   });
 });
