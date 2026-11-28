@@ -290,11 +290,32 @@ const TECH_DB: Partial<Record<CategoryId, string>> = {
 /** Sem base técnica (gabinete, cooler, fonte, placa-mãe, memória): fichas de lojas e análises (o máximo de ventoinhas de um gabinete ABKO). */
 const OTHER_SOURCES = ' ou, no que ele não divulgar, por fichas técnicas de lojas e análises';
 
+/** Na pergunta direta, o rótulo curto da ficha vira uma frase ("Cooler até" -> "Altura máxima de cooler suportada"). */
+const ASK_AS: Record<string, string> = {
+  maxCoolerMm: 'Altura máxima de cooler suportada',
+  maxGpuMm: 'Comprimento máximo de placa de vídeo suportado',
+  fansMax: 'Quantidade máxima de ventoinhas suportadas',
+  fansIncluded: 'Quantidade de ventoinhas inclusas',
+  radiators: 'Radiadores suportados (mm)',
+  front: 'Painel frontal (mesh, vidro ou fechado)',
+  m2Pcie: 'Versão PCIe dos slots M.2',
+  pcieX16: 'Versão PCIe do slot x16',
+  ramMaxMhz: 'Frequência máxima de memória suportada',
+  ramMaxGb: 'Memória máxima suportada',
+  m2SharesSata: 'Usar um M.2 desativa portas SATA',
+  m2SharesGpu: 'Usar um M.2 divide as linhas do slot x16',
+  fanMm: 'Tamanho da ventoinha (mm)',
+  radiatorMm: 'Tamanho do radiador (mm)',
+  tbw: 'Durabilidade (TBW)',
+  dram: 'Cache DRAM',
+  noiseDba: 'Ruído máximo (dBA)',
+};
+
 /**
  * O pedido: preencher as chaves selecionadas da categoria com as especificações do produto,
  * com as opções das chaves fechadas e as regras curtas (o pedido vai no endereço da busca).
  */
-export function webPrompt(category: CategoryId, title: string, fields?: readonly string[], known: SheetValues = {}): string {
+export function webPrompt(category: CategoryId, title: string, fields?: readonly string[], known: SheetValues = {}, single = false): string {
   const name = webProductName(title);
   const keys = webKeys(category).filter((key) => !fields || fields.includes(key.field));
   const identity = [known.brand, known.model].filter((v) => typeof v === 'string' && /[a-z]/i.test(v)).join(' ');
@@ -313,6 +334,21 @@ export function webPrompt(category: CategoryId, title: string, fields?: readonly
     .join('; ');
   // Listas também começam em null: assim [] na resposta quer dizer "não tem" (e não "não preenchi").
   const template = JSON.stringify({ produto: name, ...Object.fromEntries(keys.map((k) => [k.key, null])), confianca: null });
+  const rules = 'Não invente: o que não achar fica null. Se o produto não tem o recurso (sem Wi-Fi, sem conector de 16 pinos, sem suporte a radiador), responda "Não", 0, false ou []; null só quando não souber. ' +
+    'Números sem unidade; listas com os itens. confianca: alta, media ou baixa. ' +
+    (legend ? `Opções: ${legend}. ` : '');
+  // Segunda tentativa, um campo só: a pergunta direta, como uma pessoa faria ("qual o TDP suportado do cooler X?"), em todas as fontes.
+  // No JSON de vários campos a IA devolvia null para o que acha quando perguntado sozinho.
+  const only = single && keys.length === 1 ? keys[0]! : undefined;
+  if (only) {
+    const label = ASK_AS[only.field] ?? SHEET_FIELDS[category].find((f) => f.key === only.field)?.label ?? only.key;
+    return (
+      `${label} ${NOUN[category]} ${name}: ${only.type === 'bool' ? 'tem ou não?' : 'qual é?'} Busque no site do fabricante, no TechPowerUp, em análises e em fichas técnicas de lojas.${search}` +
+      rules +
+      'Responda em uma frase e termine com este JSON preenchido, válido: ' +
+      template
+    );
+  }
   return (
     `Preencha este JSON com as especificações ${NOUN[category]} ${name}, pelo site do fabricante${TECH_DB[category] ?? OTHER_SOURCES}.${search}` +
     'Não invente: o que não achar fica null. Se o produto não tem o recurso (sem Wi-Fi, sem conector de 16 pinos, sem suporte a radiador), responda "Não", 0, false ou []; null só quando não souber. ' +

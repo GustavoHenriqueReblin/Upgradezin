@@ -114,6 +114,8 @@ export function syncSheetTables(db: Db): { added: string[]; dropped: string[] } 
   // Colunas que vieram depois (a confiança e as fontes da resposta em JSON).
   const webCols = new Set((db.prepare('PRAGMA table_info(sheet_web)').all() as { name: string }[]).map((c) => c.name));
   for (const col of ['confidence', 'sources']) if (!webCols.has(col)) db.exec(`ALTER TABLE sheet_web ADD COLUMN ${col} TEXT`);
+  // 1: o campo já foi perguntado sozinho (a segunda tentativa, depois do null na pergunta de vários campos).
+  if (!webCols.has('single')) db.exec('ALTER TABLE sheet_web ADD COLUMN single INTEGER NOT NULL DEFAULT 0');
   // As tabelas por campo podem guardar valores da versão antiga do leitor.
   db.exec("DELETE FROM sheet_manual WHERE category = 'cpu' AND field = 'maxPowerW'; DELETE FROM sheet_web WHERE category = 'cpu' AND field = 'maxPowerW'");
   return { added, dropped };
@@ -187,6 +189,8 @@ export function setManualSheet(db: Db, key: string, category: CategoryId, values
 export interface WebSheet {
   values: SheetValues;
   asked: Set<string>;
+  /** Perguntados até o fim: com resposta, ou sem resposta também na pergunta de um campo só. */
+  settled: Set<string>;
 }
 
 /** Respostas da busca na web por produto, de uma categoria (ou só dos produtos dados). */
@@ -195,15 +199,16 @@ export function webSheets(db: Db, category: CategoryId, keys?: string[]): Map<st
   const rows = (
     keys
       ? keys.length
-        ? db.prepare(`SELECT product_key, field, value FROM sheet_web WHERE category = ? AND product_key IN (${keys.map(() => '?').join(', ')})`).all(category, ...keys)
+        ? db.prepare(`SELECT product_key, field, value, single FROM sheet_web WHERE category = ? AND product_key IN (${keys.map(() => '?').join(', ')})`).all(category, ...keys)
         : []
-      : db.prepare('SELECT product_key, field, value FROM sheet_web WHERE category = ?').all(category)
-  ) as { product_key: string; field: string; value: string | null }[];
+      : db.prepare('SELECT product_key, field, value, single FROM sheet_web WHERE category = ?').all(category)
+  ) as { product_key: string; field: string; value: string | null; single: number }[];
   const out = new Map<string, WebSheet>();
   for (const r of rows) {
     let w = out.get(r.product_key);
-    if (!w) out.set(r.product_key, (w = { values: {}, asked: new Set() }));
+    if (!w) out.set(r.product_key, (w = { values: {}, asked: new Set(), settled: new Set() }));
     w.asked.add(r.field);
+    if (r.value !== null || r.single) w.settled.add(r.field);
     if (r.value !== null) w.values[r.field] = JSON.parse(r.value) as SheetValue;
   }
   return out;
@@ -511,7 +516,7 @@ export function catalogProducts(db: Db, category: CategoryId, since: string, key
       // Algum campo vazio (principal ou opcional), as páginas todas lidas e a web já perguntada de todos os que ela pergunta: só uma
       // pessoa completa. Opcional que a web não pergunta (código do chip) não segura: senão o produto não ia para a web nem para cá.
       needsHuman: !completedManually && !!sources.length && g.every((r) => r.page !== null)
-        && empty.some((f) => askable.has(f) || merged.missing.includes(f)) && empty.every((f) => !askable.has(f) || web.get(key)?.asked.has(f)),
+        && empty.some((f) => askable.has(f) || merged.missing.includes(f)) && empty.every((f) => !askable.has(f) || web.get(key)?.settled.has(f)),
     };
   });
 }

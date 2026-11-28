@@ -128,6 +128,8 @@ export interface WebQuestion {
   fields: string[];
   title: string;
   question: string;
+  /** Segunda tentativa: o campo sozinho, com a pergunta direta (a de vários campos deu null). */
+  single?: boolean;
 }
 
 /**
@@ -140,6 +142,8 @@ export function webQueue(db: Db, now = Date.now(), retryKey?: string): (WebQuest
   const since = webSince(now);
   const out: (WebQuestion & { priority: WebQueuePriority; main: boolean; inStock: boolean; first: string })[] = [];
   const asked = new Set((ready(db).prepare("SELECT product_key || '|' || field AS k FROM sheet_web").all() as { k: string }[]).map((r) => r.k));
+  // Sem resposta na pergunta de vários campos e ainda não perguntados sozinhos.
+  const retry = new Set((db.prepare("SELECT product_key || '|' || field AS k FROM sheet_web WHERE value IS NULL AND single = 0 AND answer <> ''").all() as { k: string }[]).map((r) => r.k));
   for (const category of ENABLED_CATEGORIES) {
     for (const p of catalogProducts(db, category, since)) {
       if (p.completedManually || p.state === 'unread' || !p.listings.every((l) => l.read)) continue;
@@ -149,23 +153,27 @@ export function webQueue(db: Db, now = Date.now(), retryKey?: string): (WebQuest
       const fields = webKeys(category).map((k) => k.field).filter((field) => retryKey
         ? gaps.has(field) || p.origin[field]?.from === 'estimate'
         : gaps.has(field) && !asked.has(`${p.key}|${field}`));
-      if (!fields.length) continue;
+      // Nada novo a perguntar: o primeiro campo que deu null vai sozinho, com a pergunta direta (um por vez).
+      const again = !fields.length && !retryKey ? webKeys(category).map((k) => k.field).find((field) => gaps.has(field) && retry.has(`${p.key}|${field}`)) : undefined;
+      if (!fields.length && !again) continue;
       const ownRetail = p.listings.filter((listing) => listing.ownRetail);
       const priority = ownRetail.some((listing) => listing.inStock) ? 1 : ownRetail.length ? 2 : 3;
       out.push({
         priority,
         key: p.key,
         category,
-        fields,
+        fields: again ? [again] : fields,
         title: p.title,
-        question: webPrompt(category, p.title, fields, p.values),
+        question: again ? webPrompt(category, p.title, [again], p.values, true) : webPrompt(category, p.title, fields, p.values),
+        ...(again && { single: true }),
         main: p.missing.length > 0,
         inStock: p.listings.some((l) => l.inStock),
         first: p.listings.map((l) => l.firstSeenAt).sort().pop() ?? '',
       });
     }
   }
-  out.sort((a, b) => a.priority - b.priority || Number(b.main) - Number(a.main) || Number(b.inStock) - Number(a.inStock) || b.first.localeCompare(a.first));
+  // Na mesma prioridade, a primeira pergunta de um produto antes da segunda tentativa de outro.
+  out.sort((a, b) => a.priority - b.priority || Number(!!a.single) - Number(!!b.single) || Number(b.main) - Number(a.main) || Number(b.inStock) - Number(a.inStock) || b.first.localeCompare(a.first));
   return out.map(({ main: _m, inStock: _i, first: _f, ...q }) => q);
 }
 
@@ -263,8 +271,8 @@ export async function askWeb(db: Db, q: WebQuestion, signal: AbortSignal, now = 
   });
   const answer = reply ? JSON.stringify(reply.raw).slice(0, 3000) : '';
   const insert = ready(db).prepare(
-    `INSERT OR REPLACE INTO sheet_web (product_key, field, category, title, question, answer, value, status, store, asked_at, confidence, sources)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO sheet_web (product_key, field, category, title, question, answer, value, status, store, asked_at, confidence, sources, single)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const since = webSince(Date.parse(at));
   const currentState = () => catalogProducts(db, q.category, since, [q.key]).map(sheetState)[0];
@@ -286,6 +294,7 @@ export async function askWeb(db: Db, q: WebQuestion, signal: AbortSignal, now = 
         at,
         reply?.confidence ?? null,
         null,
+        q.single ? 1 : 0,
       );
     sheetAfter = currentState();
     if (sheetBefore && sheetAfter) {

@@ -106,7 +106,8 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
       { html: aiPage(q!.question, { produto: 'Fortex XYZ', tamanho: 'Mid Tower', placa_de_video_max_mm: 380, confianca: 'alta' }), url, title: '' }
     ));
     const r = await askWeb(db, q!, signal());
-    expect(r).toMatchObject({ status: 'ok', confidence: 'high', store: 's1', sheetBefore: 'incomplete', sheetAfter: 'manual' });
+    // Os principais completos; os opcionais que deram null ainda voltam sozinhos (segunda tentativa): não vai para uma pessoa ainda.
+    expect(r).toMatchObject({ status: 'ok', confidence: 'high', store: 's1', sheetBefore: 'incomplete', sheetAfter: 'complete' });
     expect(r!.fields.filter((f) => f.value !== undefined)).toEqual([
       { field: 'formFactor', value: 'Mid Tower' },
       { field: 'maxGpuMm', value: 380 },
@@ -119,11 +120,13 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
     expect(sheet.values.dimensions).toBe('450 x 210 x 480');
     expect(sheet.values.maxGpuMm).toBe(380);
     expect(sheet.missing).toEqual([]);
-    expect(webQueue(db)).toEqual([]);
-    expect(webFillStatus(db)).toMatchObject({ answered: 2, queue: 0 });
+    // Na fila, só a segunda tentativa de um campo que deu null, com a pergunta direta.
+    expect(webQueue(db)).toMatchObject([{ key: q!.key, fields: ['maxCoolerMm'], single: true }]);
+    expect(webQueue(db)[0]!.question.startsWith('Altura máxima de cooler suportada do gabinete Fortex XYZ PXG-100A: qual é?')).toBe(true);
+    expect(webFillStatus(db)).toMatchObject({ answered: 2 });
     // Lista paginada dos já perguntados, com filtros.
     const list = webAnswers(db, { page: 1 });
-    expect(list).toMatchObject({ total: 1, items: [{ key: q!.key, confidence: 'high', status: 'ok', sheetBefore: 'incomplete', sheetAfter: 'manual' }] });
+    expect(list).toMatchObject({ total: 1, items: [{ key: q!.key, confidence: 'high', status: 'ok', sheetBefore: 'incomplete', sheetAfter: 'complete' }] });
     expect(list.items[0]!.answer).toContain('"tamanho":"Mid Tower"');
     expect(list.items[0]!.fields[0]).toEqual({ field: 'formFactor', value: 'Mid Tower' }); // na ordem da ficha
     expect(webAnswers(db, { status: 'none' }).total).toBe(0);
@@ -175,7 +178,8 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
     const [before] = catalogProducts(db, 'gpu', '2000-01-01');
     expect(before!.gaps).toContain('silicon');
     const askable = new Set(webKeys('gpu').map((k) => k.field));
-    const insert = db.prepare(`INSERT INTO sheet_web (product_key, field, category, title, question, answer, value, status, store, asked_at) VALUES (?, ?, 'gpu', 't', 'q', '{}', NULL, 'none', 's1', '2026-11-25')`);
+    // Perguntados nas duas tentativas (com os outros campos e sozinhos), sem resposta.
+    const insert = db.prepare(`INSERT INTO sheet_web (product_key, field, category, title, question, answer, value, status, store, asked_at, single) VALUES (?, ?, 'gpu', 't', 'q', '{}', NULL, 'none', 's1', '2026-11-25', 1)`);
     for (const f of [...before!.missing, ...before!.gaps]) if (askable.has(f)) insert.run(before!.key, f);
     const [after] = catalogProducts(db, 'gpu', '2000-01-01');
     expect(after!.gaps).toContain('silicon'); // continua vazio (a web respondeu null)
@@ -186,6 +190,35 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
     expect(db.prepare('SELECT field FROM sheet_web WHERE product_key = ?').all(before!.key)).toEqual([{ field: 'chip' }]);
     expect(webQueue(db).map((q) => q.key)).toContain(before!.key);
     expect(requeueHumanReview(db)).toBe(0); // a mesma versão: não repete
+    db.close();
+  });
+
+  it('campo que deu null na pergunta de vários campos volta sozinho, com a pergunta direta; só depois disso vai para uma pessoa', async () => {
+    const db = openDb(':memory:');
+    const offer = { store: 's1', storeSku: 'c', title: 'Water Cooler Marca X 360, 360mm, PWM', url: 'https://s1.example/c', priceCash: 900, inStock: true, specs: {}, modelKey: 'c', collectedAt: '' } as Offer;
+    saveCollection(db, { store: 's1', category: 'cooler', offers: [offer], at: new Date().toISOString() });
+    savePage(db, { store: 's1', sku: 'c', category: 'cooler', text: ['Tipo: Water cooler', 'Radiador: 360 mm'].join('\n') });
+    const [p] = catalogProducts(db, 'cooler', '2000-01-01');
+    const askable = new Set(webKeys('cooler').map((k) => k.field));
+    const gaps = [...p!.missing, ...p!.gaps].filter((f) => askable.has(f));
+    expect(gaps).toContain('tdpW');
+    // A pergunta de vários campos respondeu tudo, menos o TDP (null).
+    const insert = db.prepare(`INSERT INTO sheet_web (product_key, field, category, title, question, answer, value, status, store, asked_at) VALUES (?, ?, 'cooler', 't', 'q', '{"produto":"X"}', ?, ?, 's1', '2026-11-27')`);
+    for (const f of gaps) insert.run(p!.key, f, f === 'tdpW' ? null : '1', f === 'tdpW' ? 'none' : 'ok');
+    expect(catalogProducts(db, 'cooler', '2000-01-01')[0]!.needsHuman).toBe(false); // ainda tem a segunda tentativa
+    const [q] = webQueue(db);
+    expect(q).toMatchObject({ key: p!.key, fields: ['tdpW'], single: true });
+    expect(q!.question).toContain('TDP suportado do cooler');
+    expect(q!.question).toContain('qual é?');
+    // Sozinho, a IA acha (como na busca direta): o valor entra e o campo fica marcado como perguntado sozinho.
+    usePageLoader(async (_s, url) => ({ html: aiPage(q!.question, { produto: 'X', tdp_w: '250 a 300', confianca: 'alta' }), url, title: '' }));
+    expect(await askWeb(db, q!, signal())).toMatchObject({ status: 'ok', fields: [{ field: 'tdpW', value: 250 }] });
+    expect(db.prepare("SELECT value, single FROM sheet_web WHERE product_key = ? AND field = 'tdpW'").get(p!.key)).toEqual({ value: '250', single: 1 });
+    expect(webQueue(db).map((x) => x.key)).not.toContain(p!.key);
+    // Null também sozinho: aí sim vai para uma pessoa, e não volta à fila.
+    db.prepare("UPDATE sheet_web SET value = NULL, status = 'none' WHERE product_key = ? AND field = 'tdpW'").run(p!.key);
+    expect(catalogProducts(db, 'cooler', '2000-01-01')[0]!.needsHuman).toBe(true);
+    expect(webQueue(db).map((x) => x.key)).not.toContain(p!.key);
     db.close();
   });
 
@@ -234,7 +267,9 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
     const sheet = productSheet(db, 's1', '1')!;
     expect(sheet.values.formFactor).toBe('Mid Tower'); // a estimativa, não o "Mini Tower" de confiança baixa
     expect(sheet.origin.formFactor).toMatchObject({ from: 'estimate' });
-    expect(webQueue(db)).toEqual([]);
+    // Não pergunta de novo do mesmo jeito: só a segunda tentativa, um campo por vez.
+    expect(webQueue(db)).toMatchObject([{ key: q.key, single: true }]);
+    expect(webQueue(db)[0]!.fields).toHaveLength(1);
     expect(webFillStatus(db)).toMatchObject({ answered: 0, empty: q.fields.length });
   });
 
@@ -243,8 +278,7 @@ describe('busca na web: fila, resposta e o que entra na ficha', () => {
     const q = webQueue(db)[0]!;
     usePageLoader(async (_s, url) => ({ html: aiPage(q.question, { produto: 'X', placa_de_video_max_mm: 380, confianca: 'alta' }), url, title: '' }));
     expect(await askWeb(db, q, signal())).toMatchObject({ status: 'ok' });
-    expect(webQueue(db)).toEqual([]);
-    expect(await askNextNow(db)).toBeNull(); // nada na fila
+    expect(webQueue(db).every((x) => x.single)).toBe(true); // só a segunda tentativa dos que deram null
     usePageLoader(async (_s, url) => ({ html: aiPage(q.question, { produto: 'X', tamanho: 'Mid Tower', confianca: 'alta' }), url, title: '' }));
     expect(await askNextNow(db, q.key)).toMatchObject({ key: q.key, status: 'ok' });
     expect(productSheet(db, 's1', '1')!.origin.formFactor).toMatchObject({ from: 'web' });
@@ -282,6 +316,12 @@ describe('precisa de você: a web não achou o que falta; preenchido à mão', (
     const q = webQueue(db)[0]!;
     usePageLoader(async (_s, url) => ({ html: aiPage(q.question, { produto: 'X', confianca: 'media' }), url, title: '' }));
     expect(await askWeb(db, q, new AbortController().signal)).toMatchObject({ status: 'none' });
+    // A segunda tentativa, um campo por vez, também sem resposta.
+    for (let next = webQueue(db)[0]; next; next = webQueue(db)[0]) {
+      expect(next.single).toBe(true);
+      usePageLoader(async (_s, url) => ({ html: aiPage(next!.question, { produto: 'X', confianca: 'media' }), url, title: '' }));
+      await askWeb(db, next, new AbortController().signal);
+    }
     const since = new Date(Date.now() - 86_400_000).toISOString();
     // O tamanho entrou estimado; as placas-mãe, não: só uma pessoa completa.
     const [p] = catalogProducts(db, 'case', since);

@@ -838,3 +838,15 @@ describe('web: respostas que o leitor descartava depois do grupo "com estoque, d
     expect(read('ram', { expo: '1.1' })).toEqual({ expo: true });
   });
 });
+
+it('web: segunda tentativa de um campo só, com a pergunta direta e o JSON no fim', () => {
+  const q = webPrompt('cooler', 'Water Cooler Noctua NL-LC1-36, 360mm, PWM, Intel-AMD, Preto e Marrom', ['tdpW'], {}, true);
+  expect(q.startsWith('TDP suportado do cooler')).toBe(true);
+  expect(q).toContain('qual é? Busque no site do fabricante, no TechPowerUp, em análises e em fichas técnicas de lojas.');
+  expect(q).toContain('Responda em uma frase e termine com este JSON preenchido, válido: {"produto":');
+  expect(q).not.toContain('SOMENTE O JSON');
+  expect(webPrompt('ram', 'Memória X 16GB', ['xmp'], {}, true)).toContain('XMP da memória');
+  expect(webPrompt('ram', 'Memória X 16GB', ['xmp'], {}, true)).toContain('tem ou não?');
+  // Resposta em texto com o JSON no fim: o leitor acha o JSON.
+  expect(parseWebReply('cooler', 'Segundo análises, ele dissipa 250 a 300 W. {"produto":"X","tdp_w":250,"confianca":"media"}', q)?.values).toEqual({ tdpW: 250 });
+});
