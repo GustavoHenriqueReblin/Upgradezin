@@ -4,6 +4,8 @@ Mudanças de cada versão. Versões no formato `MAIOR.MENOR.CORREÇÃO`: enquant
 
 ## [Não lançado]
 
+- Busca na web, revisão do grupo "com estoque, vendido pela própria loja" (zerado em 27/11): o leitor passa a aceitar o código do chip da Intel Arc ("ACM-G11"), o código completo com letras na variante ("GA107-325-K2-A1"), o nome AMD com variante ou revisão ("Lexa PRO", "Navi33-C0") e dois nomes do mesmo chip; ventoinhas como um objeto só com a quantidade; XMP/EXPO respondido só com a versão ("2.0"). O servidor relê as respostas guardadas ao subir (34 valores recuperados na cópia de produção de 27/11).
+
 - Busca na web, a partir da revisão das fichas "precisam de você" em produção: o leitor da resposta passa a aceitar os formatos que a IA usa de fato (PCIe como número, ventoinhas em lista de objetos, dissipador do VRM e XMP descritos em texto, "Não" como "não tem", fases do VRM com 5 grupos, Bluetooth "5", "12V-2x6", soquete com a marca, faixas reais de shaders, banda, TBW e cooler); a pergunta cobre o compartilhamento de linhas do M.2 e o código do chip, e dá a pista do TDP suportado do cooler. Ao subir, o servidor relê as respostas guardadas (na cópia de produção de 26/11: 347 valores recuperados) e os produtos que continuarem em "precisa de você" voltam à web uma vez com a pergunta nova (588 na mesma cópia).
 
 - Busca na web: o código do chip passa a ser aceito como a IA escreve: das AMD mais antigas pelo nome ("Ellesmere" da RX 580, "Polaris 20") e o código completo, com variante e revisão ("GB206-250-A1" vira GB206, "Navi 44 XT" vira Navi 44). O servidor relê as respostas guardadas ao subir.

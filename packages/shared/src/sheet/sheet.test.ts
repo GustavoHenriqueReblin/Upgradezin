@@ -809,3 +809,32 @@ it('web: do código completo do chip fica o do chip ("GB206-250-A1", "Navi 44 XT
   expect(read('Navi 31 XTX')).toEqual({ silicon: 'NAVI 31' });
   expect(read('GB206 ou GB207')).toEqual({});
 });
+
+describe('web: respostas que o leitor descartava depois do grupo "com estoque, da própria loja" (27/11)', () => {
+  const read = (category: Parameters<typeof parseWebReply>[0], fields: Record<string, unknown>) =>
+    parseWebReply(category, JSON.stringify({ produto: 'X', ...fields, confianca: 'alta' }))?.values ?? {};
+
+  it('código do chip: Intel Arc, código completo com letras na variante, nome AMD com variante ou revisão, dois nomes', () => {
+    const chip = (v: string) => read('gpu', { codigo_do_chip: v }).silicon;
+    expect(chip('ACM-G11')).toBe('ACM-G11');
+    expect(chip('BMG-G21')).toBe('BMG-G21');
+    expect(chip('GA107-325-K2-A1')).toBe('GA107');
+    expect(chip('TU116-250-KA-A1')).toBe('TU116');
+    expect(chip('Lexa PRO')).toBe('Lexa');
+    expect(chip('Polaris 20 XL')).toBe('Polaris 20');
+    expect(chip('Navi 44 XE')).toBe('NAVI 44');
+    expect(chip('Navi 10 XLE')).toBe('NAVI 10');
+    expect(chip('Navi33-C0')).toBe('NAVI 33');
+    expect(chip('Ellesmere / Polaris 20 (RX 580 2048SP) ')).toBe('Ellesmere');
+    expect(chip('chip novo')).toBeUndefined();
+  });
+
+  it('ventoinhas como um objeto só, com a quantidade', () => {
+    expect(read('cooler', { ventoinhas: { quantidade: 3, dimensoes_mm: [120, 120, 25], rotacao_min_rpm: 800 } })).toEqual({ fans: 3 });
+  });
+
+  it('XMP ou EXPO respondido só com a versão', () => {
+    expect(read('ram', { xmp: '2.0' })).toEqual({ xmp: true });
+    expect(read('ram', { expo: '1.1' })).toEqual({ expo: true });
+  });
+});

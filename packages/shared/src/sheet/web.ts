@@ -11,7 +11,7 @@ import { SHEET_FIELDS, type SheetField, type SheetValue, type SheetValues } from
  */
 
 /** Versão do leitor da resposta: mudou, o servidor relê as respostas guardadas (recupera o que o leitor antigo perdia). */
-export const WEB_PARSER_VERSION = 4;
+export const WEB_PARSER_VERSION = 5;
 /** Versão da pergunta: mudou, os produtos que ficaram para uma pessoa voltam à web uma vez (o servidor faz ao subir). */
 export const WEB_PROMPT_VERSION = 4;
 
@@ -91,12 +91,18 @@ const frontItem = (s: string) => /mesh|tela|perfura/i.test(s) ? 'Mesh' : /vidro|
 /** Código do chip das AMD mais antigas: nome em vez de letras e número ("Ellesmere" da RX 580, "Polaris 20"). */
 const AMD_CODENAME = /^(?:ellesmere|baffin|lexa|polaris \d{2}|vega \d{2}|tonga|fiji|hawaii|tahiti|pitcairn|bonaire|oland|cape verde)$/i;
 /** Código do chip da placa de vídeo ("AD107", "GB206", "Navi 44", "Ellesmere"). */
-const siliconItem = (s: string) => {
-  const t = s.trim().replace(/\s+/g, ' ');
-  if (AMD_CODENAME.test(t)) return t.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-  // Do código completo fica o do chip: "GB206-250-A1" (variante e revisão) -> "GB206"; "Navi 44 XT" -> "NAVI 44".
-  const u = t.toUpperCase();
-  return u.match(/^[A-Z]{1,4}\d{2,3}[A-Z]?(?=$|-\d{3}(?:-[A-Z]\d)?$)/)?.[0] ?? u.match(/^NAVI \d{2}(?=$| (?:XTX|XT|XL|GRE)$)/)?.[0];
+const siliconItem = (s: string): string | undefined => {
+  // Dois nomes do mesmo chip ("Ellesmere / Polaris 20 (RX 580 2048SP)"): vale o primeiro.
+  const t = s.split(/[/(]/)[0]!.trim().replace(/\s+/g, ' ');
+  // Variante da AMD depois do nome ("Lexa PRO", "Polaris 20 XL", "Navi 10 XLE") e revisão ("Navi33-C0") saem.
+  const amd = t.replace(/(?:\s+(?:XTX|XT|XLE|XL|XE|GRE|PRO)|-[A-Z]\d)$/i, '').replace(/^navi\s*(\d{2})$/i, 'Navi $1');
+  if (AMD_CODENAME.test(amd)) return amd.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+  const u = amd.toUpperCase();
+  if (/^NAVI \d{2}$/.test(u)) return u;
+  // Intel Arc: "ACM-G11", "BMG-G21".
+  if (/^(?:ACM|BMG)-G\d{2}$/.test(u)) return u;
+  // Do código completo fica o do chip: "GB206-250-A1", "GA107-325-K2-A1" (variante e revisão) -> "GB206", "GA107".
+  return u.match(/^[A-Z]{1,4}\d{2,3}[A-Z]?(?=$|-\d{3}(?:-[A-Z0-9]{1,3})*$)/)?.[0];
 };
 const radiator = (s: string) => (['120', '140', '240', '280', '360', '420', '480'].includes(s.replace(/\D/g, '')) ? s.replace(/\D/g, '') : undefined);
 
@@ -161,8 +167,9 @@ const KEYS: Record<CategoryId, Record<string, Partial<WebKey> & { key: string }>
     type: { key: 'tipo', options: opts('DDR3', 'DDR4', 'DDR5') },
     mhz: { key: 'frequencia_mhz', min: 800, max: 12000 },
     cl: { key: 'latencia_cl' },
-    xmp: { key: 'xmp', truthy: /xmp/i },
-    expo: { key: 'expo', truthy: /expo/i },
+    // Só a versão ("2.0", "3.0") também diz que tem.
+    xmp: { key: 'xmp', truthy: /xmp|^\d\.\d$/i },
+    expo: { key: 'expo', truthy: /expo|^\d\.\d$/i },
   },
   ssd: {
     capacityGb: { key: 'capacidade_gb', min: 60, max: 16000 },
@@ -378,6 +385,8 @@ export function acceptWebValue(k: WebKey, v: unknown): SheetValue | undefined {
     return k.options[`${String(v).trim()}.0`];
   }
   // Contagem que veio como lista: soma as quantidades ({"quantidade": 3, ...}) ou conta os itens.
+  // Um objeto só ({"quantidade": 3, "dimensoes": "120x120"}) é uma lista de um item.
+  if ((k.type === 'int' || k.type === 'real') && v && typeof v === 'object' && !Array.isArray(v) && 'quantidade' in v) return acceptWebValue(k, [v]);
   if ((k.type === 'int' || k.type === 'real') && Array.isArray(v)) {
     const qty = v.map((x) => (x && typeof x === 'object' ? toNumber((x as Record<string, unknown>).quantidade ?? (x as Record<string, unknown>).quantity) : undefined));
     const n = qty.every((q) => q !== undefined) ? qty.reduce<number>((t, q) => t + q!, 0) : v.length;
